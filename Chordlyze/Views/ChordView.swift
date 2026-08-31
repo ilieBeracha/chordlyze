@@ -133,6 +133,7 @@ struct AnalysisResultView: View {
     let analysis: ChordAnalysis
     var transposeBy: Int = 0
     var embedded: Bool = false
+    var onChordTap: ((String) -> Void)? = nil
 
     private func show(_ name: String) -> String {
         ChordMath.transpose(name, by: transposeBy)
@@ -177,17 +178,22 @@ struct AnalysisResultView: View {
                             .font(.system(size: 13))
                             .foregroundStyle(Color(hex: 0x3A3A3C))
                     }
-                    VStack(spacing: 1) {
-                        Text(show(seg.displayName))
-                            .font(.system(size: 18, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-                        Text(seg.roman ?? " ")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Palette.secondary)
+                    Button {
+                        onChordTap?(show(seg.displayName))
+                    } label: {
+                        VStack(spacing: 1) {
+                            Text(show(seg.displayName))
+                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                            Text(seg.roman ?? " ")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Palette.secondary)
+                        }
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 13)
+                        .background(RoundedRectangle(cornerRadius: 11).fill(Palette.elevated))
                     }
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 13)
-                    .background(RoundedRectangle(cornerRadius: 11).fill(Palette.elevated))
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.bottom, 28)

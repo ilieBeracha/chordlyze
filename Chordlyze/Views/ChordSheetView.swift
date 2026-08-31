@@ -9,13 +9,20 @@ struct AnalysisTabsView: View {
 
     @State private var simple = false
     @State private var showTimeline = false
+    @State private var manualShift = 0
+    @State private var selectedChord: SelectedChord?
+
+    struct SelectedChord: Identifiable {
+        let name: String
+        var id: String { name }
+    }
 
     private var capo: Int {
         ChordMath.autoCapo(names: analysis.chords
             .filter { $0.label != "N" }
             .map { ($0.displayName, $0.duration) })
     }
-    private var shift: Int { simple ? -capo : 0 }
+    private var shift: Int { (simple ? -capo : 0) + manualShift }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,22 +30,25 @@ struct AnalysisTabsView: View {
             Rectangle().fill(Palette.separator).frame(height: 0.5)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    if simple {
-                        HStack {
+                    HStack(spacing: 8) {
+                        if simple {
                             Text(capo == 0 ? "No capo needed" : "Capo \(capo)")
                                 .font(.system(size: 13, weight: .bold, design: .rounded))
                                 .foregroundStyle(Color.spotifyGreen)
                                 .padding(.vertical, 5).padding(.horizontal, 10)
                                 .background(Capsule().fill(Palette.greenTintFill))
-                            Spacer()
                         }
-                        .padding(.bottom, 12)
+                        Spacer()
+                        transposeStepper
                     }
+                    .padding(.bottom, 12)
                     if showTimeline {
-                        AnalysisResultView(analysis: analysis, transposeBy: shift, embedded: true)
+                        AnalysisResultView(analysis: analysis, transposeBy: shift, embedded: true,
+                                           onChordTap: { selectedChord = SelectedChord(name: $0) })
                     } else {
                         ChordSheetView(analysis: analysis, title: title, artist: artist,
-                                       transposeBy: shift)
+                                       transposeBy: shift,
+                                       onChordTap: { selectedChord = SelectedChord(name: $0) })
                     }
                 }
                 .padding(.vertical, 18)
@@ -47,6 +57,39 @@ struct AnalysisTabsView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .sheet(item: $selectedChord) { selected in
+            ChordDiagramSheet(chord: selected.name)
+        }
+    }
+
+    /// Manual key shift for singers: −6…+6 semitones on top of capo mode.
+    private var transposeStepper: some View {
+        HStack(spacing: 0) {
+            Button {
+                if manualShift > -6 { manualShift -= 1 }
+            } label: {
+                Image(systemName: "minus")
+                    .frame(width: 30, height: 26)
+            }
+            Button {
+                manualShift = 0
+            } label: {
+                Text(manualShift == 0 ? "±0" : String(format: "%+d", manualShift))
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundStyle(manualShift == 0 ? Palette.secondary : Color.spotifyGreen)
+                    .frame(width: 34)
+            }
+            Button {
+                if manualShift < 6 { manualShift += 1 }
+            } label: {
+                Image(systemName: "plus")
+                    .frame(width: 30, height: 26)
+            }
+        }
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(.white)
+        .buttonStyle(.plain)
+        .background(Capsule().fill(Palette.elevated))
     }
 
     private var header: some View {
@@ -109,6 +152,7 @@ struct ChordSheetView: View {
     let title: String
     let artist: String
     var transposeBy: Int = 0
+    var onChordTap: ((String) -> Void)? = nil
 
     @State private var rendered: [SheetModel.RenderLine]?
     @State private var failed = false
@@ -153,13 +197,19 @@ struct ChordSheetView: View {
             if !line.chords.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(line.chords) { chord in
-                        Text(ChordMath.transpose(chord.name, by: transposeBy))
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundStyle(chord.estimated ? Palette.secondary : Color.spotifyGreen)
-                            .padding(.vertical, 3)
-                            .padding(.horizontal, 9)
-                            .background(RoundedRectangle(cornerRadius: 7)
-                                .fill(Color.white.opacity(0.06)))
+                        let name = ChordMath.transpose(chord.name, by: transposeBy)
+                        Button {
+                            onChordTap?(name)
+                        } label: {
+                            Text(name)
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundStyle(chord.estimated ? Palette.secondary : Color.spotifyGreen)
+                                .padding(.vertical, 3)
+                                .padding(.horizontal, 9)
+                                .background(RoundedRectangle(cornerRadius: 7)
+                                    .fill(Color.white.opacity(0.06)))
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)

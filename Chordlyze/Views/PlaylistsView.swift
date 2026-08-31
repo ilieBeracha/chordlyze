@@ -34,6 +34,15 @@ struct PlaylistsView: View {
                             .foregroundStyle(.white)
                         Spacer()
                         NavigationLink {
+                            SearchView()
+                        } label: {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundStyle(.white)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 16)
+                        NavigationLink {
                             ProfileView()
                         } label: {
                             Image(systemName: "person.crop.circle")
