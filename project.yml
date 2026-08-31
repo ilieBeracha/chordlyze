@@ -27,6 +27,7 @@ targets:
       path: Chordlyze/Info.plist
       properties:
         CFBundleIconName: AppIcon
+        ITSAppUsesNonExemptEncryption: false
         CFBundleURLTypes:
           - CFBundleURLSchemes: [chordlyze]
         NSAppTransportSecurity:
