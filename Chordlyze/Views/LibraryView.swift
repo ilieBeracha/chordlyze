@@ -47,22 +47,17 @@ struct SavedAnalysisView: View {
     @State private var analysis: ChordAnalysis?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if let artist = item.artist, !artist.isEmpty {
-                    Text(artist).font(.subheadline).foregroundStyle(.secondary)
-                }
-                if let analysis {
-                    AnalysisTabsView(analysis: analysis,
-                                     title: item.title ?? "", artist: item.artist ?? "")
-                } else {
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
-                }
+        Group {
+            if let analysis {
+                AnalysisTabsView(analysis: analysis,
+                                 title: item.title ?? "Unknown song", artist: item.artist ?? "")
+            } else {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.black.ignoresSafeArea())
+                    .toolbar(.hidden, for: .navigationBar)
             }
-            .padding()
         }
-        .navigationTitle(item.title ?? "Unknown song")
-        .navigationBarTitleDisplayMode(.large)
         .task {
             analysis = await BackendClient.cachedAnalysis(trackID: item.trackId)
         }

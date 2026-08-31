@@ -1,64 +1,158 @@
 import SwiftUI
 
-/// Follow-along mode: lyrics + chords auto-scroll in sync with the song playing
-/// in the room, using the live position from the session's Shazam match.
+/// Teleprompter follow-along (design 2g): current lyric centered with its
+/// chords, context lines dimmed above/below, progress rail at the bottom.
 struct LiveNowView: View {
     @ObservedObject var session: AutoSession
     let entry: AutoSession.Entry
     let analysis: ChordAnalysis
 
     @State private var position: Double = 0
+    @State private var lines: [SheetModel.RenderLine] = []
+    @State private var noLyrics = false
     private let clock = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
+    private var currentIndex: Int? {
+        lines.lastIndex(where: { $0.id <= position })
+    }
+    private var duration: Double {
+        max(lines.last?.end ?? 0, analysis.chords.last?.end ?? 0, 1)
+    }
+
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(spacing: 8) {
-                        Circle().fill(Color.spotifyGreen).frame(width: 8, height: 8)
-                        Text("LIVE — \(timestamp(position))")
-                            .font(.system(.caption, design: .monospaced).weight(.semibold))
-                            .foregroundStyle(Color.spotifyGreen)
-                        Spacer()
-                        Text(entry.artist)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            header
+
+            Spacer()
+
+            if noLyrics {
+                Text("No synced lyrics — follow the timeline instead.")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Palette.secondary)
+            } else if lines.isEmpty {
+                ProgressView()
+            } else {
+                teleprompter
+            }
+
+            Spacer()
+
+            // Progress rail
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2).fill(Palette.elevated)
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.spotifyGreen)
+                        .frame(width: geo.size.width * min(1, max(0, position / duration)))
+                }
+            }
+            .frame(height: 4)
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 40)
+        .background(Color.black.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+        .onReceive(clock) { _ in
+            if let live = session.livePosition(for: entry.id) {
+                withAnimation(.easeInOut(duration: 0.35)) { position = live }
+            }
+        }
+        .task {
+            if let lyricLines = await BackendClient.lyrics(title: entry.title, artist: entry.artist) {
+                lines = SheetModel.build(analysis: analysis, lines: lyricLines)
+            } else {
+                noLyrics = true
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            BackCircle(size: 38)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(entry.title)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Text(entry.artist.uppercased())
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.secondary)
+            }
+            Spacer()
+            HStack(spacing: 6) {
+                Circle().fill(Color.spotifyGreen).frame(width: 6, height: 6)
+                Text(timestamp(position))
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.spotifyGreen)
+            }
+            .padding(.vertical, 6)
+            .padding(.horizontal, 12)
+            .background(Capsule().fill(Palette.greenTintFill))
+        }
+    }
+
+    private var teleprompter: some View {
+        let index = currentIndex ?? 0
+        return VStack(alignment: .leading, spacing: 0) {
+            // 2 previous lines
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(lines[max(0, index - 2)..<index]) { line in
+                    Text(line.text)
+                        .font(.system(size: 17, design: .rounded))
+                        .foregroundStyle(Palette.secondary)
+                        .opacity(0.35)
+                        .lineLimit(1)
+                }
+            }
+
+            // Current block
+            if index < lines.count {
+                let current = lines[index]
+                VStack(alignment: .leading, spacing: 12) {
+                    if !current.chords.isEmpty {
+                        HStack(spacing: 8) {
+                            ForEach(current.chords) { chord in
+                                Text(chord.name)
+                                    .font(.system(size: 22, weight: .heavy, design: .rounded))
+                                    .foregroundStyle(Color.spotifyGreen)
+                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, 16)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .fill(Palette.greenTintFill)
+                                            .overlay(RoundedRectangle(cornerRadius: 12)
+                                                .stroke(Palette.greenTintBorder, lineWidth: 1))
+                                    )
+                            }
+                        }
                     }
-                    ChordSheetView(analysis: analysis, title: entry.title,
-                                   artist: entry.artist, currentTime: position)
+                    Text(current.text)
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineSpacing(28 * 0.25)
                 }
-                .padding()
+                .padding(.vertical, 26)
             }
-            .onReceive(clock) { _ in
-                guard let live = session.livePosition(for: entry.id) else { return }
-                position = live
-                withAnimation(.easeInOut(duration: 0.35)) {
-                    proxy.scrollTo(anchorLineID(for: live), anchor: .center)
+
+            // 3 next lines
+            VStack(alignment: .leading, spacing: 16) {
+                ForEach(lines[min(lines.count, index + 1)..<min(lines.count, index + 4)]) { line in
+                    VStack(alignment: .leading, spacing: 3) {
+                        if !line.chords.isEmpty {
+                            Text(line.chords.map(\.name).joined(separator: "   "))
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .tracking(0.8)
+                                .foregroundStyle(Palette.faint)
+                        }
+                        Text(line.text)
+                            .font(.system(size: 18, design: .rounded))
+                            .foregroundStyle(Palette.secondaryAlt)
+                            .lineLimit(1)
+                    }
                 }
             }
         }
-        .navigationTitle(entry.title)
-        .navigationBarTitleDisplayMode(.inline)
-    }
-
-    @State private var lineStarts: [Double] = []
-
-    /// Nearest lyric-line id at or before the live position (ids are line start times).
-    private func anchorLineID(for time: Double) -> Double? {
-        nearestLineStart(time)
-    }
-
-    private func nearestLineStart(_ time: Double) -> Double? {
-        // Lazily fetch line starts from the lyrics cache via the shared endpoint.
-        if lineStarts.isEmpty {
-            Task { @MainActor in
-                if let lines = await BackendClient.lyrics(title: entry.title, artist: entry.artist) {
-                    lineStarts = lines.map(\.time)
-                }
-            }
-            return nil
-        }
-        return lineStarts.last(where: { $0 <= time })
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func timestamp(_ seconds: Double) -> String {
