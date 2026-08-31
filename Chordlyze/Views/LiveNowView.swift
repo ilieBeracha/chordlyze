@@ -102,13 +102,16 @@ struct LiveNowView: View {
                         .foregroundStyle(Palette.secondary)
                         .opacity(0.35)
                         .lineLimit(1)
+                        .frame(maxWidth: .infinity,
+                               alignment: line.text.isRTLText ? .trailing : .leading)
                 }
             }
 
             // Current block
             if index < lines.count {
                 let current = lines[index]
-                VStack(alignment: .leading, spacing: 12) {
+                let rtl = current.text.isRTLText
+                VStack(alignment: rtl ? .trailing : .leading, spacing: 12) {
                     if !current.chords.isEmpty {
                         HStack(spacing: 8) {
                             ForEach(current.chords) { chord in
@@ -125,19 +128,22 @@ struct LiveNowView: View {
                                     )
                             }
                         }
+                        .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
                     }
                     Text(current.text)
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                         .lineSpacing(28 * 0.25)
+                        .multilineTextAlignment(rtl ? .trailing : .leading)
                 }
+                .frame(maxWidth: .infinity, alignment: rtl ? .trailing : .leading)
                 .padding(.vertical, 26)
             }
 
             // 3 next lines
             VStack(alignment: .leading, spacing: 16) {
                 ForEach(lines[min(lines.count, index + 1)..<min(lines.count, index + 4)]) { line in
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: line.text.isRTLText ? .trailing : .leading, spacing: 3) {
                         if !line.chords.isEmpty {
                             Text(line.chords.map(\.name).joined(separator: "   "))
                                 .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -149,6 +155,8 @@ struct LiveNowView: View {
                             .foregroundStyle(Palette.secondaryAlt)
                             .lineLimit(1)
                     }
+                    .frame(maxWidth: .infinity,
+                           alignment: line.text.isRTLText ? .trailing : .leading)
                 }
             }
         }

@@ -33,10 +33,14 @@ struct PlaylistsView: View {
                             .font(.system(size: 34, weight: .bold))
                             .foregroundStyle(.white)
                         Spacer()
-                        Button("Reconnect") { auth.login() }
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Color.spotifyGreen)
-                            .buttonStyle(.plain)
+                        NavigationLink {
+                            ProfileView()
+                        } label: {
+                            Image(systemName: "person.crop.circle")
+                                .font(.system(size: 26))
+                                .foregroundStyle(.white)
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     // Auto Session hero card

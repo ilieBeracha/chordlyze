@@ -34,6 +34,19 @@ final class SpotifyAPI: ObservableObject {
     private let auth: SpotifyAuth
     init(auth: SpotifyAuth) { self.auth = auth }
 
+    struct Profile: Decodable {
+        let id: String
+        let displayName: String?
+        enum CodingKeys: String, CodingKey {
+            case id
+            case displayName = "display_name"
+        }
+    }
+
+    func me() async throws -> Profile {
+        try await get("me")
+    }
+
     func myPlaylists() async throws -> [Playlist] {
         // items can contain null entries (deleted/unavailable playlists)
         struct Page: Decodable { let items: [Playlist?] }

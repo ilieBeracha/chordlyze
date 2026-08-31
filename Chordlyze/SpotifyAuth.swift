@@ -50,6 +50,14 @@ final class SpotifyAuth: NSObject, ObservableObject {
         session.start()
     }
 
+    /// Forgets all tokens; the app returns to the login screen.
+    func logout() {
+        accessToken = nil
+        refreshToken = nil
+        expiresAt = .distantPast
+        Keychain.delete("spotify_refresh_token")
+    }
+
     func validToken() async throws -> String {
         if let token = accessToken, Date() < expiresAt { return token }
         if refreshToken != nil { try await refresh() }

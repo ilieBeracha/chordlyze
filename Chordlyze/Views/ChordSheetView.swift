@@ -147,7 +147,9 @@ struct ChordSheetView: View {
     }
 
     private func lineView(_ line: SheetModel.RenderLine) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        // Hebrew/Arabic lyrics lay out right-to-left, chords included.
+        let rtl = line.text.isRTLText
+        return VStack(alignment: rtl ? .trailing : .leading, spacing: 0) {
             if !line.chords.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(line.chords) { chord in
@@ -160,6 +162,7 @@ struct ChordSheetView: View {
                                 .fill(Color.white.opacity(0.06)))
                     }
                 }
+                .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
                 .frame(minHeight: 22)
                 .padding(.bottom, 4)
             }
@@ -167,8 +170,9 @@ struct ChordSheetView: View {
                 .font(.system(size: 18, design: .rounded))
                 .foregroundStyle(Palette.nearWhite)
                 .lineSpacing(18 * 0.35)
+                .multilineTextAlignment(rtl ? .trailing : .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: rtl ? .trailing : .leading)
         .padding(.top, 8)
         .padding(.bottom, 10)
         .overlay(alignment: .bottom) {

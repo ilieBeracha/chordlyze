@@ -28,6 +28,25 @@ enum Palette {
     static let separator = Color(red: 84 / 255, green: 84 / 255, blue: 88 / 255).opacity(0.4)
 }
 
+extension String {
+    /// True when the first strongly-directional character is right-to-left
+    /// (Hebrew/Arabic), so the line should lay out RTL.
+    var isRTLText: Bool {
+        for scalar in unicodeScalars {
+            switch scalar.value {
+            case 0x0590...0x05FF, 0x0600...0x06FF, 0x0750...0x077F,
+                 0xFB1D...0xFDFF, 0xFE70...0xFEFF:
+                return true
+            case 0x0041...0x005A, 0x0061...0x007A, 0x00C0...0x024F:
+                return false
+            default:
+                continue
+            }
+        }
+        return false
+    }
+}
+
 /// Uppercase section label: 13pt/700, 0.1em tracking.
 struct SectionLabel: View {
     let text: String

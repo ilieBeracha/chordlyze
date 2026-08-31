@@ -25,6 +25,7 @@
 		CEC3C7029CBBADE0C783E692 /* ListenRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA19561C8AB52CCD9FEB0DCD /* ListenRecorder.swift */; };
 		DF8D6FE40BD9E5FA79E5F1BF /* SheetModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BA9465F7DCB9D992A1C4F3B /* SheetModel.swift */; };
 		E7D8FF3747FE41AF1E3F5CB9 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4808D969DCC674CF4F8881C7 /* Keychain.swift */; };
+		F4D6A14494B7A9BE7FB7459C /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F5B942830EA8AE8A9C87C42 /* ProfileView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -37,6 +38,7 @@
 		5C2B900763ACAA5E17D8CF4E /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		5EAB26A01240370A7EAF0A82 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		62445138AF6604CD03089074 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		6F5B942830EA8AE8A9C87C42 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		7137E803C002FAEC4B13BC6A /* SpotifyAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyAuth.swift; sourceTree = "<group>"; };
 		74327AC9AC251365E2B4429F /* PlaylistsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistsView.swift; sourceTree = "<group>"; };
 		92161FF0D46239A2721AFDD7 /* Chordlyze.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Chordlyze.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -69,6 +71,7 @@
 				C2632D6D5B8D8A2C886C3E9D /* LiveNowView.swift */,
 				62445138AF6604CD03089074 /* LoginView.swift */,
 				74327AC9AC251365E2B4429F /* PlaylistsView.swift */,
+				6F5B942830EA8AE8A9C87C42 /* ProfileView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -185,6 +188,7 @@
 				693E17329B4789EEA5A5E1B1 /* LiveNowView.swift in Sources */,
 				6A2B6688285C7D9AA0B2A958 /* LoginView.swift in Sources */,
 				B674DCCE4D245E938BC179F2 /* PlaylistsView.swift in Sources */,
+				F4D6A14494B7A9BE7FB7459C /* ProfileView.swift in Sources */,
 				DF8D6FE40BD9E5FA79E5F1BF /* SheetModel.swift in Sources */,
 				217111167168D9268C97AA0C /* SpotifyAPI.swift in Sources */,
 				B7CA552052205086EC43A233 /* SpotifyAuth.swift in Sources */,
