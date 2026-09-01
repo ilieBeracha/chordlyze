@@ -42,3 +42,31 @@ def test_derive_isrc():
     assert _derive_isrc("shazam-1234", None) is None          # shazamID fallback key
     assert _derive_isrc("5AQuUEnrfiGM3dfUBTIutY", None) is None  # spotify id
     assert _derive_isrc("anything", "GBAYE0601498") == "GBAYE0601498"
+
+
+def test_normalize_title():
+    from chordlyze_backend.main import normalize_title
+    assert normalize_title("Song (feat. Foo)") == "Song"
+    assert normalize_title("Song - Remastered 2011") == "Song"
+    assert normalize_title("Song [Live]") == "Song"
+    assert normalize_title("Plain") == "Plain"
+
+
+def test_score_candidate():
+    from chordlyze_backend.main import score_candidate
+    good = {"trackName": "Song", "artistName": "Artist", "duration": 200}
+    assert score_candidate(good, "Song (feat. X)", "Artist", 202) > 0.7
+    wrong = {"trackName": "Other Tune", "artistName": "Nobody", "duration": 200}
+    assert score_candidate(wrong, "Song", "Artist", 200) == 0.0
+    off_duration = {"trackName": "Song", "artistName": "Artist", "duration": 260}
+    assert score_candidate(off_duration, "Song", "Artist", 200) == 0.0
+
+
+def test_synthesize_lines():
+    from chordlyze_backend.main import synthesize_lines
+    lines = synthesize_lines("one\n\ntwo\nthree", 100.0)
+    assert [l["text"] for l in lines] == ["one", "two", "three"]
+    assert lines[0]["time"] == 5.0            # 5% in
+    assert lines[-1]["time"] < 93.0           # ends before 93%
+    assert lines[0]["time"] < lines[1]["time"] < lines[2]["time"]
+    assert synthesize_lines("", 100.0) == []

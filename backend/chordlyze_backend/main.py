@@ -247,9 +247,9 @@ def parse_synced_lyrics(synced: str) -> list[dict]:
     return lines
 
 
-def _lrclib_get(params: dict) -> dict | None:
+def _lrclib(endpoint: str, params: dict):
     q = urllib.parse.urlencode(params)
-    req = urllib.request.Request(f"https://lrclib.net/api/get?{q}",
+    req = urllib.request.Request(f"https://lrclib.net/api/{endpoint}?{q}",
                                  headers={"User-Agent": "Chordlyze/0.1"})
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
@@ -260,6 +260,72 @@ def _lrclib_get(params: dict) -> dict | None:
         raise
 
 
+def _lrclib_get(params: dict) -> dict | None:
+    return _lrclib("get", params)
+
+
+_TITLE_NOISE = re.compile(
+    r"\s*[\(\[][^\)\]]*[\)\]]|\s+-\s+.*$", re.IGNORECASE)
+
+
+def normalize_title(title: str) -> str:
+    """Strip '(feat. X)', '[Remix]', '- Remastered 2011' style noise."""
+    cleaned = _TITLE_NOISE.sub("", title).strip()
+    return cleaned or title
+
+
+def score_candidate(cand: dict, title: str, artist: str,
+                    duration: float | None) -> float:
+    """0..1 match quality for an LRCLIB search result; 0 = reject."""
+    from difflib import SequenceMatcher
+
+    def sim(a: str, b: str) -> float:
+        return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
+
+    title_score = max(sim(cand.get("trackName") or "", title),
+                      sim(cand.get("trackName") or "", normalize_title(title)))
+    artist_score = sim(cand.get("artistName") or "", artist) if artist else 0.7
+    if title_score < 0.55 or artist_score < 0.45:
+        return 0.0
+    score = 0.55 * title_score + 0.35 * artist_score
+    if duration and cand.get("duration"):
+        diff = abs(float(cand["duration"]) - duration)
+        if diff > 10:
+            return 0.0
+        score += 0.10 * max(0.0, 1 - diff / 10)
+    return score
+
+
+def _search_lrclib(title: str, artist: str, duration: float | None) -> dict | None:
+    """Fuzzy fallback: best-scoring search result that carries lyrics."""
+    results = _lrclib("search", {"track_name": normalize_title(title),
+                                 "artist_name": artist}) or []
+    scored = [(score_candidate(c, title, artist, duration), c)
+              for c in results if c.get("syncedLyrics") or c.get("plainLyrics")]
+    # Synced beats plain at equal score.
+    scored.sort(key=lambda t: (t[0], bool(t[1].get("syncedLyrics"))), reverse=True)
+    if scored and scored[0][0] > 0:
+        return scored[0][1]
+    return None
+
+
+def synthesize_lines(plain: str, duration: float | None) -> list[dict]:
+    """Rough line times for unsynced lyrics: char-weighted spread over the song."""
+    texts = [ln.strip() for ln in plain.splitlines() if ln.strip()]
+    if not texts:
+        return []
+    if not duration or duration <= 0:
+        return [{"time": round(4.0 * i, 2), "text": t} for i, t in enumerate(texts)]
+    start, end = duration * 0.05, duration * 0.93
+    weights = [max(len(t), 8) for t in texts]
+    total = sum(weights)
+    lines, at = [], start
+    for text, w in zip(texts, weights):
+        lines.append({"time": round(at, 2), "text": text})
+        at += (end - start) * w / total
+    return lines
+
+
 @app.get("/lyrics")
 def lyrics(title: str, artist: str = "", duration: float | None = None,
            album: str | None = None) -> dict:
@@ -268,12 +334,13 @@ def lyrics(title: str, artist: str = "", duration: float | None = None,
     digest = hashlib.sha256(
         f"{title}|{artist}|{album or ''}|{round(duration) if duration else ''}"
         .lower().encode()).hexdigest()[:24]
-    # v2: includes word-level times when available.
-    cached = CACHE_DIR / f"lyrics2-{digest}.json"
+    # v3: fuzzy search + plain-lyrics fallback, with match metadata.
+    cached = CACHE_DIR / f"lyrics3-{digest}.json"
     if cached.exists():
         return json.loads(cached.read_text())
 
     params = {"track_name": title, "artist_name": artist}
+    matched = "exact"
     data = None
     if duration or album:
         exact = dict(params)
@@ -283,14 +350,23 @@ def lyrics(title: str, artist: str = "", duration: float | None = None,
             exact["duration"] = round(duration)
         data = _lrclib_get(exact)
     if data is None:
-        data = _lrclib_get(params)  # relaxed fallback
+        data = _lrclib_get(params)
+    if data is None or not (data.get("syncedLyrics") or data.get("plainLyrics")):
+        data = _search_lrclib(title, artist, duration)
+        matched = "fuzzy"
     if data is None:
         raise HTTPException(404, "lyrics not found")
 
+    synced = True
     lines = parse_synced_lyrics(data.get("syncedLyrics") or "")
     if not lines:
-        raise HTTPException(404, "no synced lyrics for this song")
-    result = {"duration": data.get("duration"), "lines": lines}
+        lines = synthesize_lines(data.get("plainLyrics") or "",
+                                 duration or data.get("duration"))
+        synced = False
+    if not lines:
+        raise HTTPException(404, "no lyrics for this song")
+    result = {"duration": data.get("duration"), "lines": lines,
+              "synced": synced, "matched": matched}
     cached.write_text(json.dumps(result))
     return result
 
