@@ -99,6 +99,7 @@ enum BackendClient {
         var betaNote: String? {
             if !synced { return "lyrics not synced — not from Spotify · beta" }
             if matched == "fuzzy" { return "lyrics matched externally — not from Spotify · beta" }
+            if matched == "aligned" { return "lyrics timed from song audio · beta" }
             return nil
         }
     }
