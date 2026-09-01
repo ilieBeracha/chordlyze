@@ -107,8 +107,47 @@ def _cached_by_isrc(track_id: str, isrc: str | None,
     return json.loads(_track_cache_path(track_id).read_text())
 
 
+def _align_digest(title: str, artist: str) -> str:
+    return hashlib.sha256(f"{title}|{artist}".lower().encode()).hexdigest()[:24]
+
+
+def _fetch_lyric_texts(title: str, artist: str) -> list[str]:
+    data = _lrclib_get({"track_name": title, "artist_name": artist})
+    if data is None or not (data.get("syncedLyrics") or data.get("plainLyrics")):
+        data = _search_lrclib(title, artist, None)
+    if data is None:
+        return []
+    if data.get("syncedLyrics"):
+        return [ln["text"] for ln in parse_synced_lyrics(data["syncedLyrics"])]
+    return [ln.strip() for ln in (data.get("plainLyrics") or "").splitlines()
+            if ln.strip()]
+
+
+def _align_task(audio_path: str, title: str, artist: str) -> None:
+    """Background: real lyric line times from the captured audio (whisper)."""
+    from .alignment import align
+    try:
+        out = _align_cache_path(title, artist)
+        if out.exists():
+            return
+        texts = _fetch_lyric_texts(title, artist)
+        if not texts:
+            return
+        aligned = align(audio_path, texts)
+        if aligned:
+            out.write_text(json.dumps({"duration": None, "lines": aligned,
+                                       "synced": True, "matched": "aligned"}))
+    finally:
+        Path(audio_path).unlink(missing_ok=True)
+
+
+def _align_cache_path(title: str, artist: str) -> Path:
+    return CACHE_DIR / f"align-{_align_digest(title, artist)}.json"
+
+
 @app.post("/analyze")
 async def analyze_upload(
+    background: BackgroundTasks,
     file: UploadFile,
     track_id: str | None = Form(default=None),
     title: str | None = Form(default=None),
@@ -143,6 +182,11 @@ async def analyze_upload(
     cached.write_text(json.dumps(result))
     if track_id:
         _save_track(track_id, result, title, artist)
+    if title and not _align_cache_path(title, artist or "").exists():
+        # Full-song audio in hand: align real lyric times in the background.
+        keep = CACHE_DIR / f"align-src-{digest}{suffix}"
+        keep.write_bytes(data)
+        background.add_task(_align_task, str(keep), title, artist or "")
     return result
 
 
@@ -339,6 +383,11 @@ def lyrics(title: str, artist: str = "", duration: float | None = None,
     digest = hashlib.sha256(
         f"{title}|{artist}|{album or ''}|{round(duration) if duration else ''}"
         .lower().encode()).hexdigest()[:24]
+    # Audio-aligned times (from a full-song capture) beat every other source.
+    aligned = _align_cache_path(title, artist)
+    if aligned.exists():
+        return json.loads(aligned.read_text())
+
     # v4: tighter fuzzy gate (±5s, high bar without duration).
     cached = CACHE_DIR / f"lyrics4-{digest}.json"
     if cached.exists():
