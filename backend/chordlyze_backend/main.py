@@ -166,13 +166,45 @@ async def analyze_track(
 
 
 _LRC_LINE = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]\s?(.*)")
+# Enhanced LRC (A2) word timestamps inside a line: <mm:ss.xx>word
+_LRC_WORD = re.compile(r"<(\d+):(\d+(?:\.\d+)?)>")
+
+
+def parse_synced_lyrics(synced: str) -> list[dict]:
+    """LRC -> [{time, text, words?}]. Word-level times included when the file
+    uses enhanced LRC (<mm:ss.xx> tags); plain lines get just time+text."""
+    lines = []
+    for raw in synced.splitlines():
+        m = _LRC_LINE.match(raw.strip())
+        if not m:
+            continue
+        body = m.group(3).strip()
+        words = []
+        # Split "…<t1>w1 <t2>w2…" into (stamp, following-text) pairs.
+        parts = _LRC_WORD.split(body)
+        if len(parts) > 1:
+            # parts = [prefix, min, sec, text, min, sec, text, ...]
+            for i in range(1, len(parts) - 2, 3):
+                t = int(parts[i]) * 60 + float(parts[i + 1])
+                text = parts[i + 2].strip()
+                if text:
+                    words.append({"time": round(t, 3), "text": text})
+        clean = " ".join(w["text"] for w in words) if words else body
+        if not clean:
+            continue
+        line = {"time": int(m.group(1)) * 60 + float(m.group(2)), "text": clean}
+        if words:
+            line["words"] = words
+        lines.append(line)
+    return lines
 
 
 @app.get("/lyrics")
 def lyrics(title: str, artist: str = "") -> dict:
     """Time-synced lyrics from LRCLIB, cached on disk."""
     digest = hashlib.sha256(f"{title}|{artist}".lower().encode()).hexdigest()[:24]
-    cached = CACHE_DIR / f"lyrics-{digest}.json"
+    # v2: includes word-level times when available.
+    cached = CACHE_DIR / f"lyrics2-{digest}.json"
     if cached.exists():
         return json.loads(cached.read_text())
 
@@ -187,12 +219,7 @@ def lyrics(title: str, artist: str = "") -> dict:
             raise HTTPException(404, "lyrics not found") from exc
         raise
 
-    lines = []
-    for raw in (data.get("syncedLyrics") or "").splitlines():
-        m = _LRC_LINE.match(raw.strip())
-        if m and m.group(3).strip():
-            lines.append({"time": int(m.group(1)) * 60 + float(m.group(2)),
-                          "text": m.group(3).strip()})
+    lines = parse_synced_lyrics(data.get("syncedLyrics") or "")
     if not lines:
         raise HTTPException(404, "no synced lyrics for this song")
     result = {"duration": data.get("duration"), "lines": lines}
