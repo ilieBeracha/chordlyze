@@ -74,8 +74,11 @@ struct LiveNowView: View {
             ChordDiagramSheet(chord: selected.name)
         }
         .task {
+            // Synthesized (unsynced) timing would drift against the song —
+            // the live view only follows genuinely synced lyrics.
             if let result = await BackendClient.lyrics(title: title, artist: artist,
-                                                       duration: trackDuration, album: album) {
+                                                       duration: trackDuration, album: album),
+               result.synced {
                 lines = SheetModel.build(analysis: analysis, lines: result.lines)
                 lyricsNote = result.betaNote
             } else {
