@@ -32,35 +32,7 @@ struct AnalysisTabsView: View {
             Rectangle().fill(Palette.separator).frame(height: 0.5)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 8) {
-                        if let trackID {
-                            NavigationLink {
-                                PracticeView(analysis: analysis, title: title,
-                                             artist: artist, trackID: trackID)
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "mic.fill")
-                                        .font(.system(size: 11, weight: .bold))
-                                    Text("Practice")
-                                        .font(.system(size: 13, weight: .bold))
-                                }
-                                .foregroundStyle(.black)
-                                .padding(.vertical, 8)
-                                .padding(.horizontal, 16)
-                                .background(Capsule().fill(Color.spotifyGreen))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        if simple {
-                            Text(capo == 0 ? "No capo" : "Capo \(capo)")
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color.spotifyGreen)
-                                .padding(.vertical, 8).padding(.horizontal, 12)
-                                .background(Capsule().fill(Palette.greenTintFill))
-                        }
-                        Spacer()
-                        transposeStepper
-                    }
+                    toolbox
                     .padding(.bottom, 12)
                     if showTimeline {
                         AnalysisResultView(analysis: analysis, transposeBy: shift, embedded: true,
@@ -83,6 +55,91 @@ struct AnalysisTabsView: View {
     }
 
     /// Manual key shift for singers: −6…+6 semitones on top of capo mode.
+    /// One contained control strip: Practice · Transpose · Capo.
+    private var toolbox: some View {
+        HStack(spacing: 0) {
+            if let trackID {
+                NavigationLink {
+                    PracticeView(analysis: analysis, title: title,
+                                 artist: artist, trackID: trackID)
+                } label: {
+                    toolCell("PRACTICE") {
+                        HStack(spacing: 6) {
+                            Image(systemName: "mic.fill")
+                                .font(.system(size: 12, weight: .bold))
+                            Text("Start")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                        }
+                        .foregroundStyle(Color.spotifyGreen)
+                    }
+                }
+                .buttonStyle(.plain)
+                toolDivider
+            }
+            toolCell("TRANSPOSE") {
+                HStack(spacing: 2) {
+                    Button {
+                        if manualShift > -6 { manualShift -= 1 }
+                    } label: {
+                        Image(systemName: "minus")
+                            .frame(width: 26, height: 24)
+                    }
+                    Button {
+                        manualShift = 0
+                    } label: {
+                        Text(manualShift == 0 ? "±0" : String(format: "%+d", manualShift))
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .foregroundStyle(manualShift == 0 ? Palette.secondary : Color.spotifyGreen)
+                            .frame(width: 30)
+                    }
+                    Button {
+                        if manualShift < 6 { manualShift += 1 }
+                    } label: {
+                        Image(systemName: "plus")
+                            .frame(width: 26, height: 24)
+                    }
+                }
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+                .buttonStyle(.plain)
+            }
+            toolDivider
+            Button {
+                simple.toggle()
+            } label: {
+                toolCell("CAPO") {
+                    Text(simple ? (capo == 0 ? "None" : "\(capo)") : "Off")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(simple ? Color.spotifyGreen : Palette.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Palette.card))
+    }
+
+    private func toolCell<Content: View>(_ label: String,
+                                         @ViewBuilder content: () -> Content) -> some View {
+        VStack(spacing: 5) {
+            Text(label)
+                .font(.system(size: 9, weight: .bold))
+                .tracking(1.0)
+                .foregroundStyle(Palette.tertiary)
+            content()
+                .frame(height: 24)
+        }
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+    }
+
+    private var toolDivider: some View {
+        Rectangle()
+            .fill(Palette.separator)
+            .frame(width: 0.5, height: 34)
+    }
+
     private var transposeStepper: some View {
         HStack(spacing: 0) {
             Button {
