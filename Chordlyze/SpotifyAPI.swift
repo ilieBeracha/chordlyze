@@ -97,13 +97,6 @@ final class SpotifyAPI: ObservableObject {
         return page.items
     }
 
-    /// Batch track metadata (max 50 ids per call).
-    func tracks(ids: [String]) async throws -> [Track] {
-        struct Page: Decodable { let tracks: [Track?] }
-        let page: Page = try await get("tracks?ids=\(ids.joined(separator: ","))")
-        return page.tracks.compactMap { $0 }
-    }
-
     func savedTracksTotal() async throws -> Int {
         struct Page: Decodable { let total: Int }
         let page: Page = try await get("me/tracks?limit=1")

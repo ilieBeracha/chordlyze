@@ -15,9 +15,7 @@ struct LibraryView: View {
         }
     }
 
-    @EnvironmentObject var auth: SpotifyAuth
     @State private var items: [BackendClient.LibraryItem] = []
-    @State private var artwork: [String: URL] = [:]
     @State private var error: String?
     @State private var loading = true
     @AppStorage("librarySort") private var sortRaw = SortMode.recent.rawValue
@@ -111,7 +109,7 @@ struct LibraryView: View {
 
     private func row(_ item: BackendClient.LibraryItem) -> some View {
         HStack(spacing: 13) {
-            AsyncImage(url: artwork[item.trackId]) { image in
+            AsyncImage(url: item.artworkURL) { image in
                 image.resizable().aspectRatio(contentMode: .fill)
             } placeholder: {
                 LinearGradient(colors: [Color(hex: 0x2C2C2E), Color(hex: 0x1C1C1E)],
@@ -198,24 +196,6 @@ struct LibraryView: View {
             self.error = "Could not load library: \(error.localizedDescription)"
         }
         loading = false
-        await loadArtwork()
-    }
-
-    /// Album art for Spotify-keyed rows (mic captures keep the placeholder).
-    private func loadArtwork() async {
-        let spotifyIDs = items.map(\.trackId)
-            .filter { artwork[$0] == nil && !$0.hasPrefix("shazam-") && $0.count == 22 }
-        guard !spotifyIDs.isEmpty else { return }
-        let api = SpotifyAPI(auth: auth)
-        for chunk in stride(from: 0, to: spotifyIDs.count, by: 50)
-            .map({ Array(spotifyIDs[$0..<min($0 + 50, spotifyIDs.count)]) }) {
-            guard let tracks = try? await api.tracks(ids: chunk) else { continue }
-            for track in tracks {
-                if let url = (track.album.images?.last?.url).flatMap(URL.init) {
-                    artwork[track.id] = url
-                }
-            }
-        }
     }
 }
 

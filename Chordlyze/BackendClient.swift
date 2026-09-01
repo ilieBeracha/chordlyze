@@ -67,9 +67,16 @@ enum BackendClient {
         let title: String?
         let artist: String?
         let key: String?
+        let artwork: String?
         var id: String { trackId }
         enum CodingKeys: String, CodingKey {
-            case trackId = "track_id", title, artist, key
+            case trackId = "track_id", title, artist, key, artwork
+        }
+
+        /// iTunes thumb upscaled for retina 46pt rows.
+        var artworkURL: URL? {
+            artwork.map { $0.replacingOccurrences(of: "100x100", with: "200x200") }
+                .flatMap(URL.init)
         }
     }
 
