@@ -103,8 +103,10 @@ def analyze(segments: list[ChordSegment]) -> dict:
         entry = seg.to_dict()
         entry["roman"] = roman_numeral(seg.label, key) if key else None
         chords.append(entry)
+    from .difficulty import difficulty
     return {
         "key": key.name if key else None,
         "key_confidence": key.confidence if key else None,
         "chords": chords,
+        "difficulty": difficulty(chords),
     }

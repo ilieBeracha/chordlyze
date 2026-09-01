@@ -437,8 +437,24 @@ def library() -> dict:
             "artist": data.get("artist"),
             "key": data.get("key"),
             "artwork": data.get("artwork"),
+            "difficulty": data.get("difficulty"),
         })
     return {"items": items}
+
+
+@app.post("/library/backfill_difficulty")
+def backfill_difficulty() -> dict:
+    """Compute difficulty for analyses saved before the field existed."""
+    from .analysis.difficulty import difficulty
+    updated = 0
+    for path in CACHE_DIR.glob("track-*.json"):
+        data = json.loads(path.read_text())
+        if data.get("difficulty") is not None or not data.get("chords"):
+            continue
+        data["difficulty"] = difficulty(data["chords"])
+        path.write_text(json.dumps(data))
+        updated += 1
+    return {"updated": updated}
 
 
 def _backfill_artwork() -> None:
