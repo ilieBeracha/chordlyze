@@ -23,10 +23,10 @@
 		A81A4D30F5FC3E622D1BE1A2 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97301991890B494924679808 /* SearchView.swift */; };
 		B674DCCE4D245E938BC179F2 /* PlaylistsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74327AC9AC251365E2B4429F /* PlaylistsView.swift */; };
 		B7CA552052205086EC43A233 /* SpotifyAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7137E803C002FAEC4B13BC6A /* SpotifyAuth.swift */; };
-		BEDC1E98D7DA33C037C4F810 /* NowPlayingCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49DEFD8FD3A7934F3D3EC984 /* NowPlayingCard.swift */; };
 		C2D3DBA369FE2FCC2F82E0E9 /* ChordSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F25A477EBBECFCAB181FC4B9 /* ChordSheetView.swift */; };
 		C3DA1E6478B27FDDD14302A9 /* ChordDiagramSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 084B36CA9E995C690A1D8FEE /* ChordDiagramSheet.swift */; };
 		CEC3C7029CBBADE0C783E692 /* ListenRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA19561C8AB52CCD9FEB0DCD /* ListenRecorder.swift */; };
+		D4D4778DF0881A4E1A722B5A /* ArtworkColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 229879235E591BEFFB136C65 /* ArtworkColor.swift */; };
 		DF8D6FE40BD9E5FA79E5F1BF /* SheetModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BA9465F7DCB9D992A1C4F3B /* SheetModel.swift */; };
 		E7D8FF3747FE41AF1E3F5CB9 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4808D969DCC674CF4F8881C7 /* Keychain.swift */; };
 		E9167BC65303156A07B3F87A /* SpotifyNowPlaying.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9466B007A80465DD43B8334 /* SpotifyNowPlaying.swift */; };
@@ -37,12 +37,12 @@
 /* Begin PBXFileReference section */
 		084B36CA9E995C690A1D8FEE /* ChordDiagramSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordDiagramSheet.swift; sourceTree = "<group>"; };
 		1876BBFA097772E3C9CF64D3 /* ChordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordView.swift; sourceTree = "<group>"; };
+		229879235E591BEFFB136C65 /* ArtworkColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkColor.swift; sourceTree = "<group>"; };
 		23B15D6273A8FCAE054073D6 /* AutoSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoSession.swift; sourceTree = "<group>"; };
 		30ACA8DA715E5954990AADD9 /* ChordShapes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordShapes.swift; sourceTree = "<group>"; };
 		3B5F39F29A534B7E488CE8FE /* ChordlyzeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordlyzeApp.swift; sourceTree = "<group>"; };
 		3E4FF07B614A2CF0ABCC7DAC /* SpotifyAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyAPI.swift; sourceTree = "<group>"; };
 		4808D969DCC674CF4F8881C7 /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
-		49DEFD8FD3A7934F3D3EC984 /* NowPlayingCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingCard.swift; sourceTree = "<group>"; };
 		4BA9465F7DCB9D992A1C4F3B /* SheetModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SheetModel.swift; sourceTree = "<group>"; };
 		5C2B900763ACAA5E17D8CF4E /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		5EAB26A01240370A7EAF0A82 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -84,7 +84,6 @@
 				B720782996747E23D75C8D13 /* LiveHostViews.swift */,
 				C2632D6D5B8D8A2C886C3E9D /* LiveNowView.swift */,
 				62445138AF6604CD03089074 /* LoginView.swift */,
-				49DEFD8FD3A7934F3D3EC984 /* NowPlayingCard.swift */,
 				74327AC9AC251365E2B4429F /* PlaylistsView.swift */,
 				6F5B942830EA8AE8A9C87C42 /* ProfileView.swift */,
 				97301991890B494924679808 /* SearchView.swift */,
@@ -103,6 +102,7 @@
 		6F7BFBE31DF725F9D50BD363 /* Chordlyze */ = {
 			isa = PBXGroup;
 			children = (
+				229879235E591BEFFB136C65 /* ArtworkColor.swift */,
 				A853A3C0BCE08FF833A993F5 /* Assets.xcassets */,
 				23B15D6273A8FCAE054073D6 /* AutoSession.swift */,
 				E1243AB5316165B94E89C1FE /* BackendClient.swift */,
@@ -193,6 +193,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D4D4778DF0881A4E1A722B5A /* ArtworkColor.swift in Sources */,
 				7427BB89994D135EEB50B26F /* AutoSession.swift in Sources */,
 				2BA907A328198DD7AD731B7C /* BackendClient.swift in Sources */,
 				C3DA1E6478B27FDDD14302A9 /* ChordDiagramSheet.swift in Sources */,
@@ -208,7 +209,6 @@
 				819EA82C7039FDCF503E5133 /* LiveHostViews.swift in Sources */,
 				693E17329B4789EEA5A5E1B1 /* LiveNowView.swift in Sources */,
 				6A2B6688285C7D9AA0B2A958 /* LoginView.swift in Sources */,
-				BEDC1E98D7DA33C037C4F810 /* NowPlayingCard.swift in Sources */,
 				B674DCCE4D245E938BC179F2 /* PlaylistsView.swift in Sources */,
 				F4D6A14494B7A9BE7FB7459C /* ProfileView.swift in Sources */,
 				A81A4D30F5FC3E622D1BE1A2 /* SearchView.swift in Sources */,

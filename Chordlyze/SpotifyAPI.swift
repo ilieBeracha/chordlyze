@@ -97,6 +97,18 @@ final class SpotifyAPI: ObservableObject {
         return page.items
     }
 
+    func savedTracksTotal() async throws -> Int {
+        struct Page: Decodable { let total: Int }
+        let page: Page = try await get("me/tracks?limit=1")
+        return page.total
+    }
+
+    func topTracksTotal() async throws -> Int {
+        struct Page: Decodable { let total: Int }
+        let page: Page = try await get("me/top/tracks?limit=1&time_range=medium_term")
+        return page.total
+    }
+
     struct CurrentlyPlaying: Decodable {
         let progressMs: Int?
         let isPlaying: Bool
