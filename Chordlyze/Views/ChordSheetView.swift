@@ -33,45 +33,32 @@ struct AnalysisTabsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 8) {
-                        if let diff = analysis.difficulty {
-                            HStack(spacing: 5) {
-                                Circle()
-                                    .fill(LibraryView.difficultyColor(diff.level))
-                                    .frame(width: 6, height: 6)
-                                Text(diff.level.uppercased())
-                                    .font(.system(size: 10, weight: .bold))
-                                    .tracking(0.8)
-                                    .foregroundStyle(Palette.secondary)
-                            }
-                            .padding(.vertical, 5).padding(.horizontal, 10)
-                            .background(Capsule().fill(Palette.elevated))
-                        }
-                        if simple {
-                            Text(capo == 0 ? "No capo needed" : "Capo \(capo)")
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color.spotifyGreen)
-                                .padding(.vertical, 5).padding(.horizontal, 10)
-                                .background(Capsule().fill(Palette.greenTintFill))
-                        }
-                        Spacer()
                         if let trackID {
                             NavigationLink {
                                 PracticeView(analysis: analysis, title: title,
                                              artist: artist, trackID: trackID)
                             } label: {
-                                HStack(spacing: 5) {
+                                HStack(spacing: 6) {
                                     Image(systemName: "mic.fill")
-                                        .font(.system(size: 10, weight: .bold))
+                                        .font(.system(size: 11, weight: .bold))
                                     Text("Practice")
-                                        .font(.system(size: 12, weight: .bold))
+                                        .font(.system(size: 13, weight: .bold))
                                 }
                                 .foregroundStyle(.black)
-                                .padding(.vertical, 6)
-                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 16)
                                 .background(Capsule().fill(Color.spotifyGreen))
                             }
                             .buttonStyle(.plain)
                         }
+                        if simple {
+                            Text(capo == 0 ? "No capo" : "Capo \(capo)")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundStyle(Color.spotifyGreen)
+                                .padding(.vertical, 8).padding(.horizontal, 12)
+                                .background(Capsule().fill(Palette.greenTintFill))
+                        }
+                        Spacer()
                         transposeStepper
                     }
                     .padding(.bottom, 12)
@@ -133,10 +120,20 @@ struct AnalysisTabsView: View {
                     .font(.system(size: 17, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(1)
-                Text(subtitle)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Palette.secondary)
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Text(subtitle)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Palette.secondary)
+                        .lineLimit(1)
+                    if let diff = analysis.difficulty {
+                        Circle()
+                            .fill(LibraryView.difficultyColor(diff.level))
+                            .frame(width: 5, height: 5)
+                        Text(diff.level.capitalized)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Palette.secondary)
+                    }
+                }
             }
             Spacer(minLength: 8)
             togglePill("Original", selected: !simple) { simple = false }
