@@ -16,6 +16,7 @@ import tempfile
 import threading
 import time
 import urllib.error
+import uuid
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -479,6 +480,55 @@ def backfill_artwork(background: BackgroundTasks) -> dict:
                   if not json.loads(p.read_text()).get("artwork"))
     background.add_task(_backfill_artwork)
     return {"queued": missing}
+
+
+@app.post("/practice_take")
+async def practice_take(
+    file: UploadFile,
+    track_id: str = Form(...),
+    offset: float = Form(default=0.0),
+) -> dict:
+    """Score a practice recording (instrument only, song in headphones)
+    against the track's reference chart."""
+    ref_path = _track_cache_path(track_id)
+    if not ref_path.exists():
+        raise HTTPException(404, "no analysis for this track yet")
+    reference = json.loads(ref_path.read_text())
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "empty upload")
+    suffix = Path(file.filename or "take.m4a").suffix or ".m4a"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(data)
+        tmp_path = Path(tmp.name)
+    try:
+        segments = await anyio.to_thread.run_sync(_recognize_locked, tmp_path)
+    except AudioDecodeError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    from .practice import score_take
+    report = score_take(reference.get("chords", []),
+                        [s.to_dict() for s in segments], offset)
+    if "error" in report:
+        raise HTTPException(422, report["error"])
+    take_id = uuid.uuid4().hex[:12]
+    entry = {"take_id": take_id, "track_id": track_id, "at": time.time(), **report}
+    (CACHE_DIR / f"take-{take_id}.json").write_text(json.dumps(entry))
+    return entry
+
+
+@app.get("/practice/history/{track_id}")
+def practice_history(track_id: str) -> dict:
+    takes = []
+    for path in CACHE_DIR.glob("take-*.json"):
+        data = json.loads(path.read_text())
+        if data.get("track_id") == track_id:
+            takes.append(data)
+    takes.sort(key=lambda t: t.get("at", 0), reverse=True)
+    return {"takes": takes}
 
 
 @app.get("/analysis/track/{track_id}")
