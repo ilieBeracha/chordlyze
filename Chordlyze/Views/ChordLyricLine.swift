@@ -47,20 +47,22 @@ struct ChordLyricLine: View {
         }
     }
 
-    /// Split into words and attach each chord to the word its position lands on
-    /// (fraction of characters, matching the fraction of the time window).
+    /// Split into words and attach each chord to the word its position lands on.
+    /// Words are weighted by syllable count — singing time tracks syllables,
+    /// not characters.
     static func tokens(text: String, chords: [SheetModel.PlacedChord]) -> [Token] {
         let words = text.split(separator: " ").map(String.init)
         guard !words.isEmpty else { return [] }
-        let total = Double(max(1, text.count))
+        let weights = SheetModel.syllableWeights(words: words).map(Double.init)
+        let total = weights.reduce(0, +)
 
-        // Fractional character range each word covers.
+        // Fractional syllable range each word covers.
         var ranges: [(start: Double, end: Double)] = []
-        var consumed = 0
-        for word in words {
-            let start = Double(consumed) / total
-            consumed += word.count + 1  // +1 for the space
-            ranges.append((start, Double(min(consumed, text.count)) / total))
+        var consumed = 0.0
+        for weight in weights {
+            let start = consumed / total
+            consumed += weight
+            ranges.append((start, consumed / total))
         }
 
         var byWord: [Int: [SheetModel.PlacedChord]] = [:]

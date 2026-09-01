@@ -63,22 +63,12 @@ struct NowPlayingCard: View {
         .padding(.horizontal, 20)
         .background(cardShape)
 
-        return Group {
-            if let analysis {
-                NavigationLink {
-                    LiveNowView(title: track.name, artist: track.artistNames,
-                                analysis: analysis,
-                                trackDuration: (track.durationMs).map { Double($0) / 1000 }) {
-                        nowPlaying.livePosition()
-                    }
-                } label: {
-                    body
-                }
-                .buttonStyle(.plain)
-            } else {
-                body
-            }
+        return NavigationLink {
+            SpotifyLiveView()
+        } label: {
+            body
         }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -173,17 +163,12 @@ struct NowPlayingCard: View {
     private var micCard: some View {
         ZStack(alignment: .topTrailing) {
             if let entry = micSession.nowEntry {
-                if let analysis = entry.analysis {
-                    NavigationLink {
-                        LiveNowView(title: entry.title, artist: entry.artist,
-                                    analysis: analysis) { micSession.livePosition(for: entry.id) }
-                    } label: {
-                        micSongBody(entry, analysis: analysis)
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    micSongBody(entry, analysis: nil)
+                NavigationLink {
+                    MicLiveView()
+                } label: {
+                    micSongBody(entry, analysis: entry.analysis)
                 }
+                .buttonStyle(.plain)
             } else {
                 listeningBody
             }

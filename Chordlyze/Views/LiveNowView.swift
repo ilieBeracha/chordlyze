@@ -155,7 +155,30 @@ struct LiveNowView: View {
                 let current = lines[index]
                 let rtl = current.text.isRTLText
                 Group {
-                    if rtl {
+                    if current.isInstrumental {
+                        VStack(alignment: .leading, spacing: 16) {
+                            if !current.chords.isEmpty {
+                                HStack(spacing: 8) {
+                                    ForEach(grouped(current.chords)) { group in
+                                        chordChip(group)
+                                    }
+                                }
+                            }
+                            HStack(spacing: 8) {
+                                Image(systemName: "music.quarternote.3")
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text("Instrumental")
+                                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                let left = max(0, Int((current.end - position).rounded(.up)))
+                                if left > 0, left <= 30 {
+                                    Text("· lyrics in \(left)s")
+                                        .font(.system(size: 14, design: .rounded))
+                                        .foregroundStyle(Palette.secondary)
+                                }
+                            }
+                            .foregroundStyle(Palette.secondaryAlt)
+                        }
+                    } else if rtl {
                         // Word-level pinning is ambiguous in RTL — keep chips above the line.
                         VStack(alignment: .trailing, spacing: 14) {
                             if !current.chords.isEmpty {
