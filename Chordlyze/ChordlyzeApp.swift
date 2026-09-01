@@ -27,7 +27,7 @@ enum Config {
     /// Register an app at https://developer.spotify.com/dashboard and paste its Client ID.
     static let spotifyClientID = "bf522f5e658143baaeb6945b49f751e2"
     static let redirectURI = "chordlyze://callback"
-    static let scopes = "playlist-read-private playlist-read-collaborative user-library-read user-top-read user-read-currently-playing user-read-playback-state"
+    static let scopes = "playlist-read-private playlist-read-collaborative user-library-read user-top-read user-read-currently-playing user-read-playback-state user-modify-playback-state"
     /// Deployed chord-analysis backend (Fly.io). For local backend work,
     /// temporarily point this at http://127.0.0.1:8787.
     static let backendBaseURL = URL(string: "https://chordlyze-api.fly.dev")!

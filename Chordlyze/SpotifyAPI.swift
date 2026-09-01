@@ -132,6 +132,21 @@ final class SpotifyAPI: ObservableObject {
         return try JSONDecoder().decode(CurrentlyPlaying.self, from: data)
     }
 
+    /// Seek the account's active playback. Needs Premium + playback scope.
+    func seek(toMs ms: Int) async throws {
+        let token = try await auth.validToken()
+        var req = URLRequest(url: URL(string: "https://api.spotify.com/v1/me/player/seek?position_ms=\(ms)")!)
+        req.httpMethod = "PUT"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: req)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 || status == 204 else {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw NSError(domain: "SpotifyAPI", code: status,
+                          userInfo: [NSLocalizedDescriptionKey: "Spotify returned \(status): \(body)"])
+        }
+    }
+
     private func get<T: Decodable>(_ path: String) async throws -> T {
         let token = try await auth.validToken()
         var req = URLRequest(url: URL(string: "https://api.spotify.com/v1/\(path)")!)

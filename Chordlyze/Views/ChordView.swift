@@ -34,7 +34,7 @@ struct ChordView: View {
         }
         .task {
             guard analysis == nil else { return }
-            if let cached = await BackendClient.cachedAnalysis(trackID: track.id) {
+            if let cached = await BackendClient.cachedAnalysis(trackID: track.id, isrc: track.isrc) {
                 analysis = cached
                 return
             }

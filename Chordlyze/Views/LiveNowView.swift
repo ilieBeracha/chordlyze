@@ -9,12 +9,23 @@ struct LiveNowView: View {
     let analysis: ChordAnalysis
     /// Full song length when known (Spotify); analysis may cover only an excerpt.
     var trackDuration: TimeInterval? = nil
+    /// Album name, used to match the exact lyrics version.
+    var album: String? = nil
+    /// Jump playback to a time; false when the player refuses (e.g. no Premium).
+    var onSeek: ((Double) async -> Bool)? = nil
     /// Live playback position source (Spotify poll or mic session anchor).
     let livePosition: () -> TimeInterval?
 
     @State private var position: Double = 0
     @State private var lines: [SheetModel.RenderLine] = []
     @State private var noLyrics = false
+    @State private var selectedChord: SelectedChord?
+    @State private var seekDenied = false
+
+    struct SelectedChord: Identifiable {
+        let name: String
+        var id: String { name }
+    }
     private let clock = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
     private var currentIndex: Int? {
@@ -51,11 +62,28 @@ struct LiveNowView: View {
                 withAnimation(.easeInOut(duration: 0.35)) { position = live }
             }
         }
+        .sheet(item: $selectedChord) { selected in
+            ChordDiagramSheet(chord: selected.name)
+        }
         .task {
-            if let lyricLines = await BackendClient.lyrics(title: title, artist: artist) {
+            if let lyricLines = await BackendClient.lyrics(title: title, artist: artist,
+                                                           duration: trackDuration, album: album) {
                 lines = SheetModel.build(analysis: analysis, lines: lyricLines)
             } else {
                 noLyrics = true
+            }
+        }
+    }
+
+    /// Tap a context line to jump playback there.
+    private func seek(to time: Double) {
+        guard let onSeek else { return }
+        Task {
+            if await onSeek(time) {
+                seekDenied = false
+                withAnimation(.easeInOut(duration: 0.35)) { position = time }
+            } else {
+                seekDenied = true
             }
         }
     }
@@ -137,16 +165,20 @@ struct LiveNowView: View {
     private var teleprompter: some View {
         let index = currentIndex ?? 0
         return VStack(alignment: .leading, spacing: 0) {
-            // 2 previous lines, fading out upward
+            // 2 previous lines, fading out upward; tap to jump back
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(Array(lines[max(0, index - 2)..<index].enumerated()), id: \.element.id) { offset, line in
-                    Text(line.text)
-                        .font(.system(size: 17, design: .rounded))
-                        .foregroundStyle(Palette.secondary)
-                        .opacity(offset == 0 && index >= 2 ? 0.22 : 0.4)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity,
-                               alignment: line.text.isRTLText ? .trailing : .leading)
+                    Button { seek(to: line.id) } label: {
+                        Text(line.text)
+                            .font(.system(size: 17, design: .rounded))
+                            .foregroundStyle(Palette.secondary)
+                            .opacity(offset == 0 && index >= 2 ? 0.22 : 0.4)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity,
+                                   alignment: line.text.isRTLText ? .trailing : .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(onSeek == nil)
                 }
             }
 
@@ -197,7 +229,8 @@ struct LiveNowView: View {
                         }
                     } else {
                         // Each chord pinned above the word it lands on.
-                        ChordLyricLine(text: current.text, chords: current.chords)
+                        ChordLyricLine(text: current.text, chords: current.chords,
+                                       onChordTap: { selectedChord = SelectedChord(name: $0) })
                     }
                 }
                 .id(current.id)
@@ -206,30 +239,49 @@ struct LiveNowView: View {
                 .padding(.vertical, 26)
             }
 
-            // 3 next lines
+            // 3 next lines; tap to jump ahead
             VStack(alignment: .leading, spacing: 16) {
                 ForEach(lines[min(lines.count, index + 1)..<min(lines.count, index + 4)]) { line in
-                    VStack(alignment: line.text.isRTLText ? .trailing : .leading, spacing: 3) {
-                        if !line.chords.isEmpty {
-                            Text(summary(line.chords))
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                                .tracking(0.8)
-                                .foregroundStyle(Palette.faint)
+                    Button { seek(to: line.id) } label: {
+                        VStack(alignment: line.text.isRTLText ? .trailing : .leading, spacing: 3) {
+                            if !line.chords.isEmpty {
+                                Text(summary(line.chords))
+                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                    .tracking(0.8)
+                                    .foregroundStyle(Palette.faint)
+                            }
+                            Text(line.text)
+                                .font(.system(size: 18, design: .rounded))
+                                .foregroundStyle(Palette.secondaryAlt)
+                                .lineLimit(1)
                         }
-                        Text(line.text)
-                            .font(.system(size: 18, design: .rounded))
-                            .foregroundStyle(Palette.secondaryAlt)
-                            .lineLimit(1)
+                        .frame(maxWidth: .infinity,
+                               alignment: line.text.isRTLText ? .trailing : .leading)
                     }
-                    .frame(maxWidth: .infinity,
-                           alignment: line.text.isRTLText ? .trailing : .leading)
+                    .buttonStyle(.plain)
+                    .disabled(onSeek == nil)
                 }
+            }
+            if seekDenied {
+                Text("Jumping needs Spotify Premium.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.tertiary)
+                    .padding(.top, 12)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func chordChip(_ group: ChordGroup) -> some View {
+        Button {
+            selectedChord = SelectedChord(name: group.name)
+        } label: {
+            chipLabel(group)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func chipLabel(_ group: ChordGroup) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
             Text(group.name)
                 .font(.system(size: 22, weight: .heavy, design: .rounded))
@@ -276,18 +328,23 @@ struct LiveNowView: View {
                         : "No synced lyrics — follow the chords.")
                 .font(.system(size: 13))
                 .foregroundStyle(Palette.secondary)
-            Text(current?.displayName ?? "…")
-                .font(.system(size: 64, weight: .heavy, design: .rounded))
-                .foregroundStyle(Color.spotifyGreen)
-                .padding(.vertical, 24)
-                .padding(.horizontal, 44)
-                .background(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(Palette.greenTintFill)
-                        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .stroke(Palette.greenTintBorder, lineWidth: 1))
-                )
-                .animation(.easeInOut(duration: 0.2), value: current?.id)
+            Button {
+                if let current { selectedChord = SelectedChord(name: current.displayName) }
+            } label: {
+                Text(current?.displayName ?? "…")
+                    .font(.system(size: 64, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Color.spotifyGreen)
+                    .padding(.vertical, 24)
+                    .padding(.horizontal, 44)
+                    .background(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .fill(Palette.greenTintFill)
+                            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .stroke(Palette.greenTintBorder, lineWidth: 1))
+                    )
+            }
+            .buttonStyle(.plain)
+            .animation(.easeInOut(duration: 0.2), value: current?.id)
             if !upcoming.isEmpty {
                 HStack(spacing: 12) {
                     Text("NEXT")

@@ -73,12 +73,25 @@ final class SpotifyNowPlaying: ObservableObject {
         }
     }
 
+    /// Jump the account's playback to `seconds`. False when Spotify refuses
+    /// (free account, or token missing the playback scope).
+    func seek(to seconds: Double) async -> Bool {
+        guard let api else { return false }
+        do {
+            try await api.seek(toMs: Int(seconds * 1000))
+            anchor = (seconds, Date())  // optimistic; next poll confirms
+            return true
+        } catch {
+            return false
+        }
+    }
+
     private func analyzeIfNeeded(_ track: Track) async {
         guard analysisKey != track.id else { return }
         analysisKey = track.id
         analysis = nil
         analysisFailed = false
-        var result = await BackendClient.cachedAnalysis(trackID: track.id)
+        var result = await BackendClient.cachedAnalysis(trackID: track.id, isrc: track.isrc)
         if result == nil {
             result = await BackendClient.analyzeTrack(trackID: track.id, isrc: track.isrc,
                                                       title: track.name, artist: track.artistNames)

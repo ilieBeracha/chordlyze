@@ -12,7 +12,9 @@ struct SpotifyLiveView: View {
                 if let analysis = nowPlaying.analysis {
                     LiveNowView(title: playing.track.name, artist: playing.track.artistNames,
                                 analysis: analysis,
-                                trackDuration: (playing.track.durationMs).map { Double($0) / 1000 }) {
+                                trackDuration: (playing.track.durationMs).map { Double($0) / 1000 },
+                                album: playing.track.album.name,
+                                onSeek: { await nowPlaying.seek(to: $0) }) {
                         nowPlaying.livePosition()
                     }
                     .id(playing.track.id)  // rebuild per song

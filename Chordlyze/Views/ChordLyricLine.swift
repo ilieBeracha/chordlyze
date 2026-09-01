@@ -13,6 +13,7 @@ struct ChordLyricLine: View {
     let chords: [SheetModel.PlacedChord]
     var wordFont: Font = .system(size: 30, weight: .bold, design: .rounded)
     var chordFont: Font = .system(size: 18, weight: .heavy, design: .rounded)
+    var onChordTap: ((String) -> Void)? = nil
 
     var body: some View {
         let tokens = Self.tokens(text: text, chords: chords)
@@ -38,10 +39,16 @@ struct ChordLyricLine: View {
         } else {
             HStack(spacing: 6) {
                 ForEach(placed) { chord in
-                    Text(chord.name)
-                        .font(chordFont)
-                        .foregroundStyle(Color.spotifyGreen)
-                        .opacity(chord.estimated ? 0.65 : 1)
+                    Button {
+                        onChordTap?(chord.name)
+                    } label: {
+                        Text(chord.name)
+                            .font(chordFont)
+                            .foregroundStyle(Color.spotifyGreen)
+                            .opacity(chord.estimated ? 0.65 : 1)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(onChordTap == nil)
                 }
             }
         }

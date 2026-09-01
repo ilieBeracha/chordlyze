@@ -51,10 +51,13 @@ struct ChordSegment: Decodable, Identifiable {
 }
 
 enum BackendClient {
-    /// Instant result if this Spotify track was analyzed before (any capture of it).
-    static func cachedAnalysis(trackID: String) async -> ChordAnalysis? {
-        let url = Config.backendBaseURL.appendingPathComponent("analysis/track/\(trackID)")
-        guard let (data, response) = try? await URLSession.shared.data(from: url),
+    /// Instant result if this track was analyzed before — by any source; the
+    /// ISRC lets the backend match analyses made via mic capture too.
+    static func cachedAnalysis(trackID: String, isrc: String? = nil) async -> ChordAnalysis? {
+        var comps = URLComponents(url: Config.backendBaseURL.appendingPathComponent("analysis/track/\(trackID)"),
+                                  resolvingAgainstBaseURL: false)!
+        if let isrc { comps.queryItems = [.init(name: "isrc", value: isrc)] }
+        guard let (data, response) = try? await URLSession.shared.data(from: comps.url!),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return try? JSONDecoder().decode(ChordAnalysis.self, from: data)
     }
@@ -78,12 +81,16 @@ enum BackendClient {
         return try JSONDecoder().decode(Page.self, from: data).items
     }
 
-    /// Time-synced lyrics; nil when the song has none.
-    static func lyrics(title: String, artist: String) async -> [LyricLine]? {
+    /// Time-synced lyrics; nil when the song has none. Duration/album narrow
+    /// the match to the right version of the song.
+    static func lyrics(title: String, artist: String,
+                       duration: Double? = nil, album: String? = nil) async -> [LyricLine]? {
         struct Response: Decodable { let lines: [LyricLine] }
         var comps = URLComponents(url: Config.backendBaseURL.appendingPathComponent("lyrics"),
                                   resolvingAgainstBaseURL: false)!
         comps.queryItems = [.init(name: "title", value: title), .init(name: "artist", value: artist)]
+        if let duration { comps.queryItems?.append(.init(name: "duration", value: String(Int(duration)))) }
+        if let album { comps.queryItems?.append(.init(name: "album", value: album)) }
         guard let (data, response) = try? await URLSession.shared.data(from: comps.url!),
               (response as? HTTPURLResponse)?.statusCode == 200,
               let parsed = try? JSONDecoder().decode(Response.self, from: data) else { return nil }
