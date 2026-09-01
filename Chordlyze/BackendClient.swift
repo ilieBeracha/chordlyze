@@ -97,7 +97,7 @@ enum BackendClient {
 
         /// Barely-visible disclosure for non-exact lyrics (beta).
         var betaNote: String? {
-            if !synced { return "lyrics timing estimated — not from Spotify · beta" }
+            if !synced { return "lyrics not synced — not from Spotify · beta" }
             if matched == "fuzzy" { return "lyrics matched externally — not from Spotify · beta" }
             return nil
         }

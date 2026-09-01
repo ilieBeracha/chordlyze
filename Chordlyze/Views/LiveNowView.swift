@@ -22,6 +22,8 @@ struct LiveNowView: View {
     @State private var selectedChord: SelectedChord?
     @State private var seekDenied = false
     @State private var lyricsNote: String?
+    /// Plain lyrics with no reliable timing: shown as a free-scrolling panel.
+    @State private var unsyncedTexts: [String] = []
 
     struct SelectedChord: Identifiable {
         let name: String
@@ -49,7 +51,9 @@ struct LiveNowView: View {
 
             Spacer()
 
-            if noLyrics {
+            if !unsyncedTexts.isEmpty {
+                unsyncedLyrics
+            } else if noLyrics {
                 chordFollow
             } else if lines.isEmpty {
                 ProgressView()
@@ -74,15 +78,17 @@ struct LiveNowView: View {
             ChordDiagramSheet(chord: selected.name)
         }
         .task {
-            // Synthesized (unsynced) timing would drift against the song —
-            // the live view only follows genuinely synced lyrics.
-            if let result = await BackendClient.lyrics(title: title, artist: artist,
-                                                       duration: trackDuration, album: album),
-               result.synced {
-                lines = SheetModel.build(analysis: analysis, lines: result.lines)
-                lyricsNote = result.betaNote
-            } else {
+            guard let result = await BackendClient.lyrics(title: title, artist: artist,
+                                                          duration: trackDuration, album: album) else {
                 noLyrics = true
+                return
+            }
+            lyricsNote = result.betaNote
+            if result.synced {
+                lines = SheetModel.build(analysis: analysis, lines: result.lines)
+            } else {
+                // Synthesized timing would drift — show the words freely instead.
+                unsyncedTexts = result.lines.map(\.text)
             }
         }
     }
@@ -314,6 +320,70 @@ struct LiveNowView: View {
                             style: StrokeStyle(lineWidth: 1, dash: group.estimated ? [4, 3] : [])))
         )
         .opacity(group.estimated ? 0.8 : 1)
+    }
+
+    // MARK: - Unsynced lyrics (live chord strip + free-scrolling words)
+
+    private var unsyncedLyrics: some View {
+        let real = analysis.chords.filter { $0.label != "N" }
+        let span = real.last?.end ?? 0
+        let looped = span > 0 && position >= span
+        let t = looped ? position.truncatingRemainder(dividingBy: span) : position
+        let index = real.lastIndex(where: { $0.start <= t })
+        let current = index.map { real[$0] }
+        let upcoming: [ChordSegment] = {
+            guard let index, !real.isEmpty else { return Array(real.prefix(2)) }
+            return (1...2).compactMap { step in
+                let next = index + step
+                if next < real.count { return real[next] }
+                return looped ? real[next % real.count] : nil
+            }
+        }()
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                Button {
+                    if let current { selectedChord = SelectedChord(name: current.displayName) }
+                } label: {
+                    Text(current?.displayName ?? "…")
+                        .font(.system(size: 28, weight: .heavy, design: .rounded))
+                        .foregroundStyle(Color.spotifyGreen)
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(Palette.greenTintFill)
+                                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(Palette.greenTintBorder, lineWidth: 1))
+                        )
+                }
+                .buttonStyle(.plain)
+                if !upcoming.isEmpty {
+                    Text("NEXT")
+                        .font(.system(size: 10, weight: .bold))
+                        .tracking(1.2)
+                        .foregroundStyle(Palette.tertiary)
+                    ForEach(Array(upcoming.enumerated()), id: \.offset) { _, chord in
+                        Text(chord.displayName)
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundStyle(Palette.secondaryAlt)
+                    }
+                }
+                Spacer()
+            }
+            .padding(.top, 18)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(Array(unsyncedTexts.enumerated()), id: \.offset) { _, text in
+                        Text(text)
+                            .font(.system(size: 17, design: .rounded))
+                            .foregroundStyle(Palette.secondaryAlt)
+                            .frame(maxWidth: .infinity,
+                                   alignment: text.isRTLText ? .trailing : .leading)
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+        }
     }
 
     // MARK: - Chord-only follow (no synced lyrics)
