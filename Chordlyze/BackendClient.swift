@@ -13,9 +13,16 @@ struct ChordAnalysis: Decodable {
     }
 }
 
+struct WordStamp: Decodable {
+    let time: Double
+    let text: String
+}
+
 struct LyricLine: Decodable, Identifiable {
     let time: Double
     let text: String
+    /// Per-word timestamps when the lyrics source has enhanced (A2) LRC.
+    let words: [WordStamp]?
     var id: Double { time }
 }
 

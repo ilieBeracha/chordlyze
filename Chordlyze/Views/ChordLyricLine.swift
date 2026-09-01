@@ -67,7 +67,9 @@ struct ChordLyricLine: View {
 
         var byWord: [Int: [SheetModel.PlacedChord]] = [:]
         for chord in chords {
-            let index = ranges.lastIndex(where: { $0.start <= chord.position }) ?? 0
+            // Exact word timestamp wins; otherwise syllable interpolation.
+            let index = chord.wordIndex.map { min($0, words.count - 1) }
+                ?? ranges.lastIndex(where: { $0.start <= chord.position }) ?? 0
             byWord[index, default: []].append(chord)
         }
         return words.enumerated().map { index, word in

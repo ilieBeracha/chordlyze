@@ -12,6 +12,9 @@ enum SheetModel {
         /// Where in the line's sung window this chord lands, 0…1 — used to pin
         /// the chord above the right word.
         let position: Double
+        /// Exact word this chord strikes on, when the lyrics carry word-level
+        /// timestamps. Overrides the interpolated `position`.
+        var wordIndex: Int? = nil
     }
 
     struct RenderLine: Identifiable {
@@ -56,7 +59,13 @@ enum SheetModel {
 
             if line.time < analyzedEnd {
                 // How long the line is actually sung; the rest of the gap is music.
-                let sung = min(gap, sungDuration(line.text))
+                // Word timestamps (enhanced LRC) beat the syllable estimate.
+                let sung: Double
+                if let lastWord = line.words?.last, lastWord.time > line.time {
+                    sung = min(gap, lastWord.time - line.time + 1.2)
+                } else {
+                    sung = min(gap, sungDuration(line.text))
+                }
                 let breakLength = gap - sung
                 let splitAt = breakLength > breakThreshold ? line.time + sung : gapEnd
 
@@ -64,7 +73,8 @@ enum SheetModel {
                     .filter { $0.start >= line.time && $0.start < splitAt }
                     .map { seg in
                         PlacedChord(name: seg.displayName, estimated: false,
-                                    position: min(1, max(0, (seg.start - line.time) / sung)))
+                                    position: min(1, max(0, (seg.start - line.time) / sung)),
+                                    wordIndex: line.words?.lastIndex(where: { $0.time <= seg.start }))
                     }
                 result.append(RenderLine(id: line.time, end: splitAt,
                                          text: line.text, chords: chords))
