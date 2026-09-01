@@ -22,8 +22,10 @@ struct LiveNowView: View {
     @State private var selectedChord: SelectedChord?
     @State private var seekDenied = false
     @State private var lyricsNote: String?
-    /// Plain lyrics with no reliable timing: shown as a free-scrolling panel.
-    @State private var unsyncedTexts: [String] = []
+    /// Roughly-timed lyrics (synthesized): line taps re-anchor instead of seek.
+    @State private var resyncable = false
+    /// User correction on the synthesized lyric timeline ("this line is now").
+    @State private var lyricsOffset: Double = 0
 
     struct SelectedChord: Identifiable {
         let name: String
@@ -31,8 +33,10 @@ struct LiveNowView: View {
     }
     private let clock = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
+    /// Position on the lyric timeline (song position plus manual re-anchor).
+    private var lyricPosition: Double { position + lyricsOffset }
     private var currentIndex: Int? {
-        lines.lastIndex(where: { $0.id <= position })
+        lines.lastIndex(where: { $0.id <= lyricPosition })
     }
     private var duration: Double {
         trackDuration ?? max(lines.last?.end ?? 0, analysis.chords.last?.end ?? 0, 1)
@@ -51,9 +55,7 @@ struct LiveNowView: View {
 
             Spacer()
 
-            if !unsyncedTexts.isEmpty {
-                unsyncedLyrics
-            } else if noLyrics {
+            if noLyrics {
                 chordFollow
             } else if lines.isEmpty {
                 ProgressView()
@@ -83,18 +85,24 @@ struct LiveNowView: View {
                 noLyrics = true
                 return
             }
-            lyricsNote = result.betaNote
+            lines = SheetModel.build(analysis: analysis, lines: result.lines)
             if result.synced {
-                lines = SheetModel.build(analysis: analysis, lines: result.lines)
+                lyricsNote = result.betaNote
             } else {
-                // Synthesized timing would drift — show the words freely instead.
-                unsyncedTexts = result.lines.map(\.text)
+                // Synthesized timing drifts — the user re-anchors by tapping.
+                resyncable = true
+                lyricsNote = "lyrics roughly timed — tap the sung line to sync · beta"
             }
         }
     }
 
-    /// Tap a context line to jump playback there.
-    private func seek(to time: Double) {
+    /// Tap a context line: on rough timing it re-anchors the lyrics ("this
+    /// line is now"); on real sync it jumps playback there.
+    private func lineTapped(_ time: Double) {
+        if resyncable {
+            withAnimation(.easeInOut(duration: 0.35)) { lyricsOffset = time - position }
+            return
+        }
         guard let onSeek else { return }
         Task {
             if await onSeek(time) {
@@ -186,7 +194,7 @@ struct LiveNowView: View {
             // 2 previous lines, fading out upward; tap to jump back
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(Array(lines[max(0, index - 2)..<index].enumerated()), id: \.element.id) { offset, line in
-                    Button { seek(to: line.id) } label: {
+                    Button { lineTapped(line.id) } label: {
                         Text(line.text)
                             .font(.system(size: 17, design: .rounded))
                             .foregroundStyle(Palette.secondary)
@@ -196,7 +204,7 @@ struct LiveNowView: View {
                                    alignment: line.text.isRTLText ? .trailing : .leading)
                     }
                     .buttonStyle(.plain)
-                    .disabled(onSeek == nil)
+                    .disabled(!resyncable && onSeek == nil)
                 }
             }
 
@@ -219,7 +227,7 @@ struct LiveNowView: View {
                                     .font(.system(size: 14, weight: .semibold))
                                 Text("Instrumental")
                                     .font(.system(size: 16, weight: .semibold, design: .rounded))
-                                let left = max(0, Int((current.end - position).rounded(.up)))
+                                let left = max(0, Int((current.end - lyricPosition).rounded(.up)))
                                 if left > 0, left <= 30 {
                                     Text("· lyrics in \(left)s")
                                         .font(.system(size: 14, design: .rounded))
@@ -260,7 +268,7 @@ struct LiveNowView: View {
             // 3 next lines; tap to jump ahead
             VStack(alignment: .leading, spacing: 16) {
                 ForEach(lines[min(lines.count, index + 1)..<min(lines.count, index + 4)]) { line in
-                    Button { seek(to: line.id) } label: {
+                    Button { lineTapped(line.id) } label: {
                         VStack(alignment: line.text.isRTLText ? .trailing : .leading, spacing: 3) {
                             if !line.chords.isEmpty {
                                 Text(summary(line.chords))
@@ -277,7 +285,7 @@ struct LiveNowView: View {
                                alignment: line.text.isRTLText ? .trailing : .leading)
                     }
                     .buttonStyle(.plain)
-                    .disabled(onSeek == nil)
+                    .disabled(!resyncable && onSeek == nil)
                 }
             }
             if seekDenied {
@@ -320,70 +328,6 @@ struct LiveNowView: View {
                             style: StrokeStyle(lineWidth: 1, dash: group.estimated ? [4, 3] : [])))
         )
         .opacity(group.estimated ? 0.8 : 1)
-    }
-
-    // MARK: - Unsynced lyrics (live chord strip + free-scrolling words)
-
-    private var unsyncedLyrics: some View {
-        let real = analysis.chords.filter { $0.label != "N" }
-        let span = real.last?.end ?? 0
-        let looped = span > 0 && position >= span
-        let t = looped ? position.truncatingRemainder(dividingBy: span) : position
-        let index = real.lastIndex(where: { $0.start <= t })
-        let current = index.map { real[$0] }
-        let upcoming: [ChordSegment] = {
-            guard let index, !real.isEmpty else { return Array(real.prefix(2)) }
-            return (1...2).compactMap { step in
-                let next = index + step
-                if next < real.count { return real[next] }
-                return looped ? real[next % real.count] : nil
-            }
-        }()
-        return VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 12) {
-                Button {
-                    if let current { selectedChord = SelectedChord(name: current.displayName) }
-                } label: {
-                    Text(current?.displayName ?? "…")
-                        .font(.system(size: 28, weight: .heavy, design: .rounded))
-                        .foregroundStyle(Color.spotifyGreen)
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, 20)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(Palette.greenTintFill)
-                                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(Palette.greenTintBorder, lineWidth: 1))
-                        )
-                }
-                .buttonStyle(.plain)
-                if !upcoming.isEmpty {
-                    Text("NEXT")
-                        .font(.system(size: 10, weight: .bold))
-                        .tracking(1.2)
-                        .foregroundStyle(Palette.tertiary)
-                    ForEach(Array(upcoming.enumerated()), id: \.offset) { _, chord in
-                        Text(chord.displayName)
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                            .foregroundStyle(Palette.secondaryAlt)
-                    }
-                }
-                Spacer()
-            }
-            .padding(.top, 18)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(Array(unsyncedTexts.enumerated()), id: \.offset) { _, text in
-                        Text(text)
-                            .font(.system(size: 17, design: .rounded))
-                            .foregroundStyle(Palette.secondaryAlt)
-                            .frame(maxWidth: .infinity,
-                                   alignment: text.isRTLText ? .trailing : .leading)
-                    }
-                }
-                .padding(.vertical, 8)
-            }
-        }
     }
 
     // MARK: - Chord-only follow (no synced lyrics)
