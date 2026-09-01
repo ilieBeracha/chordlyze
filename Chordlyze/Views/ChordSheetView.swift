@@ -156,10 +156,17 @@ struct ChordSheetView: View {
 
     @State private var rendered: [SheetModel.RenderLine]?
     @State private var failed = false
+    @State private var lyricsNote: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let rendered {
+                if let lyricsNote {
+                    Text(lyricsNote)
+                        .font(.system(size: 9))
+                        .foregroundStyle(Palette.faint)
+                        .padding(.bottom, 8)
+                }
                 if rendered.contains(where: { $0.chords.contains(where: \.estimated) }) {
                     Label("Green chords are analyzed; gray ones continue the song's loop (estimate).",
                           systemImage: "info.circle")
@@ -182,8 +189,9 @@ struct ChordSheetView: View {
         }
         .task {
             guard rendered == nil else { return }
-            if let lines = await BackendClient.lyrics(title: title, artist: artist) {
-                rendered = SheetModel.build(analysis: analysis, lines: lines)
+            if let result = await BackendClient.lyrics(title: title, artist: artist) {
+                rendered = SheetModel.build(analysis: analysis, lines: result.lines)
+                lyricsNote = result.betaNote
             } else {
                 failed = true
             }

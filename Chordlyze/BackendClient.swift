@@ -88,11 +88,26 @@ enum BackendClient {
         return try JSONDecoder().decode(Page.self, from: data).items
     }
 
+    struct LyricsResult {
+        let lines: [LyricLine]
+        /// False when line times were synthesized from unsynced lyrics.
+        let synced: Bool
+        /// "exact" | "fuzzy" — how the song was matched on the lyrics source.
+        let matched: String?
+
+        /// Barely-visible disclosure for non-exact lyrics (beta).
+        var betaNote: String? {
+            if !synced { return "lyrics timing estimated — not from Spotify · beta" }
+            if matched == "fuzzy" { return "lyrics matched externally — not from Spotify · beta" }
+            return nil
+        }
+    }
+
     /// Time-synced lyrics; nil when the song has none. Duration/album narrow
     /// the match to the right version of the song.
     static func lyrics(title: String, artist: String,
-                       duration: Double? = nil, album: String? = nil) async -> [LyricLine]? {
-        struct Response: Decodable { let lines: [LyricLine] }
+                       duration: Double? = nil, album: String? = nil) async -> LyricsResult? {
+        struct Response: Decodable { let lines: [LyricLine]; let synced: Bool?; let matched: String? }
         var comps = URLComponents(url: Config.backendBaseURL.appendingPathComponent("lyrics"),
                                   resolvingAgainstBaseURL: false)!
         comps.queryItems = [.init(name: "title", value: title), .init(name: "artist", value: artist)]
@@ -101,7 +116,8 @@ enum BackendClient {
         guard let (data, response) = try? await URLSession.shared.data(from: comps.url!),
               (response as? HTTPURLResponse)?.statusCode == 200,
               let parsed = try? JSONDecoder().decode(Response.self, from: data) else { return nil }
-        return parsed.lines
+        return LyricsResult(lines: parsed.lines, synced: parsed.synced ?? true,
+                            matched: parsed.matched)
     }
 
     /// Server-side analysis from the song's public iTunes preview — no audio needed

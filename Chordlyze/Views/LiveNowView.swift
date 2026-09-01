@@ -21,6 +21,7 @@ struct LiveNowView: View {
     @State private var noLyrics = false
     @State private var selectedChord: SelectedChord?
     @State private var seekDenied = false
+    @State private var lyricsNote: String?
 
     struct SelectedChord: Identifiable {
         let name: String
@@ -38,6 +39,13 @@ struct LiveNowView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            if let lyricsNote {
+                Text(lyricsNote)
+                    .font(.system(size: 9))
+                    .foregroundStyle(Palette.faint)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.top, 6)
+            }
 
             Spacer()
 
@@ -66,9 +74,10 @@ struct LiveNowView: View {
             ChordDiagramSheet(chord: selected.name)
         }
         .task {
-            if let lyricLines = await BackendClient.lyrics(title: title, artist: artist,
-                                                           duration: trackDuration, album: album) {
-                lines = SheetModel.build(analysis: analysis, lines: lyricLines)
+            if let result = await BackendClient.lyrics(title: title, artist: artist,
+                                                       duration: trackDuration, album: album) {
+                lines = SheetModel.build(analysis: analysis, lines: result.lines)
+                lyricsNote = result.betaNote
             } else {
                 noLyrics = true
             }
