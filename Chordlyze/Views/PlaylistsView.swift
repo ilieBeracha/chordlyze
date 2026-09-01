@@ -89,13 +89,18 @@ struct PlaylistsView: View {
     private var wash: some View {
         let top = washColor ?? Color(hex: 0x1C1C1E)
         let mid = washColor.map { $0.opacity(0.55) } ?? Color(hex: 0x1C1C1E).opacity(0.5)
-        return LinearGradient(stops: [.init(color: top, location: 0),
-                                      .init(color: mid, location: 0.55),
-                                      .init(color: .black, location: 1)],
-                              startPoint: UnitPoint(x: 0.58, y: 0),
-                              endPoint: UnitPoint(x: 0.42, y: 1))
-            .frame(height: 380)
-            .animation(.easeInOut(duration: 0.4), value: washColor)
+        return VStack(spacing: 0) {
+            // Headroom so the rubber-band overscroll shows color, not black.
+            top.frame(height: 600)
+            LinearGradient(stops: [.init(color: top, location: 0),
+                                   .init(color: mid, location: 0.55),
+                                   .init(color: .black, location: 1)],
+                           startPoint: UnitPoint(x: 0.58, y: 0),
+                           endPoint: UnitPoint(x: 0.42, y: 1))
+                .frame(height: 380)
+        }
+        .offset(y: -600)
+        .animation(.easeInOut(duration: 0.4), value: washColor)
     }
 
     // MARK: - Header
