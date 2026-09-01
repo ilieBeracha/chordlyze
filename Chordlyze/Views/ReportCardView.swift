@@ -90,6 +90,19 @@ struct ReportCardView: View {
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(lag > 0.5 ? Color(hex: 0xFFD60A) : Palette.secondary)
                             }
+                            if t.misses > 0 || (t.avgLag ?? 0) > 0.5 {
+                                NavigationLink {
+                                    DrillView(from: t.from, to: t.to)
+                                } label: {
+                                    Text("Drill")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundStyle(.black)
+                                        .padding(.vertical, 5)
+                                        .padding(.horizontal, 12)
+                                        .background(Capsule().fill(Color.spotifyGreen))
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                         .padding(.vertical, 9)
                     }
