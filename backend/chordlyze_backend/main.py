@@ -290,9 +290,14 @@ def score_candidate(cand: dict, title: str, artist: str,
     score = 0.55 * title_score + 0.35 * artist_score
     if duration and cand.get("duration"):
         diff = abs(float(cand["duration"]) - duration)
-        if diff > 10:
+        # A different edit shifts every timestamp — keep the gate tight.
+        if diff > 5:
             return 0.0
-        score += 0.10 * max(0.0, 1 - diff / 10)
+        score += 0.10 * max(0.0, 1 - diff / 5)
+    elif duration is None:
+        # No duration to verify against: only accept near-certain matches.
+        if score < 0.75:
+            return 0.0
     return score
 
 
@@ -334,8 +339,8 @@ def lyrics(title: str, artist: str = "", duration: float | None = None,
     digest = hashlib.sha256(
         f"{title}|{artist}|{album or ''}|{round(duration) if duration else ''}"
         .lower().encode()).hexdigest()[:24]
-    # v3: fuzzy search + plain-lyrics fallback, with match metadata.
-    cached = CACHE_DIR / f"lyrics3-{digest}.json"
+    # v4: tighter fuzzy gate (±5s, high bar without duration).
+    cached = CACHE_DIR / f"lyrics4-{digest}.json"
     if cached.exists():
         return json.loads(cached.read_text())
 
