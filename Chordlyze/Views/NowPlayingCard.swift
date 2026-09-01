@@ -67,7 +67,10 @@ struct NowPlayingCard: View {
             if let analysis {
                 NavigationLink {
                     LiveNowView(title: track.name, artist: track.artistNames,
-                                analysis: analysis) { nowPlaying.livePosition() }
+                                analysis: analysis,
+                                trackDuration: (track.durationMs).map { Double($0) / 1000 }) {
+                        nowPlaying.livePosition()
+                    }
                 } label: {
                     body
                 }

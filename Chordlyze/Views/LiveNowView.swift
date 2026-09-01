@@ -7,6 +7,8 @@ struct LiveNowView: View {
     let title: String
     let artist: String
     let analysis: ChordAnalysis
+    /// Full song length when known (Spotify); analysis may cover only an excerpt.
+    var trackDuration: TimeInterval? = nil
     /// Live playback position source (Spotify poll or mic session anchor).
     let livePosition: () -> TimeInterval?
 
@@ -19,7 +21,7 @@ struct LiveNowView: View {
         lines.lastIndex(where: { $0.id <= position })
     }
     private var duration: Double {
-        max(lines.last?.end ?? 0, analysis.chords.last?.end ?? 0, 1)
+        trackDuration ?? max(lines.last?.end ?? 0, analysis.chords.last?.end ?? 0, 1)
     }
 
     var body: some View {
@@ -231,12 +233,24 @@ struct LiveNowView: View {
 
     private var chordFollow: some View {
         let real = analysis.chords.filter { $0.label != "N" }
-        let index = real.lastIndex(where: { $0.start <= position })
+        let span = real.last?.end ?? 0
+        // Analysis may cover only an excerpt (e.g. 30s preview): once playback
+        // passes the analyzed window, loop the progression as an estimate.
+        let looped = span > 0 && position >= span
+        let t = looped ? position.truncatingRemainder(dividingBy: span) : position
+        let index = real.lastIndex(where: { $0.start <= t })
         let current = index.map { real[$0] }
-        let upcoming = index.map { Array(real[min(real.count, $0 + 1)..<min(real.count, $0 + 4)]) }
-            ?? Array(real.prefix(3))
+        let upcoming: [ChordSegment] = {
+            guard let index, !real.isEmpty else { return Array(real.prefix(3)) }
+            return (1...3).compactMap { step in
+                let next = index + step
+                if next < real.count { return real[next] }
+                return looped ? real[next % real.count] : nil
+            }
+        }()
         return VStack(spacing: 30) {
-            Text("No synced lyrics — follow the chords.")
+            Text(looped ? "No synced lyrics — progression loops (estimate)."
+                        : "No synced lyrics — follow the chords.")
                 .font(.system(size: 13))
                 .foregroundStyle(Palette.secondary)
             Text(current?.displayName ?? "…")
@@ -257,7 +271,8 @@ struct LiveNowView: View {
                         .font(.system(size: 11, weight: .bold))
                         .tracking(1.2)
                         .foregroundStyle(Palette.tertiary)
-                    ForEach(upcoming) { chord in
+                    // Positional ids: looping can repeat the same segment.
+                    ForEach(Array(upcoming.enumerated()), id: \.offset) { _, chord in
                         Text(chord.displayName)
                             .font(.system(size: 17, weight: .bold, design: .rounded))
                             .foregroundStyle(Palette.secondaryAlt)
