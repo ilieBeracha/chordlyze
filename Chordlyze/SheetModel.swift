@@ -8,6 +8,9 @@ enum SheetModel {
         let id = UUID()
         let name: String
         let estimated: Bool
+        /// Where in the line this chord lands, 0…1 (fraction of the line's time
+        /// window) — used to pin the chord above the right word.
+        let position: Double
     }
 
     struct RenderLine: Identifiable {
@@ -49,12 +52,16 @@ enum SheetModel {
             if line.time < analyzedEnd {
                 chords = real
                     .filter { $0.start >= line.time && $0.start < end }
-                    .map { PlacedChord(name: $0.displayName, estimated: false) }
+                    .map { seg in
+                        PlacedChord(name: seg.displayName, estimated: false,
+                                    position: min(1, max(0, (seg.start - line.time) / window)))
+                    }
             } else {
                 let count = max(1, min(3, Int((window / period).rounded())))
-                chords = (0..<count).map { _ in
+                chords = (0..<count).map { i in
                     defer { phase += 1 }
-                    return PlacedChord(name: loop[phase % loop.count], estimated: true)
+                    return PlacedChord(name: loop[phase % loop.count], estimated: true,
+                                       position: Double(i) / Double(count))
                 }
             }
             result.append(RenderLine(id: line.time, end: end, text: line.text, chords: chords))

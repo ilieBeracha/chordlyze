@@ -52,38 +52,9 @@ struct PlaylistsView: View {
                         .buttonStyle(.plain)
                     }
 
-                    // Auto Session hero card
-                    NavigationLink {
-                        AutoSessionView()
-                    } label: {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(spacing: 8) {
-                                Circle().fill(Color.spotifyGreen).frame(width: 8, height: 8)
-                                Text("AUTO SESSION")
-                                    .font(.system(size: 12, weight: .bold))
-                                    .tracking(1.2)
-                                    .foregroundStyle(Color.spotifyGreen)
-                            }
-                            Text("Chords while you listen")
-                                .font(.system(size: 24, weight: .bold, design: .rounded))
-                                .foregroundStyle(.white)
-                            Text("Play anything out loud — every song gets identified and analyzed.")
-                                .font(.system(size: 14))
-                                .foregroundStyle(Palette.heroSub)
-                                .multilineTextAlignment(.leading)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 22)
-                        .padding(.horizontal, 20)
-                        .background(
-                            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .fill(Palette.heroBackground)
-                                .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                    .stroke(Color.spotifyGreen.opacity(0.25), lineWidth: 1))
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.top, 20)
+                    // Now Playing card
+                    NowPlayingCard()
+                        .padding(.top, 20)
 
                     // Library tiles
                     LazyVGrid(columns: grid3, spacing: 10) {

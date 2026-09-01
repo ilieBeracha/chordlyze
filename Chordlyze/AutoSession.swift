@@ -20,6 +20,7 @@ final class AutoSession: ObservableObject {
         let id: String           // trackKey (shazam-<isrc>)
         let title: String
         let artist: String
+        let artworkURL: URL?
         var status: Status
         var analysis: ChordAnalysis?
 
@@ -32,6 +33,11 @@ final class AutoSession: ObservableObject {
     /// Song currently identified as playing, with its live position anchor.
     @Published private(set) var nowPlayingKey: String?
     private var liveAnchor: (key: String, offset: TimeInterval, at: Date)?
+
+    /// Entry for the song currently identified as playing.
+    var nowEntry: Entry? {
+        nowPlayingKey.flatMap { key in entries.first(where: { $0.id == key }) }
+    }
 
     /// Current playback position inside the identified song, if known.
     func livePosition(for key: String) -> TimeInterval? {
@@ -131,6 +137,7 @@ final class AutoSession: ObservableObject {
             entries.insert(Entry(id: key,
                                  title: item.title ?? "Unknown",
                                  artist: item.artist ?? "",
+                                 artworkURL: item.artworkURL,
                                  status: .capturing,
                                  analysis: nil), at: 0)
         }

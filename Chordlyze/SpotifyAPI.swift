@@ -16,17 +16,19 @@ struct Track: Identifiable, Decodable {
     let artists: [Artist]
     let album: Album
     let externalIds: ExternalIds?
+    let durationMs: Int?
     struct Artist: Decodable { let name: String }
     struct Album: Decodable { let name: String; let images: [SpotifyImage]? }
     struct ExternalIds: Decodable { let isrc: String? }
 
-    var artistNames: String { artists.map(\.name).joined(separator: ", ") }
-    var isrc: String? { externalIds?.isrc }
-
     enum CodingKeys: String, CodingKey {
         case id, name, artists, album
         case externalIds = "external_ids"
+        case durationMs = "duration_ms"
     }
+
+    var artistNames: String { artists.map(\.name).joined(separator: ", ") }
+    var isrc: String? { externalIds?.isrc }
 }
 
 @MainActor
@@ -93,6 +95,41 @@ final class SpotifyAPI: ObservableObject {
         struct Page: Decodable { let items: [Track] }
         let page: Page = try await get("me/top/tracks?limit=50&time_range=medium_term")
         return page.items
+    }
+
+    struct CurrentlyPlaying: Decodable {
+        let progressMs: Int?
+        let isPlaying: Bool
+        let item: Track?
+
+        enum CodingKeys: String, CodingKey {
+            case progressMs = "progress_ms"
+            case isPlaying = "is_playing"
+            case item
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            progressMs = try c.decodeIfPresent(Int.self, forKey: .progressMs)
+            isPlaying = try c.decode(Bool.self, forKey: .isPlaying)
+            // Podcast episodes don't decode as Track — treat as nothing playing.
+            item = try? c.decodeIfPresent(Track.self, forKey: .item)
+        }
+    }
+
+    /// What the account is playing right now, on any device. nil when idle.
+    func currentlyPlaying() async throws -> CurrentlyPlaying? {
+        let token = try await auth.validToken()
+        var req = URLRequest(url: URL(string: "https://api.spotify.com/v1/me/player/currently-playing")!)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: req)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 204 { return nil }
+        guard status == 200 else {
+            throw NSError(domain: "SpotifyAPI", code: status,
+                          userInfo: [NSLocalizedDescriptionKey: "Spotify returned \(status)"])
+        }
+        return try JSONDecoder().decode(CurrentlyPlaying.self, from: data)
     }
 
     private func get<T: Decodable>(_ path: String) async throws -> T {
