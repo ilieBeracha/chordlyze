@@ -52,7 +52,25 @@ def _track_cache_path(track_id: str) -> Path:
     return CACHE_DIR / f"track-{safe}.json"
 
 
-def _save_track(track_id: str, result: dict, title: str | None, artist: str | None) -> None:
+_ISRC_RE = re.compile(r"[A-Za-z]{2}[A-Za-z0-9]{3}\d{7}")
+
+
+def _isrc_cache_path(isrc: str) -> Path:
+    return CACHE_DIR / f"isrc-{isrc.upper()}.json"
+
+
+def _derive_isrc(track_id: str, isrc: str | None) -> str | None:
+    """Mic captures are keyed 'shazam-<isrc>' — recover the ISRC from the key
+    so the same song analyzed via Spotify and via mic share one analysis."""
+    if isrc:
+        return isrc
+    if track_id.startswith("shazam-") and _ISRC_RE.fullmatch(track_id[7:]):
+        return track_id[7:]
+    return None
+
+
+def _save_track(track_id: str, result: dict, title: str | None, artist: str | None,
+                isrc: str | None = None) -> None:
     entry = dict(result)
     entry["track_id"] = track_id
     if title:
@@ -60,6 +78,30 @@ def _save_track(track_id: str, result: dict, title: str | None, artist: str | No
     if artist:
         entry["artist"] = artist
     _track_cache_path(track_id).write_text(json.dumps(entry))
+    if derived := _derive_isrc(track_id, isrc):
+        path = _isrc_cache_path(derived)
+        if path.exists():
+            old = json.loads(path.read_text())
+            # A full-song analysis is never downgraded to a preview excerpt.
+            if old.get("source") != "itunes_preview" and entry.get("source") == "itunes_preview":
+                return
+        path.write_text(json.dumps(entry))
+
+
+def _cached_by_isrc(track_id: str, isrc: str | None,
+                    title: str | None, artist: str | None) -> dict | None:
+    """Analysis saved under the same ISRC by the other source, if any;
+    re-saves it under this track_id for future direct hits."""
+    derived = _derive_isrc(track_id, isrc)
+    if not derived:
+        return None
+    path = _isrc_cache_path(derived)
+    if not path.exists():
+        return None
+    entry = json.loads(path.read_text())
+    _save_track(track_id, entry, title or entry.get("title"),
+                artist or entry.get("artist"), derived)
+    return json.loads(_track_cache_path(track_id).read_text())
 
 
 @app.post("/analyze")
@@ -138,6 +180,8 @@ async def analyze_track(
     cached = _track_cache_path(track_id)
     if cached.exists():
         return json.loads(cached.read_text())
+    if hit := _cached_by_isrc(track_id, isrc, title, artist):
+        return hit
 
     def fetch_and_recognize():
         song = _itunes_lookup(isrc, title, artist)
@@ -161,7 +205,8 @@ async def analyze_track(
     result = analyze(segments)
     result["source"] = "itunes_preview"
     _save_track(track_id, result,
-                title or song.get("trackName"), artist or song.get("artistName"))
+                title or song.get("trackName"), artist or song.get("artistName"),
+                isrc)
     return json.loads(cached.read_text())
 
 
@@ -199,25 +244,45 @@ def parse_synced_lyrics(synced: str) -> list[dict]:
     return lines
 
 
+def _lrclib_get(params: dict) -> dict | None:
+    q = urllib.parse.urlencode(params)
+    req = urllib.request.Request(f"https://lrclib.net/api/get?{q}",
+                                 headers={"User-Agent": "Chordlyze/0.1"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise
+
+
 @app.get("/lyrics")
-def lyrics(title: str, artist: str = "") -> dict:
-    """Time-synced lyrics from LRCLIB, cached on disk."""
-    digest = hashlib.sha256(f"{title}|{artist}".lower().encode()).hexdigest()[:24]
+def lyrics(title: str, artist: str = "", duration: float | None = None,
+           album: str | None = None) -> dict:
+    """Time-synced lyrics from LRCLIB, cached on disk. Duration/album narrow
+    the match to the right version (not a cover/remix) when provided."""
+    digest = hashlib.sha256(
+        f"{title}|{artist}|{album or ''}|{round(duration) if duration else ''}"
+        .lower().encode()).hexdigest()[:24]
     # v2: includes word-level times when available.
     cached = CACHE_DIR / f"lyrics2-{digest}.json"
     if cached.exists():
         return json.loads(cached.read_text())
 
-    q = urllib.parse.urlencode({"track_name": title, "artist_name": artist})
-    req = urllib.request.Request(f"https://lrclib.net/api/get?{q}",
-                                 headers={"User-Agent": "Chordlyze/0.1"})
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read())
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
-            raise HTTPException(404, "lyrics not found") from exc
-        raise
+    params = {"track_name": title, "artist_name": artist}
+    data = None
+    if duration or album:
+        exact = dict(params)
+        if album:
+            exact["album_name"] = album
+        if duration:
+            exact["duration"] = round(duration)
+        data = _lrclib_get(exact)
+    if data is None:
+        data = _lrclib_get(params)  # relaxed fallback
+    if data is None:
+        raise HTTPException(404, "lyrics not found")
 
     lines = parse_synced_lyrics(data.get("syncedLyrics") or "")
     if not lines:
@@ -243,11 +308,13 @@ def library() -> dict:
 
 
 @app.get("/analysis/track/{track_id}")
-def get_track_analysis(track_id: str) -> dict:
+def get_track_analysis(track_id: str, isrc: str | None = None) -> dict:
     cached = _track_cache_path(track_id)
-    if not cached.exists():
-        raise HTTPException(404, "no analysis for this track yet")
-    return json.loads(cached.read_text())
+    if cached.exists():
+        return json.loads(cached.read_text())
+    if hit := _cached_by_isrc(track_id, isrc, None, None):
+        return hit
+    raise HTTPException(404, "no analysis for this track yet")
 
 
 @app.get("/analysis/{analysis_id}")

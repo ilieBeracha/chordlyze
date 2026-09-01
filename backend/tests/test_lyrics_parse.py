@@ -34,3 +34,11 @@ def test_enhanced_line_time_kept():
     lines = parse_synced_lyrics(ENHANCED)
     assert lines[0]["time"] == 12.0
     assert lines[1]["time"] == 14.0
+
+
+def test_derive_isrc():
+    from chordlyze_backend.main import _derive_isrc
+    assert _derive_isrc("shazam-USUM71703861", None) == "USUM71703861"
+    assert _derive_isrc("shazam-1234", None) is None          # shazamID fallback key
+    assert _derive_isrc("5AQuUEnrfiGM3dfUBTIutY", None) is None  # spotify id
+    assert _derive_isrc("anything", "GBAYE0601498") == "GBAYE0601498"
