@@ -31,6 +31,19 @@ struct AnalysisTabsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 8) {
+                        if let diff = analysis.difficulty {
+                            HStack(spacing: 5) {
+                                Circle()
+                                    .fill(LibraryView.difficultyColor(diff.level))
+                                    .frame(width: 6, height: 6)
+                                Text(diff.level.uppercased())
+                                    .font(.system(size: 10, weight: .bold))
+                                    .tracking(0.8)
+                                    .foregroundStyle(Palette.secondary)
+                            }
+                            .padding(.vertical, 5).padding(.horizontal, 10)
+                            .background(Capsule().fill(Palette.elevated))
+                        }
                         if simple {
                             Text(capo == 0 ? "No capo needed" : "Capo \(capo)")
                                 .font(.system(size: 13, weight: .bold, design: .rounded))

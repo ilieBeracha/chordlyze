@@ -1,15 +1,21 @@
 import Foundation
 
+struct Difficulty: Decodable {
+    let score: Double  // 1…10
+    let level: String  // "easy" | "medium" | "hard"
+}
+
 struct ChordAnalysis: Decodable {
     let key: String?
     let keyConfidence: Double?
     let chords: [ChordSegment]
     let source: String?  // "itunes_preview" when analyzed from a preview excerpt
+    let difficulty: Difficulty?
 
     enum CodingKeys: String, CodingKey {
         case key
         case keyConfidence = "key_confidence"
-        case chords, source
+        case chords, source, difficulty
     }
 }
 
@@ -68,9 +74,10 @@ enum BackendClient {
         let artist: String?
         let key: String?
         let artwork: String?
+        let difficulty: Difficulty?
         var id: String { trackId }
         enum CodingKeys: String, CodingKey {
-            case trackId = "track_id", title, artist, key, artwork
+            case trackId = "track_id", title, artist, key, artwork, difficulty
         }
 
         /// iTunes thumb upscaled for retina 46pt rows.

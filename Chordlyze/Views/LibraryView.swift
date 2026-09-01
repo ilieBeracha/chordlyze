@@ -137,9 +137,16 @@ struct LibraryView: View {
             if let key = item.key {
                 let (root, mode) = Self.splitKey(key)
                 VStack(alignment: .trailing, spacing: 0) {
-                    Text(root)
-                        .font(.system(size: 17, weight: .heavy, design: .rounded))
-                        .foregroundStyle(Color.spotifyGreen)
+                    HStack(spacing: 5) {
+                        if let level = item.difficulty?.level {
+                            Circle()
+                                .fill(Self.difficultyColor(level))
+                                .frame(width: 6, height: 6)
+                        }
+                        Text(root)
+                            .font(.system(size: 17, weight: .heavy, design: .rounded))
+                            .foregroundStyle(Color.spotifyGreen)
+                    }
                     if !mode.isEmpty {
                         Text(mode)
                             .font(.system(size: 10, weight: .semibold))
@@ -152,6 +159,14 @@ struct LibraryView: View {
         .padding(.vertical, 9)
         .padding(.horizontal, 20)
         .contentShape(Rectangle())
+    }
+
+    static func difficultyColor(_ level: String) -> Color {
+        switch level {
+        case "easy": return Color(hex: 0x30D158)
+        case "medium": return Color(hex: 0xFFD60A)
+        default: return Color(hex: 0xFF453A)
+        }
     }
 
     /// "A# minor" -> ("A#", "minor"); keeps sharps/flats as the backend sent them.
