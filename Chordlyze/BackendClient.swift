@@ -153,6 +153,71 @@ enum BackendClient {
     }
 
     /// Upload an audio file and get its chord analysis.
+    struct PracticeReport: Decodable, Identifiable {
+        struct ChordScore: Decodable, Identifiable {
+            let name: String
+            let accuracy: Double
+            let count: Int
+            var id: String { name }
+        }
+        struct Transition: Decodable, Identifiable {
+            let from: String
+            let to: String
+            let avgLag: Double?
+            let misses: Int
+            let count: Int
+            var id: String { "\(from)>\(to)" }
+            enum CodingKeys: String, CodingKey {
+                case from, to, misses, count
+                case avgLag = "avg_lag"
+            }
+        }
+        struct Section: Decodable {
+            let start: Double
+            let end: Double
+            let accuracy: Double?
+        }
+        let takeId: String
+        let accuracy: Double
+        let avgLag: Double?
+        let perChord: [ChordScore]
+        let transitions: [Transition]
+        let sections: [Section]
+        var id: String { takeId }
+        enum CodingKeys: String, CodingKey {
+            case accuracy, transitions, sections
+            case takeId = "take_id"
+            case avgLag = "avg_lag"
+            case perChord = "per_chord"
+        }
+    }
+
+    /// Upload a practice recording; the backend scores it against the track's chart.
+    static func submitPracticeTake(fileURL: URL, trackID: String) async throws -> PracticeReport {
+        let boundary = "chordlyze-\(UUID().uuidString)"
+        var req = URLRequest(url: Config.backendBaseURL.appendingPathComponent("practice_take"))
+        req.httpMethod = "POST"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 600
+        let fileData = try Data(contentsOf: fileURL)
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"track_id\"\r\n\r\n\(trackID)\r\n".data(using: .utf8)!)
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"take.m4a\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: application/octet-stream\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        req.httpBody = body
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            let detail = String(data: data, encoding: .utf8) ?? ""
+            throw NSError(domain: "Chordlyze", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "Scoring failed: \(detail)"])
+        }
+        return try JSONDecoder().decode(PracticeReport.self, from: data)
+    }
+
     static func analyze(fileURL: URL, trackID: String? = nil,
                         title: String? = nil, artist: String? = nil) async throws -> ChordAnalysis {
         let boundary = "chordlyze-\(UUID().uuidString)"

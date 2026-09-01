@@ -17,7 +17,7 @@ final class ListenRecorder: ObservableObject {
         await AVAudioApplication.requestRecordPermission()
     }
 
-    func start() throws {
+    func start(maxDuration: TimeInterval = ListenRecorder.maxDuration) throws {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.record, mode: .default)
         try session.setActive(true)
@@ -31,7 +31,7 @@ final class ListenRecorder: ObservableObject {
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
         ]
         let recorder = try AVAudioRecorder(url: url, settings: settings)
-        recorder.record(forDuration: Self.maxDuration)
+        recorder.record(forDuration: maxDuration)
         self.recorder = recorder
         fileURL = url
         elapsed = 0

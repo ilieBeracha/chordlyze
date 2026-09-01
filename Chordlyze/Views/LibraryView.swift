@@ -222,7 +222,8 @@ struct SavedAnalysisView: View {
         Group {
             if let analysis {
                 AnalysisTabsView(analysis: analysis,
-                                 title: item.title ?? "Unknown song", artist: item.artist ?? "")
+                                 title: item.title ?? "Unknown song", artist: item.artist ?? "",
+                                 trackID: item.trackId)
             } else {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -110,7 +110,8 @@ struct SearchAnalysisView: View {
     var body: some View {
         Group {
             if let analysis {
-                AnalysisTabsView(analysis: analysis, title: song.trackName, artist: song.artistName)
+                AnalysisTabsView(analysis: analysis, title: song.trackName, artist: song.artistName,
+                                 trackID: "itunes-\(song.trackId)")
             } else if failed {
                 VStack(spacing: 12) {
                     HStack { BackCircle(); Spacer() }

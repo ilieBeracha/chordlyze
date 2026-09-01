@@ -6,6 +6,8 @@ struct AnalysisTabsView: View {
     let analysis: ChordAnalysis
     let title: String
     let artist: String
+    /// Enables the Practice flow (needs the backend's reference chart key).
+    var trackID: String? = nil
 
     @State private var simple = false
     @State private var showTimeline = false
@@ -52,6 +54,24 @@ struct AnalysisTabsView: View {
                                 .background(Capsule().fill(Palette.greenTintFill))
                         }
                         Spacer()
+                        if let trackID {
+                            NavigationLink {
+                                PracticeView(analysis: analysis, title: title,
+                                             artist: artist, trackID: trackID)
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "mic.fill")
+                                        .font(.system(size: 10, weight: .bold))
+                                    Text("Practice")
+                                        .font(.system(size: 12, weight: .bold))
+                                }
+                                .foregroundStyle(.black)
+                                .padding(.vertical, 6)
+                                .padding(.horizontal, 12)
+                                .background(Capsule().fill(Color.spotifyGreen))
+                            }
+                            .buttonStyle(.plain)
+                        }
                         transposeStepper
                     }
                     .padding(.bottom, 12)

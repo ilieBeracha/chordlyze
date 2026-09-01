@@ -200,7 +200,8 @@ struct PlaylistsView: View {
     private func chordSheetDestination(_ track: Track) -> some View {
         Group {
             if let analysis = nowPlaying.analysis {
-                AnalysisTabsView(analysis: analysis, title: track.name, artist: track.artistNames)
+                AnalysisTabsView(analysis: analysis, title: track.name, artist: track.artistNames,
+                                 trackID: track.id)
             }
         }
     }

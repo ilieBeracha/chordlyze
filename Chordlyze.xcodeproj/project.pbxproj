@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		16944B0A1CCA81BDCF36660A /* ReportCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0F811F0C5F3043C10F537F8 /* ReportCardView.swift */; };
 		217111167168D9268C97AA0C /* SpotifyAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E4FF07B614A2CF0ABCC7DAC /* SpotifyAPI.swift */; };
 		2BA907A328198DD7AD731B7C /* BackendClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1243AB5316165B94E89C1FE /* BackendClient.swift */; };
 		335DE6B244A15F9E1B74E91F /* ChordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1876BBFA097772E3C9CF64D3 /* ChordView.swift */; };
@@ -27,6 +28,7 @@
 		C3DA1E6478B27FDDD14302A9 /* ChordDiagramSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 084B36CA9E995C690A1D8FEE /* ChordDiagramSheet.swift */; };
 		CEC3C7029CBBADE0C783E692 /* ListenRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA19561C8AB52CCD9FEB0DCD /* ListenRecorder.swift */; };
 		D4D4778DF0881A4E1A722B5A /* ArtworkColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 229879235E591BEFFB136C65 /* ArtworkColor.swift */; };
+		D9FBBE3071F11A8A1924B803 /* PracticeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4845970AA4AB01CC93DB733C /* PracticeView.swift */; };
 		DF8D6FE40BD9E5FA79E5F1BF /* SheetModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BA9465F7DCB9D992A1C4F3B /* SheetModel.swift */; };
 		E7D8FF3747FE41AF1E3F5CB9 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4808D969DCC674CF4F8881C7 /* Keychain.swift */; };
 		E9167BC65303156A07B3F87A /* SpotifyNowPlaying.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9466B007A80465DD43B8334 /* SpotifyNowPlaying.swift */; };
@@ -43,6 +45,7 @@
 		3B5F39F29A534B7E488CE8FE /* ChordlyzeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordlyzeApp.swift; sourceTree = "<group>"; };
 		3E4FF07B614A2CF0ABCC7DAC /* SpotifyAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyAPI.swift; sourceTree = "<group>"; };
 		4808D969DCC674CF4F8881C7 /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
+		4845970AA4AB01CC93DB733C /* PracticeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeView.swift; sourceTree = "<group>"; };
 		4BA9465F7DCB9D992A1C4F3B /* SheetModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SheetModel.swift; sourceTree = "<group>"; };
 		5C2B900763ACAA5E17D8CF4E /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		5EAB26A01240370A7EAF0A82 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -59,6 +62,7 @@
 		C2632D6D5B8D8A2C886C3E9D /* LiveNowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveNowView.swift; sourceTree = "<group>"; };
 		C984E0CBEB1E577640330B5A /* ChordLyricLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordLyricLine.swift; sourceTree = "<group>"; };
 		E1243AB5316165B94E89C1FE /* BackendClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendClient.swift; sourceTree = "<group>"; };
+		F0F811F0C5F3043C10F537F8 /* ReportCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportCardView.swift; sourceTree = "<group>"; };
 		F25A477EBBECFCAB181FC4B9 /* ChordSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordSheetView.swift; sourceTree = "<group>"; };
 		F55B762EFBB35519E23900A3 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		FA19561C8AB52CCD9FEB0DCD /* ListenRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenRecorder.swift; sourceTree = "<group>"; };
@@ -85,7 +89,9 @@
 				C2632D6D5B8D8A2C886C3E9D /* LiveNowView.swift */,
 				62445138AF6604CD03089074 /* LoginView.swift */,
 				74327AC9AC251365E2B4429F /* PlaylistsView.swift */,
+				4845970AA4AB01CC93DB733C /* PracticeView.swift */,
 				6F5B942830EA8AE8A9C87C42 /* ProfileView.swift */,
+				F0F811F0C5F3043C10F537F8 /* ReportCardView.swift */,
 				97301991890B494924679808 /* SearchView.swift */,
 			);
 			path = Views;
@@ -210,7 +216,9 @@
 				693E17329B4789EEA5A5E1B1 /* LiveNowView.swift in Sources */,
 				6A2B6688285C7D9AA0B2A958 /* LoginView.swift in Sources */,
 				B674DCCE4D245E938BC179F2 /* PlaylistsView.swift in Sources */,
+				D9FBBE3071F11A8A1924B803 /* PracticeView.swift in Sources */,
 				F4D6A14494B7A9BE7FB7459C /* ProfileView.swift in Sources */,
+				16944B0A1CCA81BDCF36660A /* ReportCardView.swift in Sources */,
 				A81A4D30F5FC3E622D1BE1A2 /* SearchView.swift in Sources */,
 				DF8D6FE40BD9E5FA79E5F1BF /* SheetModel.swift in Sources */,
 				217111167168D9268C97AA0C /* SpotifyAPI.swift in Sources */,

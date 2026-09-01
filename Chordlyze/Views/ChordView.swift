@@ -14,7 +14,8 @@ struct ChordView: View {
     var body: some View {
         Group {
             if let analysis, !recorder.isRecording {
-                AnalysisTabsView(analysis: analysis, title: track.name, artist: track.artistNames)
+                AnalysisTabsView(analysis: analysis, title: track.name, artist: track.artistNames,
+                                 trackID: track.id)
             } else {
                 captureScreen
             }
