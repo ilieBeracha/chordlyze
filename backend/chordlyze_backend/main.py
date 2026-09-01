@@ -14,13 +14,14 @@ import json
 import re
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
 import anyio.to_thread
-from fastapi import FastAPI, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, UploadFile
 
 from .analysis.engine import AudioDecodeError, recognize_chords
 from .analysis.keyfinder import analyze
@@ -70,13 +71,15 @@ def _derive_isrc(track_id: str, isrc: str | None) -> str | None:
 
 
 def _save_track(track_id: str, result: dict, title: str | None, artist: str | None,
-                isrc: str | None = None) -> None:
+                isrc: str | None = None, artwork: str | None = None) -> None:
     entry = dict(result)
     entry["track_id"] = track_id
     if title:
         entry["title"] = title
     if artist:
         entry["artist"] = artist
+    if artwork:
+        entry["artwork"] = artwork
     _track_cache_path(track_id).write_text(json.dumps(entry))
     if derived := _derive_isrc(track_id, isrc):
         path = _isrc_cache_path(derived)
@@ -206,7 +209,7 @@ async def analyze_track(
     result["source"] = "itunes_preview"
     _save_track(track_id, result,
                 title or song.get("trackName"), artist or song.get("artistName"),
-                isrc)
+                isrc, artwork=song.get("artworkUrl100"))
     return json.loads(cached.read_text())
 
 
@@ -303,8 +306,33 @@ def library() -> dict:
             "title": data.get("title"),
             "artist": data.get("artist"),
             "key": data.get("key"),
+            "artwork": data.get("artwork"),
         })
     return {"items": items}
+
+
+def _backfill_artwork() -> None:
+    """Fill missing artwork on saved analyses via iTunes search (rate-limited)."""
+    for path in CACHE_DIR.glob("track-*.json"):
+        data = json.loads(path.read_text())
+        if data.get("artwork") or not data.get("title"):
+            continue
+        try:
+            song = _itunes_lookup(None, data["title"], data.get("artist"))
+        except Exception:
+            continue
+        if song and song.get("artworkUrl100"):
+            data["artwork"] = song["artworkUrl100"]
+            path.write_text(json.dumps(data))
+        time.sleep(3)  # iTunes search rate limit (~20/min)
+
+
+@app.post("/library/backfill_artwork")
+def backfill_artwork(background: BackgroundTasks) -> dict:
+    missing = sum(1 for p in CACHE_DIR.glob("track-*.json")
+                  if not json.loads(p.read_text()).get("artwork"))
+    background.add_task(_backfill_artwork)
+    return {"queued": missing}
 
 
 @app.get("/analysis/track/{track_id}")
