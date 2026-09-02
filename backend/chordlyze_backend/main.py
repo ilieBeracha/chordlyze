@@ -24,6 +24,7 @@ from pathlib import Path
 import anyio.to_thread
 from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, UploadFile
 
+from .analysis.beats import track_beats
 from .analysis.engine import AudioDecodeError, recognize_chords
 from .analysis.keyfinder import analyze
 
@@ -45,8 +46,10 @@ _MODEL_LOCK = threading.Lock()
 
 
 def _recognize_locked(path: Path):
+    """Chords (model-locked) plus beat times for the same audio."""
     with _MODEL_LOCK:
-        return recognize_chords(path)
+        segments = recognize_chords(path)
+    return segments, track_beats(path)
 
 
 def _track_cache_path(track_id: str) -> Path:
@@ -172,13 +175,14 @@ async def analyze_upload(
     try:
         # Off the event loop so uploads/health stay responsive; the lock keeps
         # the (non-thread-safe) madmom model to one inference at a time.
-        segments = await anyio.to_thread.run_sync(_recognize_locked, tmp_path)
+        segments, tempo = await anyio.to_thread.run_sync(_recognize_locked, tmp_path)
     except AudioDecodeError as exc:
         raise HTTPException(422, str(exc)) from exc
     finally:
         tmp_path.unlink(missing_ok=True)
 
     result = analyze(segments)
+    result["tempo"] = tempo
     result["id"] = digest
     cached.write_text(json.dumps(result))
     if track_id:
@@ -240,17 +244,17 @@ async def analyze_track(
                 tmp.write(resp.read())
             tmp_path = Path(tmp.name)
         try:
-            with _MODEL_LOCK:
-                return song, recognize_chords(tmp_path)
+            return song, _recognize_locked(tmp_path)
         finally:
             tmp_path.unlink(missing_ok=True)
 
     try:
-        song, segments = await anyio.to_thread.run_sync(fetch_and_recognize)
+        song, (segments, tempo) = await anyio.to_thread.run_sync(fetch_and_recognize)
     except AudioDecodeError as exc:
         raise HTTPException(422, str(exc)) from exc
 
     result = analyze(segments)
+    result["tempo"] = tempo
     result["source"] = "itunes_preview"
     _save_track(track_id, result,
                 title or song.get("trackName"), artist or song.get("artistName"),
@@ -456,6 +460,40 @@ def backfill_difficulty() -> dict:
         path.write_text(json.dumps(data))
         updated += 1
     return {"updated": updated}
+
+
+def _backfill_tempo() -> None:
+    """Beat-track saved preview analyses that predate the tempo field. Only
+    iTunes-preview analyses can be redone: uploaded audio isn't kept."""
+    for path in CACHE_DIR.glob("track-*.json"):
+        data = json.loads(path.read_text())
+        if "tempo" in data or data.get("source") != "itunes_preview" or not data.get("title"):
+            continue
+        try:
+            song = _itunes_lookup(None, data["title"], data.get("artist"))
+            if song is None:
+                continue
+            with tempfile.NamedTemporaryFile(suffix=".m4a", delete=False) as tmp:
+                with urllib.request.urlopen(song["previewUrl"], timeout=30) as resp:
+                    tmp.write(resp.read())
+                tmp_path = Path(tmp.name)
+            try:
+                data["tempo"] = track_beats(tmp_path)
+            finally:
+                tmp_path.unlink(missing_ok=True)
+        except Exception:
+            continue
+        path.write_text(json.dumps(data))
+        time.sleep(3)  # iTunes search rate limit (~20/min)
+
+
+@app.post("/library/backfill_tempo")
+def backfill_tempo(background: BackgroundTasks) -> dict:
+    missing = sum(1 for p in CACHE_DIR.glob("track-*.json")
+                  if "tempo" not in (d := json.loads(p.read_text()))
+                  and d.get("source") == "itunes_preview")
+    background.add_task(_backfill_tempo)
+    return {"queued": missing}
 
 
 def _backfill_artwork() -> None:
