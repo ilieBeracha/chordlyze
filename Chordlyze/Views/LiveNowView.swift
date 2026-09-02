@@ -31,7 +31,9 @@ struct LiveNowView: View {
         let name: String
         var id: String { name }
     }
-    private let clock = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+    /// Static: an instance timer is recreated (and its countdown reset) every
+    /// time the parent re-renders, which in practice mode is every 0.5 s.
+    private static let clock = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
     /// Position on the lyric timeline (song position plus manual re-anchor).
     private var lyricPosition: Double { position + lyricsOffset }
@@ -71,7 +73,7 @@ struct LiveNowView: View {
         .padding(.bottom, 34)
         .background(backdrop)
         .toolbar(.hidden, for: .navigationBar)
-        .onReceive(clock) { _ in
+        .onReceive(Self.clock) { _ in
             if let live = livePosition() {
                 withAnimation(.easeInOut(duration: 0.35)) { position = live }
             }

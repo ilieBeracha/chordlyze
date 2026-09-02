@@ -31,7 +31,7 @@ struct PracticeView: View {
     @State private var clicking = false
     @State private var report: BackendClient.PracticeReport?
     @Environment(\.dismiss) private var dismiss
-    private let clock = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    private static let clock = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     /// Spotify position vs. expected drift beyond this = user seeked mid-take.
     private static let seekTolerance: Double = 2.5
     /// Shorter takes are dropped on interruption instead of scored.
@@ -173,7 +173,7 @@ struct PracticeView: View {
             .padding(.horizontal, 24)
             .padding(.bottom, 64)
         }
-        .onReceive(clock) { _ in checkSync() }
+        .onReceive(Self.clock) { _ in checkSync() }
         .onDisappear {
             metronome.stop()
             if phase == .recording { _ = recorder.stop() }
