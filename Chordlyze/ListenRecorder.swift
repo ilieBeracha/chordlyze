@@ -19,7 +19,9 @@ final class ListenRecorder: ObservableObject {
 
     func start(maxDuration: TimeInterval = ListenRecorder.maxDuration) throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .default)
+        // playAndRecord (not record) so a running metronome keeps clicking.
+        try session.setCategory(.playAndRecord, mode: .default,
+                                options: [.defaultToSpeaker, .allowBluetoothA2DP])
         try session.setActive(true)
 
         let url = FileManager.default.temporaryDirectory

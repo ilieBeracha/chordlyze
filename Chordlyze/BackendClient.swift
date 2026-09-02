@@ -11,11 +11,18 @@ struct ChordAnalysis: Decodable {
     let chords: [ChordSegment]
     let source: String?  // "itunes_preview" when analyzed from a preview excerpt
     let difficulty: Difficulty?
+    /// Beat grid on the chord timeline; nil for analyses made before beat tracking.
+    let tempo: Tempo?
+
+    struct Tempo: Decodable {
+        let bpm: Double
+        let beats: [Double]
+    }
 
     enum CodingKeys: String, CodingKey {
         case key
         case keyConfidence = "key_confidence"
-        case chords, source, difficulty
+        case chords, source, difficulty, tempo
     }
 }
 
@@ -193,7 +200,8 @@ enum BackendClient {
     }
 
     /// Upload a practice recording; the backend scores it against the track's chart.
-    static func submitPracticeTake(fileURL: URL, trackID: String) async throws -> PracticeReport {
+    /// `offset`: song second that take second 0 corresponds to (Spotify sync).
+    static func submitPracticeTake(fileURL: URL, trackID: String, offset: Double) async throws -> PracticeReport {
         let boundary = "chordlyze-\(UUID().uuidString)"
         var req = URLRequest(url: Config.backendBaseURL.appendingPathComponent("practice_take"))
         req.httpMethod = "POST"
@@ -203,6 +211,8 @@ enum BackendClient {
         var body = Data()
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"track_id\"\r\n\r\n\(trackID)\r\n".data(using: .utf8)!)
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"offset\"\r\n\r\n\(offset)\r\n".data(using: .utf8)!)
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"file\"; filename=\"take.m4a\"\r\n".data(using: .utf8)!)
         body.append("Content-Type: application/octet-stream\r\n\r\n".data(using: .utf8)!)
