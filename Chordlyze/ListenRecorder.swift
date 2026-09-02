@@ -19,9 +19,10 @@ final class ListenRecorder: ObservableObject {
 
     func start(maxDuration: TimeInterval = ListenRecorder.maxDuration) throws {
         let session = AVAudioSession.sharedInstance()
-        // playAndRecord (not record) so a running metronome keeps clicking.
+        // playAndRecord (not record) so a running metronome keeps clicking;
+        // mixWithOthers so activating the session doesn't pause Spotify.
         try session.setCategory(.playAndRecord, mode: .default,
-                                options: [.defaultToSpeaker, .allowBluetoothA2DP])
+                                options: [.defaultToSpeaker, .allowBluetoothA2DP, .mixWithOthers])
         try session.setActive(true)
 
         let url = FileManager.default.temporaryDirectory

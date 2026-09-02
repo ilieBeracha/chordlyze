@@ -23,7 +23,7 @@ final class Metronome {
     func start(countIn: Int, period: Double, beats: [Double]) throws -> ContinuousClock.Instant {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playAndRecord, mode: .default,
-                                options: [.defaultToSpeaker, .allowBluetoothA2DP])
+                                options: [.defaultToSpeaker, .allowBluetoothA2DP, .mixWithOthers])
         try session.setActive(true)
         try engine.start()
         player.play()
