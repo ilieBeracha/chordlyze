@@ -56,7 +56,7 @@
 		6F5B942830EA8AE8A9C87C42 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		7137E803C002FAEC4B13BC6A /* SpotifyAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyAuth.swift; sourceTree = "<group>"; };
 		74327AC9AC251365E2B4429F /* PlaylistsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistsView.swift; sourceTree = "<group>"; };
-		92161FF0D46239A2721AFDD7 /* Chordlyze.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Chordlyze.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		92161FF0D46239A2721AFDD7 /* Chordlyze.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Chordlyze.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		97301991890B494924679808 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		9D18A5847FAF187D94D2E7ED /* ChordMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordMath.swift; sourceTree = "<group>"; };
 		A1649CD4213D38B91DD970BB /* Metronome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Metronome.swift; sourceTree = "<group>"; };
@@ -373,7 +373,9 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Chordlyze/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Chordlyze;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Chordlyze listens to the song playing around you to analyze its chords.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -399,7 +401,9 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Chordlyze/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Chordlyze;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Chordlyze listens to the song playing around you to analyze its chords.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (

@@ -1,7 +1,7 @@
 .DS_Store
+build/
+xcuserdata/
 backend/.venv/
 backend/analysis_cache/
-backend/__pycache__/
 **/__pycache__/
-ios/Chordlyze.xcodeproj/xcuserdata/
 *.xcarchive
