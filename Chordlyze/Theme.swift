@@ -76,3 +76,14 @@ struct BackCircle: View {
         .buttonStyle(.plain)
     }
 }
+
+/// Chord picked for its diagram sheet, from any screen that shows chords.
+struct SelectedChord: Identifiable {
+    let name: String
+    var id: String { name }
+}
+
+/// "3:07" from seconds; negative clamps to 0:00.
+func mmss(_ seconds: Double) -> String {
+    String(format: "%d:%02d", Int(max(0, seconds)) / 60, Int(max(0, seconds)) % 60)
+}

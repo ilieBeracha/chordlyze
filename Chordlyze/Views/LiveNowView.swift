@@ -30,10 +30,6 @@ struct LiveNowView: View {
     /// Moves the lyrics onto song time; the chords never move.
     @State private var lyricsOffset: Double = 0
 
-    struct SelectedChord: Identifiable {
-        let name: String
-        var id: String { name }
-    }
     enum LyricsState {
         case loading
         /// The song has lyrics with times: the teleprompter follows them.
@@ -60,7 +56,7 @@ struct LiveNowView: View {
             return "Chords from a 30-second preview — not synced to this playback."
         }
         if let trackDuration, analysis.coverageEnd + 5 < trackDuration {
-            return "Chords analyzed up to \(timestamp(analysis.coverageEnd)); the rest of the song has none."
+            return "Chords analyzed up to \(mmss(analysis.coverageEnd)); the rest of the song has none."
         }
         return nil
     }
@@ -215,7 +211,7 @@ struct LiveNowView: View {
             }
             HStack(spacing: 6) {
                 Circle().fill(Color.spotifyGreen).frame(width: 6, height: 6)
-                Text(timestamp(position))
+                Text(mmss(position))
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundStyle(Color.spotifyGreen)
             }
@@ -227,7 +223,7 @@ struct LiveNowView: View {
 
     private var progressRail: some View {
         HStack(spacing: 10) {
-            Text(timestamp(position))
+            Text(mmss(position))
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                 .foregroundStyle(Color.spotifyGreen)
             GeometryReader { geo in
@@ -246,7 +242,7 @@ struct LiveNowView: View {
                 .frame(maxHeight: .infinity, alignment: .center)
             }
             .frame(height: 9)
-            Text(timestamp(duration))
+            Text(mmss(duration))
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                 .foregroundStyle(Palette.secondary)
         }
@@ -438,7 +434,4 @@ struct LiveNowView: View {
             .joined(separator: "   ")
     }
 
-    private func timestamp(_ seconds: Double) -> String {
-        String(format: "%d:%02d", Int(max(0, seconds)) / 60, Int(max(0, seconds)) % 60)
-    }
 }

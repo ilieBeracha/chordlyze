@@ -8,6 +8,9 @@ struct PracticeView: View {
     let analysis: ChordAnalysis
     let title: String
     let artist: String
+    /// Album name, when known: keeps the teleprompter's lyrics on the same
+    /// version the sheet and live view show.
+    var album: String? = nil
     let trackID: String
 
     private enum Phase: Equatable {
@@ -18,24 +21,29 @@ struct PracticeView: View {
         case failed(String)
     }
 
-    @StateObject private var recorder = ListenRecorder()
+    @State private var recorder = TakeRecorder()
     @State private var metronome = Metronome()
     @ObservedObject private var nowPlaying = SpotifyNowPlaying.shared
     @State private var phase: Phase = .intro
+    /// Count-in in flight; cancelled when the screen goes away so no take
+    /// starts recording behind a screen that is no longer there.
+    @State private var countIn: Task<Void, Never>?
     @State private var startedAt: Date?
     /// Song second that take second 0 corresponds to.
     @State private var songOffset: Double = 0
     /// Take clock is Spotify's playback position rather than a local timer.
     @State private var synced = false
+    /// Full song length at record start (Spotify's), for the progress rail.
+    @State private var takeDuration: Double?
     /// Metronome is clicking the song's beat grid (local clock only).
     @State private var clicking = false
     @State private var report: BackendClient.PracticeReport?
-    @Environment(\.dismiss) private var dismiss
     private static let clock = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     /// Spotify position vs. expected drift beyond this = user seeked mid-take.
     private static let seekTolerance: Double = 2.5
     /// Shorter takes are dropped on interruption instead of scored.
     private static let minScorableTake: Double = 10
+    private static let maxTake: Double = 600
 
     /// Spotify playback of this track, when that's what the account is playing.
     private var spotifyThisTrack: SpotifyNowPlaying.Playing? {
@@ -60,9 +68,11 @@ struct PracticeView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .onReceive(Self.clock) { _ in tick() }
+        .onDisappear { abandon() }
         .navigationDestination(isPresented: Binding(
             get: { report != nil },
-            set: { if !$0 { report = nil } })) {
+            set: { if !$0 { report = nil; phase = .intro } })) {
             if let report {
                 ReportCardView(report: report, title: title, artist: artist)
             }
@@ -89,7 +99,7 @@ struct PracticeView: View {
                     .multilineTextAlignment(.center)
                 syncStatus
                 Button {
-                    Task { await begin() }
+                    countIn = Task { await begin() }
                 } label: {
                     Text("Start")
                         .font(.system(size: 16, weight: .bold))
@@ -114,7 +124,7 @@ struct PracticeView: View {
         let (icon, tint, text): (String, Color, String) = {
             if let p = spotifyThisTrack, p.isPlaying, let pos = nowPlaying.livePosition() {
                 return ("waveform", Color.spotifyGreen,
-                        "Synced to Spotify · playing at \(Self.mmss(pos)). Start locks the take to Spotify's position.")
+                        "Synced to Spotify · playing at \(mmss(pos)). Start locks the take to Spotify's position.")
             }
             if spotifyThisTrack != nil {
                 return ("pause.circle", Palette.secondary,
@@ -143,7 +153,7 @@ struct PracticeView: View {
     private var recordingView: some View {
         ZStack(alignment: .bottom) {
             LiveNowView(title: title, artist: artist, analysis: analysis,
-                        trackDuration: spotifyThisTrack?.track.durationMs.map { Double($0) / 1000 }) {
+                        trackDuration: takeDuration, album: album) {
                 takePosition()
             }
             HStack(spacing: 10) {
@@ -172,11 +182,6 @@ struct PracticeView: View {
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 64)
-        }
-        .onReceive(Self.clock) { _ in checkSync() }
-        .onDisappear {
-            metronome.stop()
-            if phase == .recording { _ = recorder.stop() }
         }
     }
 
@@ -219,43 +224,43 @@ struct PracticeView: View {
             return
         }
         let followSpotify = spotifyThisTrack?.isPlaying == true
-        if !followSpotify, let tempo = analysis.tempo {
-            // Solo: four-beat count-in at the song's tempo, clicks through the take.
-            let period = 60 / tempo.bpm
-            let recordAt: ContinuousClock.Instant
-            do {
-                recordAt = try metronome.start(countIn: 4, period: period, beats: tempo.beats)
-            } catch {
-                phase = .failed("Could not start the metronome: \(error.localizedDescription)")
-                return
-            }
-            for n in [4, 3, 2, 1] {
-                withAnimation { phase = .countdown(n) }
-                try? await Task.sleep(until: recordAt - .seconds(Double(n - 1) * period), clock: .continuous)
-            }
-            clicking = true
-        } else {
-            for n in [3, 2, 1] {
-                withAnimation { phase = .countdown(n) }
-                try? await Task.sleep(for: .seconds(1))
-            }
-            clicking = false
-        }
         do {
-            try recorder.start(maxDuration: 600)
-            startedAt = Date()
-            if followSpotify, let pos = nowPlaying.livePosition() {
-                songOffset = pos
-                synced = true
+            if !followSpotify, let tempo = analysis.tempo {
+                // Solo: four-beat count-in at the song's tempo, clicks through the take.
+                let period = 60 / tempo.bpm
+                let recordAt = try metronome.start(countIn: 4, period: period, beats: tempo.beats)
+                for n in [4, 3, 2, 1] {
+                    withAnimation { phase = .countdown(n) }
+                    try await Task.sleep(until: recordAt - .seconds(Double(n - 1) * period), clock: .continuous)
+                }
+                clicking = true
             } else {
-                songOffset = 0
-                synced = false
+                for n in [3, 2, 1] {
+                    withAnimation { phase = .countdown(n) }
+                    try await Task.sleep(for: .seconds(1))
+                }
+                clicking = false
             }
-            phase = .recording
+            try recorder.start(maxDuration: Self.maxTake)
+        } catch is CancellationError {
+            // Screen went away during the count-in; nothing started.
+            metronome.stop()
+            return
         } catch {
             metronome.stop()
-            phase = .failed("Could not start recording: \(error.localizedDescription)")
+            phase = .failed("Could not start: \(error.localizedDescription)")
+            return
         }
+        startedAt = Date()
+        if followSpotify, let pos = nowPlaying.livePosition() {
+            songOffset = pos
+            synced = true
+        } else {
+            songOffset = 0
+            synced = false
+        }
+        takeDuration = spotifyThisTrack?.track.durationMs.map { Double($0) / 1000 }
+        phase = .recording
     }
 
     /// Song position of the take right now.
@@ -265,11 +270,17 @@ struct PracticeView: View {
         return songOffset + Date().timeIntervalSince(startedAt)
     }
 
-    /// Spotify paused, seeked, or changed song mid-take: the rest of the take
-    /// can't be scored, so end it here (score what was played if long enough).
-    private func checkSync() {
-        guard phase == .recording, synced, let startedAt else { return }
+    /// Once a second while recording: the take hit its cap, or Spotify
+    /// paused, seeked, or changed song mid-take. Either way the rest can't
+    /// be scored, so end it here (score what was played if long enough).
+    private func tick() {
+        guard phase == .recording, let startedAt else { return }
         let elapsed = Date().timeIntervalSince(startedAt)
+        if !recorder.isRecording {
+            finish()
+            return
+        }
+        guard synced else { return }
         let expected = songOffset + elapsed
         let reason: String
         if let p = spotifyThisTrack, p.isPlaying {
@@ -284,14 +295,9 @@ struct PracticeView: View {
         if elapsed >= Self.minScorableTake {
             finish()
         } else {
-            metronome.stop()
-            if let url = recorder.stop() { try? FileManager.default.removeItem(at: url) }
+            discard()
             phase = .failed("\(reason). Keep it playing for a continuous take.")
         }
-    }
-
-    private static func mmss(_ seconds: Double) -> String {
-        String(format: "%d:%02d", Int(max(0, seconds)) / 60, Int(max(0, seconds)) % 60)
     }
 
     private func finish() {
@@ -309,6 +315,22 @@ struct PracticeView: View {
                 phase = .failed(error.localizedDescription)
             }
             try? FileManager.default.removeItem(at: url)
+        }
+    }
+
+    /// Stop everything and throw the audio away.
+    private func discard() {
+        metronome.stop()
+        if let url = recorder.stop() { try? FileManager.default.removeItem(at: url) }
+    }
+
+    /// Leaving the screen: cancel a count-in, drop an unfinished take.
+    private func abandon() {
+        countIn?.cancel()
+        countIn = nil
+        if phase == .recording {
+            discard()
+            phase = .intro
         }
     }
 }

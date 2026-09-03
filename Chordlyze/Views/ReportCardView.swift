@@ -8,10 +8,6 @@ struct ReportCardView: View {
     let artist: String
 
     @State private var selectedChord: SelectedChord?
-    struct SelectedChord: Identifiable {
-        let name: String
-        var id: String { name }
-    }
 
     var body: some View {
         ScrollView {

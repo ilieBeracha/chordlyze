@@ -8,11 +8,10 @@ GET  /analysis/track/{id}     — saved analysis for a track (or its ISRC twin).
 GET  /lyrics                  — time-synced lyrics from LRCLIB.
 GET  /library                 — every saved analysis.
 POST /practice_take           — score a practice recording against the chart.
-GET  /practice/history/{id}   — past takes for a track.
 GET  /health                  — liveness.
 
 Analyses are JSON files under CACHE_DIR: track-<id>.json, isrc-<ISRC>.json,
-lyrics4-<digest>.json, take-<id>.json.
+lyrics4-<digest>.json.
 """
 from __future__ import annotations
 
@@ -22,7 +21,6 @@ import os
 import re
 import tempfile
 import threading
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -484,18 +482,4 @@ async def practice_take(
                         [s.to_dict() for s in segments], offset)
     if "error" in report:
         raise HTTPException(422, report["error"])
-    take_id = uuid.uuid4().hex[:12]
-    entry = {"take_id": take_id, "track_id": track_id, "at": time.time(), **report}
-    (CACHE_DIR / f"take-{take_id}.json").write_text(json.dumps(entry))
-    return entry
-
-
-@app.get("/practice/history/{track_id}")
-def practice_history(track_id: str) -> dict:
-    takes = []
-    for path in CACHE_DIR.glob("take-*.json"):
-        data = json.loads(path.read_text())
-        if data.get("track_id") == track_id:
-            takes.append(data)
-    takes.sort(key=lambda t: t.get("at", 0), reverse=True)
-    return {"takes": takes}
+    return {"take_id": uuid.uuid4().hex[:12], "track_id": track_id, **report}

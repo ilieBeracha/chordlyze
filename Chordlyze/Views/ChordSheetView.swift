@@ -19,11 +19,6 @@ struct AnalysisTabsView: View {
     @State private var manualShift = 0
     @State private var selectedChord: SelectedChord?
 
-    struct SelectedChord: Identifiable {
-        let name: String
-        var id: String { name }
-    }
-
     private var capo: Int {
         ChordMath.autoCapo(names: analysis.chords
             .filter { $0.label != "N" }
@@ -66,8 +61,8 @@ struct AnalysisTabsView: View {
             // A preview excerpt has no song timeline to score a take against.
             if let trackID, !analysis.isPreview {
                 NavigationLink {
-                    PracticeView(analysis: analysis, title: title,
-                                 artist: artist, trackID: trackID)
+                    PracticeView(analysis: analysis, title: title, artist: artist,
+                                 album: album, trackID: trackID)
                 } label: {
                     toolCell("PRACTICE") {
                         HStack(spacing: 6) {

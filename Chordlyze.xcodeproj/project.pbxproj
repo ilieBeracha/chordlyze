@@ -26,7 +26,7 @@
 		B7CA552052205086EC43A233 /* SpotifyAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7137E803C002FAEC4B13BC6A /* SpotifyAuth.swift */; };
 		C2D3DBA369FE2FCC2F82E0E9 /* ChordSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F25A477EBBECFCAB181FC4B9 /* ChordSheetView.swift */; };
 		C3DA1E6478B27FDDD14302A9 /* ChordDiagramSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 084B36CA9E995C690A1D8FEE /* ChordDiagramSheet.swift */; };
-		CEC3C7029CBBADE0C783E692 /* ListenRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA19561C8AB52CCD9FEB0DCD /* ListenRecorder.swift */; };
+		CEC3C7029CBBADE0C783E692 /* TakeRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA19561C8AB52CCD9FEB0DCD /* TakeRecorder.swift */; };
 		D4D4778DF0881A4E1A722B5A /* ArtworkColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 229879235E591BEFFB136C65 /* ArtworkColor.swift */; };
 		D647C63988F12719D2495568 /* DrillView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BED8DDCFB35F1A4DB0694CB1 /* DrillView.swift */; };
 		D9FBBE3071F11A8A1924B803 /* PracticeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4845970AA4AB01CC93DB733C /* PracticeView.swift */; };
@@ -73,7 +73,7 @@
 		F0F811F0C5F3043C10F537F8 /* ReportCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportCardView.swift; sourceTree = "<group>"; };
 		F25A477EBBECFCAB181FC4B9 /* ChordSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordSheetView.swift; sourceTree = "<group>"; };
 		F55B762EFBB35519E23900A3 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
-		FA19561C8AB52CCD9FEB0DCD /* ListenRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenRecorder.swift; sourceTree = "<group>"; };
+		FA19561C8AB52CCD9FEB0DCD /* TakeRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakeRecorder.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -127,7 +127,7 @@
 				30ACA8DA715E5954990AADD9 /* ChordShapes.swift */,
 				5EAB26A01240370A7EAF0A82 /* Info.plist */,
 				4808D969DCC674CF4F8881C7 /* Keychain.swift */,
-				FA19561C8AB52CCD9FEB0DCD /* ListenRecorder.swift */,
+				FA19561C8AB52CCD9FEB0DCD /* TakeRecorder.swift */,
 				A1649CD4213D38B91DD970BB /* Metronome.swift */,
 				C5B4A39281706F5E4D3C2B1A /* Chord.swift */,
 				4BA9465F7DCB9D992A1C4F3B /* SheetModel.swift */,
@@ -225,7 +225,7 @@
 				D647C63988F12719D2495568 /* DrillView.swift in Sources */,
 				E7D8FF3747FE41AF1E3F5CB9 /* Keychain.swift in Sources */,
 				387811BFFCDDEE897C63ADCB /* LibraryView.swift in Sources */,
-				CEC3C7029CBBADE0C783E692 /* ListenRecorder.swift in Sources */,
+				CEC3C7029CBBADE0C783E692 /* TakeRecorder.swift in Sources */,
 				819EA82C7039FDCF503E5133 /* LiveHostViews.swift in Sources */,
 				693E17329B4789EEA5A5E1B1 /* LiveNowView.swift in Sources */,
 				6A2B6688285C7D9AA0B2A958 /* LoginView.swift in Sources */,

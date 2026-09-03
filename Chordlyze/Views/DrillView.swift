@@ -9,7 +9,7 @@ struct DrillView: View {
     @StateObject private var listener = ChordDrillListener()
     @State private var running = false
     @State private var remaining = 60
-    @State private var finalScore: Int?
+    @State private var result: (score: Int, newBest: Bool)?
     @State private var error: String?
     @AppStorage private var best: Int
     @Environment(\.dismiss) private var dismiss
@@ -35,8 +35,8 @@ struct DrillView: View {
 
             Spacer()
 
-            if let finalScore {
-                results(finalScore)
+            if let result {
+                results(result.score, newBest: result.newBest)
             } else {
                 drill
             }
@@ -47,7 +47,10 @@ struct DrillView: View {
         .padding(.bottom, 34)
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .onDisappear { if running { listener.stop() } }
+        .onDisappear {
+            // Ends the countdown loop too: it checks `running` every second.
+            if running { running = false; listener.stop() }
+        }
     }
 
     private var drill: some View {
@@ -101,16 +104,16 @@ struct DrillView: View {
         .padding(.horizontal, 12)
     }
 
-    private func results(_ score: Int) -> some View {
+    private func results(_ score: Int, newBest: Bool) -> some View {
         VStack(spacing: 16) {
             Text("\(score)")
                 .font(.system(size: 84, weight: .heavy, design: .rounded))
                 .foregroundStyle(Color.spotifyGreen)
-            Text(score > best ? "New best!" : "changes in a minute")
+            Text(newBest ? "New best!" : "changes in a minute")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.white)
             Button {
-                finalScore = nil
+                result = nil
             } label: {
                 Text("Go again")
                     .font(.system(size: 15, weight: .bold))
@@ -121,7 +124,6 @@ struct DrillView: View {
             }
             .buttonStyle(.plain)
         }
-        .onAppear { if score > best { best = score } }
     }
 
     private func chordTile(_ name: String) -> some View {
@@ -153,8 +155,13 @@ struct DrillView: View {
             try? await Task.sleep(for: .seconds(1))
             withAnimation { remaining -= 1 }
         }
+        // Left the screen mid-drill: nothing to score.
+        guard running else { return }
         listener.stop()
         running = false
-        finalScore = listener.changes
+        let score = listener.changes
+        let newBest = score > best
+        if newBest { best = score }
+        result = (score, newBest)
     }
 }

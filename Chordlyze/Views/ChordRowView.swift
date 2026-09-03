@@ -37,7 +37,7 @@ struct ChordRowView: View {
             switch row.kind {
             case .uncovered:
                 Label(row.text.isEmpty ? "Chords not analyzed for \(Self.span(row))"
-                                       : "Chords not analyzed past \(Self.mmss(row.start))",
+                                       : "Chords not analyzed past \(mmss(row.start))",
                       systemImage: "questionmark.circle")
                     .font(style == .sheet ? .caption2 : .system(size: 14))
                     .foregroundStyle(Palette.tertiary)
@@ -103,10 +103,6 @@ struct ChordRowView: View {
 
     static func span(_ row: SheetModel.Row) -> String {
         "\(mmss(row.start))–\(mmss(row.end))"
-    }
-
-    static func mmss(_ seconds: Double) -> String {
-        String(format: "%d:%02d", Int(max(0, seconds)) / 60, Int(max(0, seconds)) % 60)
     }
 }
 

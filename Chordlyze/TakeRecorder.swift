@@ -1,23 +1,20 @@
 import AVFoundation
 import Foundation
 
-/// Records microphone audio (Shazam-style "listen" capture) to an .m4a file.
+/// Records a practice take from the microphone to an .m4a file.
 @MainActor
-final class ListenRecorder: ObservableObject {
-    @Published var isRecording = false
-    @Published var elapsed: TimeInterval = 0
-
-    static let maxDuration: TimeInterval = 40
-
+final class TakeRecorder {
     private var recorder: AVAudioRecorder?
-    private var timer: Timer?
     private(set) var fileURL: URL?
+
+    /// False once the recorder hit `maxDuration` on its own.
+    var isRecording: Bool { recorder?.isRecording ?? false }
 
     func requestPermission() async -> Bool {
         await AVAudioApplication.requestRecordPermission()
     }
 
-    func start(maxDuration: TimeInterval = ListenRecorder.maxDuration) throws {
+    func start(maxDuration: TimeInterval) throws {
         let session = AVAudioSession.sharedInstance()
         // playAndRecord (not record) so a running metronome keeps clicking;
         // mixWithOthers so activating the session doesn't pause Spotify.
@@ -26,7 +23,7 @@ final class ListenRecorder: ObservableObject {
         try session.setActive(true)
 
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("listen-\(UUID().uuidString).m4a")
+            .appendingPathComponent("take-\(UUID().uuidString).m4a")
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: 44100.0,
@@ -37,30 +34,15 @@ final class ListenRecorder: ObservableObject {
         recorder.record(forDuration: maxDuration)
         self.recorder = recorder
         fileURL = url
-        elapsed = 0
-        isRecording = true
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, let rec = self.recorder else { return }
-                self.elapsed = rec.currentTime
-                if !rec.isRecording { self.finish() }  // hit maxDuration
-            }
-        }
     }
 
-    /// Stops recording and returns the captured file (nil if nothing recorded).
-    @discardableResult
+    /// Stops recording and returns the captured file; nil if nothing was
+    /// started. The file is the caller's to delete.
     func stop() -> URL? {
         recorder?.stop()
-        finish()
-        return fileURL
-    }
-
-    private func finish() {
-        timer?.invalidate()
-        timer = nil
         recorder = nil
-        isRecording = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        defer { fileURL = nil }
+        return fileURL
     }
 }
