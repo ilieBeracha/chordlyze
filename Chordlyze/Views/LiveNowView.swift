@@ -218,7 +218,7 @@ struct LiveNowView: View {
                     if current.isInstrumental {
                         VStack(alignment: .leading, spacing: 16) {
                             if !current.chords.isEmpty {
-                                HStack(spacing: 8) {
+                                FlowLayout(spacing: 8) {  // wraps: long breaks carry many chords
                                     ForEach(grouped(current.chords)) { group in
                                         chordChip(group)
                                     }
@@ -242,12 +242,11 @@ struct LiveNowView: View {
                         // Word-level pinning is ambiguous in RTL — keep chips above the line.
                         VStack(alignment: .trailing, spacing: 14) {
                             if !current.chords.isEmpty {
-                                HStack(spacing: 8) {
-                                    ForEach(grouped(current.chords)) { group in
+                                FlowLayout(spacing: 8) {
+                                    ForEach(grouped(current.chords).reversed()) { group in
                                         chordChip(group)
                                     }
                                 }
-                                .environment(\.layoutDirection, .rightToLeft)
                             }
                             Text(current.text)
                                 .font(.system(size: 30, weight: .bold, design: .rounded))

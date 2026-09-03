@@ -290,8 +290,10 @@ struct ChordSheetView: View {
         let rtl = line.text.isRTLText
         return VStack(alignment: rtl ? .trailing : .leading, spacing: 0) {
             if !line.chords.isEmpty {
-                HStack(spacing: 6) {
-                    ForEach(line.chords) { chord in
+                // Wraps: a full-song analysis can put six or more chords on a
+                // line, and an HStack would overflow the screen.
+                FlowLayout(spacing: 6) {
+                    ForEach(rtl ? line.chords.reversed() : line.chords) { chord in
                         let name = ChordMath.transpose(chord.name, by: transposeBy)
                         Button {
                             onChordTap?(name)
