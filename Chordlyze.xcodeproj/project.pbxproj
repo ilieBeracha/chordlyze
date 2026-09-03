@@ -36,6 +36,7 @@
 		DF8D6FE40BD9E5FA79E5F1BF /* SheetModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BA9465F7DCB9D992A1C4F3B /* SheetModel.swift */; };
 		E7D8FF3747FE41AF1E3F5CB9 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4808D969DCC674CF4F8881C7 /* Keychain.swift */; };
 		E9167BC65303156A07B3F87A /* SpotifyNowPlaying.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9466B007A80465DD43B8334 /* SpotifyNowPlaying.swift */; };
+		2B3C4D5E6F708192A3B4C5D6 /* ChordRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6C5B4A39281706F5E4D3C2B /* ChordRowView.swift */; };
 		EABAEF37B1E0E250E3F39AB5 /* ChordLyricLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C984E0CBEB1E577640330B5A /* ChordLyricLine.swift */; };
 		F4D6A14494B7A9BE7FB7459C /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F5B942830EA8AE8A9C87C42 /* ProfileView.swift */; };
 /* End PBXBuildFile section */
@@ -68,6 +69,7 @@
 		B9466B007A80465DD43B8334 /* SpotifyNowPlaying.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyNowPlaying.swift; sourceTree = "<group>"; };
 		BED8DDCFB35F1A4DB0694CB1 /* DrillView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrillView.swift; sourceTree = "<group>"; };
 		C2632D6D5B8D8A2C886C3E9D /* LiveNowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveNowView.swift; sourceTree = "<group>"; };
+		D6C5B4A39281706F5E4D3C2B /* ChordRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordRowView.swift; sourceTree = "<group>"; };
 		C984E0CBEB1E577640330B5A /* ChordLyricLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordLyricLine.swift; sourceTree = "<group>"; };
 		E1243AB5316165B94E89C1FE /* BackendClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendClient.swift; sourceTree = "<group>"; };
 		F0F811F0C5F3043C10F537F8 /* ReportCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportCardView.swift; sourceTree = "<group>"; };
@@ -89,6 +91,7 @@
 			isa = PBXGroup;
 			children = (
 				084B36CA9E995C690A1D8FEE /* ChordDiagramSheet.swift */,
+				D6C5B4A39281706F5E4D3C2B /* ChordRowView.swift */,
 				C984E0CBEB1E577640330B5A /* ChordLyricLine.swift */,
 				F25A477EBBECFCAB181FC4B9 /* ChordSheetView.swift */,
 				1876BBFA097772E3C9CF64D3 /* ChordView.swift */,
@@ -216,6 +219,7 @@
 				2BA907A328198DD7AD731B7C /* BackendClient.swift in Sources */,
 				C3DA1E6478B27FDDD14302A9 /* ChordDiagramSheet.swift in Sources */,
 				DC87311DE722AD2BC2AB3ACA /* ChordDrillListener.swift in Sources */,
+				2B3C4D5E6F708192A3B4C5D6 /* ChordRowView.swift in Sources */,
 				EABAEF37B1E0E250E3F39AB5 /* ChordLyricLine.swift in Sources */,
 				3817F5E6B10603979A96BA3F /* ChordMath.swift in Sources */,
 				80ABEDD4F7DCA0F55379787E /* ChordShapes.swift in Sources */,

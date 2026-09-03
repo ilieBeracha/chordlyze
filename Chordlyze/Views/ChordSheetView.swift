@@ -8,6 +8,9 @@ struct AnalysisTabsView: View {
     let artist: String
     /// Enables the Practice flow (needs the backend's reference chart key).
     var trackID: String? = nil
+    /// Full song length when known: the sheet's timeline runs to the end of
+    /// the song, not just to the last analyzed chord.
+    var trackDuration: Double? = nil
 
     @State private var simple = false
     @State private var showTimeline = false
@@ -39,7 +42,7 @@ struct AnalysisTabsView: View {
                                            onChordTap: { selectedChord = SelectedChord(name: $0) })
                     } else {
                         ChordSheetView(analysis: analysis, title: title, artist: artist,
-                                       transposeBy: shift,
+                                       trackDuration: trackDuration, transposeBy: shift,
                                        onChordTap: { selectedChord = SelectedChord(name: $0) })
                     }
                 }
@@ -234,16 +237,18 @@ struct AnalysisTabsView: View {
     }
 }
 
-/// Lyrics with chord chips above each line.
+/// The song as timeline rows: lyric lines with their chords, timed
+/// instrumental rows for intro, breaks and ending, and a marker for any part
+/// past the analyzed audio. Same rows and renderer as the live view.
 struct ChordSheetView: View {
     let analysis: ChordAnalysis
     let title: String
     let artist: String
+    var trackDuration: Double? = nil
     var transposeBy: Int = 0
     var onChordTap: ((String) -> Void)? = nil
 
-    @State private var rendered: [SheetModel.RenderLine]?
-    @State private var failed = false
+    @State private var rows: [SheetModel.Row]?
     @State private var lyricsNote: String?
 
     var body: some View {
@@ -252,37 +257,33 @@ struct ChordSheetView: View {
                 coverageLabel("Chords come from a 30-second preview at an unknown point in the song, so they can't be placed on the lyrics.")
                 AnalysisResultView(analysis: analysis, transposeBy: transposeBy, embedded: true,
                                    onChordTap: onChordTap)
-            } else if let rendered {
+            } else if let rows {
                 if let lyricsNote {
                     Text(lyricsNote)
                         .font(.system(size: 9))
                         .foregroundStyle(Palette.faint)
                         .padding(.bottom, 8)
                 }
-                if let last = rendered.last, analysis.coverageEnd < last.id {
-                    coverageLabel("Chords analyzed up to \(Self.mmss(analysis.coverageEnd)); later lines have none.")
+                ForEach(rows) { row in
+                    ChordRowView(row: row, transposeBy: transposeBy, style: .sheet,
+                                 onChordTap: onChordTap)
+                        .padding(.top, 8)
+                        .padding(.bottom, 10)
+                        .overlay(alignment: .bottom) {
+                            Rectangle().fill(Color(hex: 0x2C2C2E).opacity(0.45)).frame(height: 0.5)
+                        }
                 }
-                ForEach(rendered) { line in
-                    lineView(line)
-                }
-            } else if failed {
-                Text("No synced lyrics for this song.")
-                    .font(.caption)
-                    .foregroundStyle(Palette.tertiary)
-                    .padding(.bottom, 10)
-                AnalysisResultView(analysis: analysis, transposeBy: transposeBy, embedded: true)
             } else {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
             }
         }
         .task {
-            guard rendered == nil, !analysis.isPreview else { return }
-            if let result = await BackendClient.lyrics(title: title, artist: artist) {
-                rendered = SheetModel.build(analysis: analysis, lines: result.lines)
-                lyricsNote = result.betaNote
-            } else {
-                failed = true
-            }
+            guard rows == nil, !analysis.isPreview else { return }
+            // Without lyrics the timeline is instrumental rows end to end.
+            let result = await BackendClient.lyrics(title: title, artist: artist)
+            rows = SheetModel.build(analysis: analysis, lines: result?.lines ?? [],
+                                    duration: trackDuration)
+            lyricsNote = result == nil ? "No synced lyrics for this song." : result?.betaNote
         }
     }
 
@@ -291,51 +292,5 @@ struct ChordSheetView: View {
             .font(.caption2)
             .foregroundStyle(Palette.tertiary)
             .padding(.bottom, 12)
-    }
-
-    private static func mmss(_ seconds: Double) -> String {
-        String(format: "%d:%02d", Int(max(0, seconds)) / 60, Int(max(0, seconds)) % 60)
-    }
-
-    private func lineView(_ line: SheetModel.RenderLine) -> some View {
-        // Hebrew/Arabic lyrics lay out right-to-left, chords included.
-        let rtl = line.text.isRTLText
-        return VStack(alignment: rtl ? .trailing : .leading, spacing: 0) {
-            if !line.chords.isEmpty {
-                // Wraps: a full-song analysis can put six or more chords on a
-                // line, and an HStack would overflow the screen.
-                FlowLayout(spacing: 6) {
-                    ForEach(rtl ? line.chords.reversed() : line.chords) { chord in
-                        let name = ChordMath.transpose(chord.name, by: transposeBy)
-                        Button {
-                            onChordTap?(name)
-                        } label: {
-                            Text(name)
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color.spotifyGreen)
-                                .padding(.vertical, 3)
-                                .padding(.horizontal, 9)
-                                .background(RoundedRectangle(cornerRadius: 7)
-                                    .fill(Color.white.opacity(0.06)))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
-                .frame(minHeight: 22)
-                .padding(.bottom, 4)
-            }
-            Text(line.text)
-                .font(.system(size: 18, design: .rounded))
-                .foregroundStyle(Palette.nearWhite)
-                .lineSpacing(18 * 0.35)
-                .multilineTextAlignment(rtl ? .trailing : .leading)
-        }
-        .frame(maxWidth: .infinity, alignment: rtl ? .trailing : .leading)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Color(hex: 0x2C2C2E).opacity(0.45)).frame(height: 0.5)
-        }
     }
 }

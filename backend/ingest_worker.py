@@ -2,29 +2,49 @@
 
 YouTube refuses downloads from Fly's datacenter IPs, so this runs on a
 machine with a residential connection: it asks the backend which library
-songs are still analyzed from a 30 s preview, fetches the matching upload's
-audio with yt-dlp, and uploads it to POST /analyze so the server stores a
-whole-song analysis under the same track id.
+songs still lack a whole-song, large-vocabulary analysis, fetches the
+matching upload's audio with yt-dlp, and either
 
-    python ingest_worker.py            # one pass over pending songs
-    python ingest_worker.py --watch    # repeat every 5 minutes
+  * recognizes the chords here with the ISMIR2019 large-vocabulary model
+    (sevenths, sus, dim, aug, inversions; see scripts/setup_ismir.sh) and
+    POSTs the result to /analysis/submit, or
+  * when that model is not installed, uploads the audio to POST /analyze for
+    the server's maj/min recognizer.
+
+    python ingest_worker.py                    # one pass over pending songs
+    python ingest_worker.py --watch            # repeat every 5 minutes
+    python ingest_worker.py --manifest f.json  # ingest the tracks listed in a
+                                               # file [{track_id,title,artist,
+                                               # artwork,isrc}] (cache rebuild)
+
+Environment: CHORDLYZE_ISMIR_DIR (default ~/.chordlyze/ismir2019).
 """
 from __future__ import annotations
 
 import argparse
+import json
+import mimetypes
+import os
+import subprocess
 import sys
+import tempfile
 import time
 import urllib.parse
 import urllib.request
-import json
-import mimetypes
 import uuid
 from pathlib import Path
 
+from chordlyze_backend.analysis.beats import track_beats
 from chordlyze_backend.fulltrack import fetch_full_track
 
 BASE = "https://chordlyze-api.fly.dev"
 ITUNES_SLEEP = 3  # iTunes search rate limit (~20/min)
+ISMIR_DIR = Path(os.environ.get("CHORDLYZE_ISMIR_DIR", "~/.chordlyze/ismir2019")).expanduser()
+ISMIR_MODEL = "ismir2019"
+
+
+def ismir_available() -> bool:
+    return (ISMIR_DIR / "chord_recognition.py").exists() and (ISMIR_DIR / ".venv/bin/python").exists()
 
 
 def itunes_duration(title: str, artist: str | None) -> float | None:
@@ -36,7 +56,15 @@ def itunes_duration(title: str, artist: str | None) -> float | None:
     return ms / 1000 if ms else None
 
 
+def _post_json(path: str, payload: dict, timeout: int = 120) -> dict:
+    req = urllib.request.Request(f"{BASE}{path}", data=json.dumps(payload).encode(),
+                                 method="POST", headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read())
+
+
 def upload(path: Path, track_id: str, title: str, artist: str | None) -> dict:
+    """Fallback: server-side (madmom) recognition of the raw audio."""
     boundary = f"chordlyze-{uuid.uuid4()}"
     body = bytearray()
     # No whisper alignment: synced lyrics already exist, and it overlapping
@@ -57,23 +85,64 @@ def upload(path: Path, track_id: str, title: str, artist: str | None) -> dict:
         return json.loads(resp.read())
 
 
+def parse_lab(text: str) -> list[dict]:
+    """'start\\tend\\tlabel' lines (the model's .lab output) -> segments."""
+    segments = []
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) != 3:
+            continue
+        start, end, label = float(parts[0]), float(parts[1]), parts[2]
+        if end > start:
+            segments.append({"start": round(start, 3), "end": round(end, 3), "label": label})
+    return segments
+
+
+def recognize_ismir(audio: Path) -> list[dict]:
+    """Run the ISMIR2019 model on `audio` (any ffmpeg-readable format)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        wav = Path(tmp) / "audio.wav"
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(audio),
+                        "-ac", "1", "-ar", "44100", str(wav)], check=True)
+        lab = Path(tmp) / "chords.lab"
+        proc = subprocess.run([str(ISMIR_DIR / ".venv/bin/python"), "chord_recognition.py",
+                               str(wav), str(lab)], cwd=ISMIR_DIR, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(f"ISMIR2019 failed: {proc.stderr.strip().splitlines()[-1]}")
+        return parse_lab(lab.read_text())
+
+
+def submit(audio: Path, item: dict) -> dict:
+    """Recognize here and hand the server the chords, not the audio."""
+    payload = {"track_id": item["track_id"], "model": ISMIR_MODEL, "source": "youtube",
+               "title": item["title"], "artist": item.get("artist"),
+               "artwork": item.get("artwork"), "isrc": item.get("isrc"),
+               "segments": recognize_ismir(audio),
+               "tempo": track_beats(audio)}
+    return _post_json("/analysis/submit", payload)
+
+
 def pending() -> list[dict]:
-    """Library entries still analyzed from a 30 s iTunes preview."""
+    """Library entries this worker can improve: previews first, then whole
+    songs still charted by the maj/min recognizer (only when the
+    large-vocabulary model is installed here)."""
     with urllib.request.urlopen(f"{BASE}/library", timeout=30) as resp:
         library = json.loads(resp.read())["items"]
-    items = []
+    previews, upgrades = [], []
     for entry in library:
         if not entry.get("title"):
             continue
-        with urllib.request.urlopen(f"{BASE}/analysis/track/{entry['track_id']}", timeout=30) as resp:
-            if json.loads(resp.read()).get("source") == "itunes_preview":
-                items.append(entry)
-    return items
+        if entry.get("source") == "itunes_preview":
+            previews.append(entry)
+        elif ismir_available() and entry.get("model", "madmom") != ISMIR_MODEL:
+            upgrades.append(entry)
+    return previews + upgrades
 
 
-def run_once() -> int:
-    items = pending()
-    print(f"{len(items)} pending", flush=True)
+def run_once(items: list[dict] | None = None) -> int:
+    if items is None:
+        items = pending()
+    print(f"{len(items)} pending ({'ismir2019' if ismir_available() else 'server madmom'})", flush=True)
     done = 0
     for item in items:
         title, artist = item["title"], item.get("artist")
@@ -88,12 +157,12 @@ def run_once() -> int:
                 continue
             try:
                 t0 = time.time()
-                result = upload(audio, item["track_id"], title, artist)
+                result = submit(audio, item) if ismir_available() else upload(audio, item["track_id"], title, artist)
             finally:
                 audio.unlink(missing_ok=True)
             span = result["chords"][-1]["end"] if result.get("chords") else 0
             print(f"ok   {title!r}: {len(result.get('chords', []))} segments over {span:.0f}s "
-                  f"in {time.time() - t0:.0f}s", flush=True)
+                  f"({result.get('model')}) in {time.time() - t0:.0f}s", flush=True)
             done += 1
         except Exception as exc:
             print(f"fail {title!r}: {exc}", file=sys.stderr, flush=True)
@@ -105,7 +174,12 @@ def run_once() -> int:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--watch", action="store_true", help="repeat every 5 minutes")
+    parser.add_argument("--manifest", type=Path,
+                        help="JSON list of {track_id,title,artist,artwork,isrc} to ingest")
     args = parser.parse_args()
+    if args.manifest:
+        run_once(json.loads(args.manifest.read_text()))
+        return
     while True:
         run_once()
         if not args.watch:

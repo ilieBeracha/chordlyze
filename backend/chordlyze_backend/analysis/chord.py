@@ -33,6 +33,9 @@ _QUALITIES: dict[str, tuple[str, str, str, tuple[int, ...]]] = {
     "9":       ("9",     "9",     "maj", (0, 4, 7, 10, 14)),
     "maj9":    ("maj9",  "maj9",  "maj", (0, 4, 7, 11, 14)),
     "min9":    ("m9",    "9",     "min", (0, 3, 7, 10, 14)),
+    "11":      ("11",    "11",    "maj", (0, 4, 7, 10, 14, 17)),
+    "13":      ("13",    "13",    "maj", (0, 4, 7, 10, 14, 21)),
+    "sus4(b7)": ("7sus4", "7sus4", "sus", (0, 5, 7, 10)),
 }
 _BY_SUFFIX = {v[0]: k for k, v in _QUALITIES.items()}
 # Harte bass degrees are scale degrees relative to the root ("/3", "/b7").

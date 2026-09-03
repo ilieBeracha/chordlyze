@@ -201,7 +201,8 @@ struct PlaylistsView: View {
         Group {
             if let analysis = nowPlaying.analysis {
                 AnalysisTabsView(analysis: analysis, title: track.name, artist: track.artistNames,
-                                 trackID: track.id)
+                                 trackID: track.id,
+                                 trackDuration: track.durationMs.map { Double($0) / 1000 })
             }
         }
     }

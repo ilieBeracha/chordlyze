@@ -21,6 +21,17 @@ def test_rejects_variants_unless_requested():
     assert pick_candidate(entries, "Song (Acoustic)", "Band", 200)["id"] == "ac"
 
 
+def test_same_length_unrelated_song_is_rejected():
+    entries = [_e(200, "Yellow Tuesday", "Band - Topic", "other"),
+               _e(200, "Heart of Blue Mondays", "Band", "partial")]
+    assert pick_candidate(entries, "Blue Monday", "Band", 200) is None
+
+
+def test_title_match_ignores_decoration_and_case():
+    entries = [_e(200, "BAND - my song (Official Video)", "Band", "vid")]
+    assert pick_candidate(entries, "My Song (feat. Guest)", "Band", 200)["id"] == "vid"
+
+
 def test_none_when_no_duration_within_tolerance():
     entries = [_e(215, "Song", "Band"), _e(190, "Song", "Band")]
     assert pick_candidate(entries, "Song", "Band", 200) is None

@@ -24,9 +24,11 @@ from pathlib import Path
 
 import anyio.to_thread
 from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 
 from .analysis.beats import track_beats
-from .analysis.engine import AudioDecodeError, recognize_chords
+from .analysis.chord import parse_label
+from .analysis.engine import AudioDecodeError, ChordSegment, merge_adjacent, recognize_chords
 from .analysis.keyfinder import analyze
 from .fulltrack import fetch_full_track
 
@@ -76,8 +78,23 @@ def _derive_isrc(track_id: str, isrc: str | None) -> str | None:
     return None
 
 
+# Recognizers by how much of the harmony they can name. Entries saved before
+# the field existed are madmom's.
+_MODEL_RANK = {"madmom": 0, "ismir2019": 1}
+
+
+def _quality(entry: dict) -> tuple[int, int]:
+    """(whole song?, recognizer rank): a saved analysis is only ever replaced
+    by one at least this good."""
+    return (0 if entry.get("source") == "itunes_preview" else 1,
+            _MODEL_RANK.get(entry.get("model", "madmom"), 0))
+
+
 def _save_track(track_id: str, result: dict, title: str | None, artist: str | None,
-                isrc: str | None = None, artwork: str | None = None) -> None:
+                isrc: str | None = None, artwork: str | None = None) -> bool:
+    """Save under the track id (and its ISRC, when known). False when a better
+    analysis is already stored: a preview never replaces a whole song, and a
+    maj/min chart never replaces a large-vocabulary one."""
     entry = dict(result)
     entry["track_id"] = track_id
     if title:
@@ -86,15 +103,16 @@ def _save_track(track_id: str, result: dict, title: str | None, artist: str | No
         entry["artist"] = artist
     if artwork:
         entry["artwork"] = artwork
-    _track_cache_path(track_id).write_text(json.dumps(entry))
+    track_path = _track_cache_path(track_id)
+    if track_path.exists() and _quality(json.loads(track_path.read_text())) > _quality(entry):
+        return False
+    track_path.write_text(json.dumps(entry))
     if derived := _derive_isrc(track_id, isrc):
         path = _isrc_cache_path(derived)
-        if path.exists():
-            old = json.loads(path.read_text())
-            # A full-song analysis is never downgraded to a preview excerpt.
-            if old.get("source") != "itunes_preview" and entry.get("source") == "itunes_preview":
-                return
+        if path.exists() and _quality(json.loads(path.read_text())) > _quality(entry):
+            return True
         path.write_text(json.dumps(entry))
+    return True
 
 
 def _cached_by_isrc(track_id: str, isrc: str | None,
@@ -190,6 +208,7 @@ async def analyze_upload(
     result = analyze(segments)
     result["tempo"] = tempo
     result["source"] = "upload"
+    result["model"] = "madmom"
     result["id"] = digest
     cached.write_text(json.dumps(result))
     if track_id:
@@ -289,10 +308,59 @@ async def analyze_track(
     result = analyze(segments)
     result["tempo"] = tempo
     result["source"] = source
+    result["model"] = "madmom"
     _save_track(track_id, result,
                 title or song.get("trackName"), artist or song.get("artistName"),
                 isrc, artwork=song.get("artworkUrl100"))
     return json.loads(cached.read_text())
+
+
+class SubmittedSegment(BaseModel):
+    start: float
+    end: float
+    label: str
+
+
+class SubmittedAnalysis(BaseModel):
+    """Chords recognized off-server (the ingest worker runs the
+    large-vocabulary model on its own machine) for the server to key, score
+    and store like any other analysis."""
+    track_id: str
+    model: str
+    segments: list[SubmittedSegment]
+    source: str = "youtube"
+    title: str | None = None
+    artist: str | None = None
+    isrc: str | None = None
+    artwork: str | None = None
+    tempo: dict | None = None
+
+
+@app.post("/analysis/submit")
+def submit_analysis(body: SubmittedAnalysis) -> dict:
+    if body.model not in _MODEL_RANK:
+        raise HTTPException(422, f"unknown model {body.model!r}")
+    if not body.segments:
+        raise HTTPException(422, "no segments")
+    segments: list[ChordSegment] = []
+    for seg in body.segments:
+        if seg.end <= seg.start:
+            raise HTTPException(422, f"empty segment at {seg.start}")
+        if segments and seg.start < segments[-1].end - 1e-6:
+            raise HTTPException(422, f"segments overlap or are unordered at {seg.start}")
+        try:
+            parse_label(seg.label)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        segments.append(ChordSegment(seg.start, seg.end, seg.label))
+    result = analyze(merge_adjacent(segments))
+    result["tempo"] = body.tempo
+    result["source"] = body.source
+    result["model"] = body.model
+    if not _save_track(body.track_id, result, body.title, body.artist, body.isrc,
+                       artwork=body.artwork):
+        raise HTTPException(409, "a better analysis is already stored for this track")
+    return json.loads(_track_cache_path(body.track_id).read_text())
 
 
 _LRC_LINE = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]\s?(.*)")
@@ -476,6 +544,8 @@ def library() -> dict:
             "key": data.get("key"),
             "artwork": data.get("artwork"),
             "difficulty": data.get("difficulty"),
+            "source": data.get("source"),
+            "model": data.get("model", "madmom"),
         })
     return {"items": items}
 
@@ -524,6 +594,7 @@ def _backfill_full() -> None:
             result = analyze(segments)
             result["tempo"] = tempo
             result["source"] = "youtube"
+            result["model"] = "madmom"
             _save_track(track_id, result, data["title"], data.get("artist"),
                         artwork=data.get("artwork"))
             print(f"[fulltrack] backfilled {data['title']!r}", file=sys.stderr)

@@ -58,10 +58,11 @@ def recognize_chords(audio_path: str | Path) -> list[ChordSegment]:
         feats = features(str(wav))
         raw = decoder(feats)
     segments = [ChordSegment(float(s), float(e), str(lbl)) for s, e, lbl in raw]
-    return _merge_adjacent(segments)
+    return merge_adjacent(segments)
 
 
-def _merge_adjacent(segments: list[ChordSegment]) -> list[ChordSegment]:
+def merge_adjacent(segments: list[ChordSegment]) -> list[ChordSegment]:
+    """Join touching segments that carry the same label."""
     merged: list[ChordSegment] = []
     for seg in segments:
         if merged and merged[-1].label == seg.label and abs(merged[-1].end - seg.start) < 1e-6:

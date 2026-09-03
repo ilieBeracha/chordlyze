@@ -15,7 +15,8 @@ struct ChordView: View {
         Group {
             if let analysis, !recorder.isRecording {
                 AnalysisTabsView(analysis: analysis, title: track.name, artist: track.artistNames,
-                                 trackID: track.id)
+                                 trackID: track.id,
+                                 trackDuration: track.durationMs.map { Double($0) / 1000 })
             } else {
                 captureScreen
             }

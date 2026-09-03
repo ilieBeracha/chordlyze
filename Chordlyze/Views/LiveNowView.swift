@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Teleprompter follow-along: current lyric centered with its chords, context
-/// lines dimmed above/below, progress rail at the bottom. Repeated chords are
-/// collapsed into one chip with a ×N badge.
+/// Teleprompter follow-along: the current timeline row centered with its
+/// chords (the sounding one highlighted), context rows dimmed above/below,
+/// progress rail at the bottom. Rows come from SheetModel, shared with the
+/// sheet; chords are resolved from song time, never from the lyrics.
 struct LiveNowView: View {
     let title: String
     let artist: String
@@ -17,7 +18,8 @@ struct LiveNowView: View {
     let livePosition: () -> TimeInterval?
 
     @State private var position: Double = 0
-    @State private var lines: [SheetModel.RenderLine] = []
+    @State private var rows: [SheetModel.Row] = []
+    @State private var lyricLines: [LyricLine] = []
     @State private var noLyrics = false
     @State private var selectedChord: SelectedChord?
     @State private var seekDenied = false
@@ -25,6 +27,7 @@ struct LiveNowView: View {
     /// Roughly-timed lyrics (synthesized): line taps re-anchor instead of seek.
     @State private var resyncable = false
     /// User correction on the synthesized lyric timeline ("this line is now").
+    /// Moves the lyrics onto song time; the chords never move.
     @State private var lyricsOffset: Double = 0
 
     struct SelectedChord: Identifiable {
@@ -36,13 +39,11 @@ struct LiveNowView: View {
     /// 100 ms ticks keep the display within one decoder frame of the clock.
     private static let clock = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
 
-    /// Position on the lyric timeline (song position plus manual re-anchor).
-    private var lyricPosition: Double { position + lyricsOffset }
     private var currentIndex: Int? {
-        lines.lastIndex(where: { $0.id <= lyricPosition })
+        rows.lastIndex(where: { $0.start <= position })
     }
     private var duration: Double {
-        trackDuration ?? max(lines.last?.end ?? 0, analysis.coverageEnd, 1)
+        trackDuration ?? max(rows.last?.end ?? 0, analysis.coverageEnd, 1)
     }
     /// What the chords do and do not cover, said up front instead of guessed past.
     private var coverageNote: String? {
@@ -81,7 +82,7 @@ struct LiveNowView: View {
 
             if noLyrics {
                 chordFollow
-            } else if lines.isEmpty {
+            } else if rows.isEmpty {
                 ProgressView()
             } else {
                 teleprompter
@@ -97,15 +98,16 @@ struct LiveNowView: View {
         .toolbar(.hidden, for: .navigationBar)
         .onReceive(Self.clock) { _ in
             guard let live = livePosition() else { return }
-            // Animate only when the current line changes; the position itself
+            // Animate only when the current row changes; the position itself
             // must not lag behind the clock.
-            let next = lines.lastIndex(where: { $0.id <= live + lyricsOffset })
+            let next = rows.lastIndex(where: { $0.start <= live })
             if next != currentIndex {
                 withAnimation(.easeInOut(duration: 0.35)) { position = live }
             } else {
                 position = live
             }
         }
+        .onChange(of: lyricsOffset) { _, _ in rebuildRows() }
         .sheet(item: $selectedChord) { selected in
             ChordDiagramSheet(chord: selected.name)
         }
@@ -115,7 +117,8 @@ struct LiveNowView: View {
                 noLyrics = true
                 return
             }
-            lines = SheetModel.build(analysis: analysis, lines: result.lines)
+            lyricLines = result.lines
+            rebuildRows()
             if result.synced {
                 lyricsNote = result.betaNote
             } else {
@@ -126,18 +129,29 @@ struct LiveNowView: View {
         }
     }
 
-    /// Tap a context line: on rough timing it re-anchors the lyrics ("this
+    /// Rows on song time: a resync shifts the lyric lines onto it, so the
+    /// chords stay where the audio put them.
+    private func rebuildRows() {
+        let shifted = lyricLines.map { line in
+            LyricLine(time: line.time - lyricsOffset, text: line.text,
+                      words: line.words?.map { WordStamp(time: $0.time - lyricsOffset, text: $0.text) })
+        }
+        rows = SheetModel.build(analysis: analysis, lines: shifted, duration: trackDuration)
+    }
+
+    /// Tap a context row: on rough timing it re-anchors the lyrics ("this
     /// line is now"); on real sync it jumps playback there.
-    private func lineTapped(_ time: Double) {
+    private func lineTapped(_ row: SheetModel.Row) {
         if resyncable {
-            withAnimation(.easeInOut(duration: 0.35)) { lyricsOffset = time - position }
+            // The row sits at lyric time (row.start + lyricsOffset); make that "now".
+            withAnimation(.easeInOut(duration: 0.35)) { lyricsOffset = row.start + lyricsOffset - position }
             return
         }
         guard let onSeek else { return }
         Task {
-            if await onSeek(time) {
+            if await onSeek(row.start) {
                 seekDenied = false
-                withAnimation(.easeInOut(duration: 0.35)) { position = time }
+                withAnimation(.easeInOut(duration: 0.35)) { position = row.start }
             } else {
                 seekDenied = true
             }
@@ -221,97 +235,62 @@ struct LiveNowView: View {
     private var teleprompter: some View {
         let index = currentIndex ?? 0
         return VStack(alignment: .leading, spacing: 0) {
-            // 2 previous lines, fading out upward; tap to jump back
+            // 2 previous rows, fading out upward; tap to jump back
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(Array(lines[max(0, index - 2)..<index].enumerated()), id: \.element.id) { offset, line in
-                    Button { lineTapped(line.id) } label: {
-                        Text(line.text)
+                ForEach(Array(rows[max(0, index - 2)..<index].enumerated()), id: \.element.id) { offset, row in
+                    Button { lineTapped(row) } label: {
+                        Text(contextText(row))
                             .font(.system(size: 17, design: .rounded))
                             .foregroundStyle(Palette.secondary)
                             .opacity(offset == 0 && index >= 2 ? 0.22 : 0.4)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity,
-                                   alignment: line.text.isRTLText ? .trailing : .leading)
+                                   alignment: row.text.isRTLText ? .trailing : .leading)
                     }
                     .buttonStyle(.plain)
                     .disabled(!resyncable && onSeek == nil)
                 }
             }
 
-            // Current block
-            if index < lines.count {
-                let current = lines[index]
-                let rtl = current.text.isRTLText
-                Group {
+            // Current row
+            if index < rows.count {
+                let current = rows[index]
+                VStack(alignment: current.text.isRTLText ? .trailing : .leading, spacing: 12) {
+                    ChordRowView(row: current, playhead: position, style: .live,
+                                 onChordTap: { selectedChord = SelectedChord(name: $0) })
                     if current.isInstrumental {
-                        VStack(alignment: .leading, spacing: 16) {
-                            if !current.chords.isEmpty {
-                                FlowLayout(spacing: 8) {  // wraps: long breaks carry many chords
-                                    ForEach(grouped(current.chords)) { group in
-                                        chordChip(group)
-                                    }
-                                }
-                            }
-                            HStack(spacing: 8) {
-                                Image(systemName: "music.quarternote.3")
-                                    .font(.system(size: 14, weight: .semibold))
-                                Text("Instrumental")
-                                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-                                let left = max(0, Int((current.end - lyricPosition).rounded(.up)))
-                                if left > 0, left <= 30 {
-                                    Text("· lyrics in \(left)s")
-                                        .font(.system(size: 14, design: .rounded))
-                                        .foregroundStyle(Palette.secondary)
-                                }
-                            }
-                            .foregroundStyle(Palette.secondaryAlt)
+                        let left = max(0, Int((current.end - position).rounded(.up)))
+                        if left > 0, left <= 30, index + 1 < rows.count, !rows[index + 1].text.isEmpty {
+                            Text("lyrics in \(left)s")
+                                .font(.system(size: 14, design: .rounded))
+                                .foregroundStyle(Palette.secondary)
                         }
-                    } else if rtl {
-                        // Word-level pinning is ambiguous in RTL — keep chips above the line.
-                        VStack(alignment: .trailing, spacing: 14) {
-                            if !current.chords.isEmpty {
-                                FlowLayout(spacing: 8) {
-                                    ForEach(grouped(current.chords).reversed()) { group in
-                                        chordChip(group)
-                                    }
-                                }
-                            }
-                            Text(current.text)
-                                .font(.system(size: 30, weight: .bold, design: .rounded))
-                                .foregroundStyle(.white)
-                                .lineSpacing(30 * 0.22)
-                                .multilineTextAlignment(.trailing)
-                        }
-                    } else {
-                        // Each chord pinned above the word it lands on.
-                        ChordLyricLine(text: current.text, chords: current.chords,
-                                       onChordTap: { selectedChord = SelectedChord(name: $0) })
                     }
                 }
                 .id(current.id)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
-                .frame(maxWidth: .infinity, alignment: rtl ? .trailing : .leading)
+                .frame(maxWidth: .infinity, alignment: current.text.isRTLText ? .trailing : .leading)
                 .padding(.vertical, 26)
             }
 
-            // 3 next lines; tap to jump ahead
+            // 3 next rows; tap to jump ahead
             VStack(alignment: .leading, spacing: 16) {
-                ForEach(lines[min(lines.count, index + 1)..<min(lines.count, index + 4)]) { line in
-                    Button { lineTapped(line.id) } label: {
-                        VStack(alignment: line.text.isRTLText ? .trailing : .leading, spacing: 3) {
-                            if !line.chords.isEmpty {
-                                Text(summary(line.chords))
+                ForEach(rows[min(rows.count, index + 1)..<min(rows.count, index + 4)]) { row in
+                    Button { lineTapped(row) } label: {
+                        VStack(alignment: row.text.isRTLText ? .trailing : .leading, spacing: 3) {
+                            if !row.chords.isEmpty {
+                                Text(summary(row.chords))
                                     .font(.system(size: 13, weight: .bold, design: .rounded))
                                     .tracking(0.8)
                                     .foregroundStyle(Palette.faint)
                             }
-                            Text(line.text)
+                            Text(contextText(row))
                                 .font(.system(size: 18, design: .rounded))
                                 .foregroundStyle(Palette.secondaryAlt)
                                 .lineLimit(1)
                         }
                         .frame(maxWidth: .infinity,
-                               alignment: line.text.isRTLText ? .trailing : .leading)
+                               alignment: row.text.isRTLText ? .trailing : .leading)
                     }
                     .buttonStyle(.plain)
                     .disabled(!resyncable && onSeek == nil)
@@ -327,34 +306,14 @@ struct LiveNowView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func chordChip(_ group: ChordGroup) -> some View {
-        Button {
-            selectedChord = SelectedChord(name: group.name)
-        } label: {
-            chipLabel(group)
+    /// One-line stand-in for a row in the dimmed context lists.
+    private func contextText(_ row: SheetModel.Row) -> String {
+        if !row.text.isEmpty { return row.text }
+        switch row.kind {
+        case .instrumental: return "♪ Instrumental \(ChordRowView.span(row))"
+        case .uncovered: return "? Not analyzed \(ChordRowView.span(row))"
+        case .lyric: return "… \(ChordRowView.span(row))"
         }
-        .buttonStyle(.plain)
-    }
-
-    private func chipLabel(_ group: ChordGroup) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 5) {
-            Text(group.name)
-                .font(.system(size: 22, weight: .heavy, design: .rounded))
-            if group.count > 1 {
-                Text("×\(group.count)")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .opacity(0.75)
-            }
-        }
-        .foregroundStyle(Color.spotifyGreen)
-        .padding(.vertical, 9)
-        .padding(.horizontal, 16)
-        .background(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(Palette.greenTintFill)
-                .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .stroke(Palette.greenTintBorder, lineWidth: 1))
-        )
     }
 
     // MARK: - Preview excerpt (chords known, position in the song unknown)
@@ -369,18 +328,7 @@ struct LiveNowView: View {
         }
         return FlowLayout(spacing: 6) {
             ForEach(Array(loop.enumerated()), id: \.offset) { _, name in
-                Button {
-                    selectedChord = SelectedChord(name: name)
-                } label: {
-                    Text(name)
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.spotifyGreen)
-                        .padding(.vertical, 5)
-                        .padding(.horizontal, 11)
-                        .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(Palette.greenTintFill))
-                }
-                .buttonStyle(.plain)
+                ChordChip(name: name, style: .sheet) { selectedChord = SelectedChord(name: $0) }
             }
         }
     }
@@ -388,14 +336,13 @@ struct LiveNowView: View {
     // MARK: - Chord-only follow (no synced lyrics)
 
     private var chordFollow: some View {
-        let real = analysis.chords.filter { $0.label != "N" }
+        let events = SheetModel.events(analysis)
         let covered = !analysis.isPreview && position < analysis.coverageEnd
-        let index = covered ? real.lastIndex(where: { $0.start <= position }) : nil
-        let current = index.map { real[$0] }
-        let upcoming: [ChordSegment] = {
+        let current = covered ? SheetModel.activeEvent(events, at: position) : nil
+        let upcoming: [SheetModel.Event] = {
             guard covered else { return [] }
-            guard let index else { return Array(real.prefix(3)) }
-            return Array(real[(index + 1)..<min(real.count, index + 4)])
+            let after = events.filter { $0.start > position && $0.chord != nil }
+            return Array(after.prefix(3))
         }()
         return VStack(spacing: 30) {
             Text(analysis.isPreview ? "No synced lyrics."
@@ -405,9 +352,9 @@ struct LiveNowView: View {
                 .foregroundStyle(Palette.secondary)
             if !analysis.isPreview {
                 Button {
-                    if let current { selectedChord = SelectedChord(name: current.displayName) }
+                    if let current { selectedChord = SelectedChord(name: current.display(transposedBy: 0)) }
                 } label: {
-                    Text(current?.displayName ?? (covered ? "…" : "—"))
+                    Text(current?.display(transposedBy: 0) ?? (covered ? "…" : "—"))
                         .font(.system(size: 64, weight: .heavy, design: .rounded))
                         .foregroundStyle(Color.spotifyGreen)
                         .padding(.vertical, 24)
@@ -428,8 +375,8 @@ struct LiveNowView: View {
                         .font(.system(size: 11, weight: .bold))
                         .tracking(1.2)
                         .foregroundStyle(Palette.tertiary)
-                    ForEach(upcoming) { chord in
-                        Text(chord.displayName)
+                    ForEach(upcoming) { event in
+                        Text(event.display(transposedBy: 0))
                             .font(.system(size: 17, weight: .bold, design: .rounded))
                             .foregroundStyle(Palette.secondaryAlt)
                     }
@@ -438,30 +385,18 @@ struct LiveNowView: View {
         }
     }
 
-    // MARK: - Chord grouping
-
-    private struct ChordGroup: Identifiable {
-        let id = UUID()
-        let name: String
-        let count: Int
-    }
-
-    /// Collapse consecutive repeats: [C#m, C#m, B] -> [C#m ×2, B].
-    private func grouped(_ chords: [SheetModel.PlacedChord]) -> [ChordGroup] {
-        var out: [ChordGroup] = []
-        for chord in chords {
-            if let last = out.last, last.name == chord.name {
-                out[out.count - 1] = ChordGroup(name: last.name, count: last.count + 1)
+    /// "C#m ×2   B" for the dimmed upcoming rows.
+    private func summary(_ chords: [SheetModel.Placed]) -> String {
+        var out: [(name: String, count: Int)] = []
+        for placed in chords {
+            let name = placed.event.display(transposedBy: 0)
+            if let last = out.last, last.name == name {
+                out[out.count - 1].count += 1
             } else {
-                out.append(ChordGroup(name: chord.name, count: 1))
+                out.append((name, 1))
             }
         }
-        return out
-    }
-
-    private func summary(_ chords: [SheetModel.PlacedChord]) -> String {
-        grouped(chords)
-            .map { $0.count > 1 ? "\($0.name) ×\($0.count)" : $0.name }
+        return out.map { $0.count > 1 ? "\($0.name) ×\($0.count)" : $0.name }
             .joined(separator: "   ")
     }
 

@@ -39,6 +39,9 @@ struct Chord: Hashable {
         .init(harte: "9", suffix: "9", intervals: [0, 4, 7, 10, 14]),
         .init(harte: "maj9", suffix: "maj9", intervals: [0, 4, 7, 11, 14]),
         .init(harte: "min9", suffix: "m9", intervals: [0, 3, 7, 10, 14]),
+        .init(harte: "11", suffix: "11", intervals: [0, 4, 7, 10, 14, 17]),
+        .init(harte: "13", suffix: "13", intervals: [0, 4, 7, 10, 14, 21]),
+        .init(harte: "sus4(b7)", suffix: "7sus4", intervals: [0, 5, 7, 10]),
     ]
     private static let byHarte = Dictionary(uniqueKeysWithValues: known.map { ($0.harte, $0) })
     private static let bySuffix = Dictionary(uniqueKeysWithValues: known.map { ($0.suffix, $0) })

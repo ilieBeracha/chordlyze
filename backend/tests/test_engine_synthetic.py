@@ -28,12 +28,25 @@ def _tone(freq: float, dur: float) -> np.ndarray:
     return sig * env
 
 
+# Pitch sets per quality, defined here independently of the app's chord table
+# so the test cannot inherit a mistake from the code it checks.
+INTERVALS = {
+    "maj": [0, 4, 7], "min": [0, 3, 7], "dim": [0, 3, 6], "aug": [0, 4, 8],
+    "sus2": [0, 2, 7], "sus4": [0, 5, 7],
+    "7": [0, 4, 7, 10], "maj7": [0, 4, 7, 11], "min7": [0, 3, 7, 10],
+    "dim7": [0, 3, 6, 9], "hdim7": [0, 3, 6, 10],
+}
+DEGREE_SEMITONES = {"3": 4, "b3": 3, "5": 7, "b7": 10, "7": 11}
+
+
 def _chord(label: str, dur: float) -> np.ndarray:
-    root, _, quality = label.partition(":")
+    """Harte label -> audio. 'C:maj/3' puts the third in the bass."""
+    root, _, rest = label.partition(":")
+    quality, _, bass_degree = (rest or "maj").partition("/")
     f0 = NOTE_FREQS[root]
-    intervals = [0, 4, 7] if quality in ("", "maj") else [0, 3, 7]
-    sig = _tone(f0 / 2, dur)  # bass note an octave down
-    for iv in intervals:
+    bass = f0 * SEMITONE ** DEGREE_SEMITONES[bass_degree] if bass_degree else f0
+    sig = _tone(bass / 2, dur)  # bass note an octave down
+    for iv in INTERVALS[quality]:
         sig += _tone(f0 * SEMITONE ** iv, dur)
         sig += _tone(2 * f0 * SEMITONE ** iv, dur) * 0.5  # octave doubling
     return sig
@@ -100,3 +113,37 @@ def test_recognizes_known_progression(tmp_path, name, progression, expected_key)
     assert result["key"] == expected_key
     romans = [c["roman"] for c in result["chords"] if c["roman"]]
     assert romans, "no roman numerals produced"
+
+
+# Chords outside madmom's maj/min vocabulary. What it returns today, measured
+# on this synth: sevenths, sus and inversions collapse to the triad on the
+# same root; diminished chords get a wrong root or quality. The strict xfail
+# flips to a failure the day a recognizer gets these right, so the swap is
+# noticed rather than assumed.
+RICH = ["C:7", "F:maj7", "D:min7", "B:hdim7", "G#:dim7",
+        "C:sus4", "G:sus2", "B:dim", "E:aug",
+        "C:maj/3", "A:min/b3", "G:7/b7"]
+
+
+@pytest.fixture(scope="module")
+def rich_segments(tmp_path_factory):
+    wav = tmp_path_factory.mktemp("rich") / "rich.wav"
+    synth_progression(RICH, 2.0, str(wav))
+    return recognize_chords(wav)
+
+
+@pytest.mark.parametrize("index,label", list(enumerate(RICH)), ids=RICH)
+def test_rich_chord_root_survives(rich_segments, index, label):
+    """Sevenths, sus, aug and inversions keep their root even when the
+    quality is lost. Diminished is the documented exception."""
+    got = dominant_label(rich_segments, index * 2.0 + 0.25, (index + 1) * 2.0 - 0.25)
+    if "dim" in label:
+        pytest.xfail("madmom has no dim label; the nearest triad may sit on another root")
+    assert got.partition(":")[0] == label.partition(":")[0], f"{label} -> {got}"
+
+
+@pytest.mark.xfail(reason="madmom maj/min vocabulary cannot name these", strict=True)
+@pytest.mark.parametrize("index,label", list(enumerate(RICH)), ids=RICH)
+def test_rich_chord_named_exactly(rich_segments, index, label):
+    got = dominant_label(rich_segments, index * 2.0 + 0.25, (index + 1) * 2.0 - 0.25)
+    assert got == label, f"{label} -> {got}"

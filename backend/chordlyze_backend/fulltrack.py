@@ -2,9 +2,9 @@
 
 The iTunes preview is a 30 s slice at an unknown offset, so chords from it
 can't be placed on the song timeline. A YouTube upload whose length matches
-the track gives the whole song from 0:00. Matching is by duration (the
-album version is the same length everywhere) with a title filter against
-live/cover/remix variants.
+the track gives the whole song from 0:00. A result must carry the song's
+title and last as long as the track (the album version is the same length
+everywhere); live/cover/remix variants are filtered out.
 """
 from __future__ import annotations
 
@@ -15,19 +15,35 @@ from pathlib import Path
 _VARIANT = re.compile(
     r"\b(live|session|cover|remix|karaoke|instrumental|acoustic|reaction|tutorial|"
     r"lesson|slowed|sped up|nightcore|8d|extended|edit)\b", re.I)
+_DECORATION = re.compile(r"[\(\[][^\)\]]*[\)\]]|\s+-\s+.*$")
+
+
+def _words(text: str) -> str:
+    """Lowercase words only: case and punctuation ignored."""
+    return re.sub(r"[^a-z0-9֐-׿؀-ۿ]+", " ", text.lower()).strip()
+
+
+def _core(title: str) -> str:
+    """Comparable form of a title: bracketed notes and ' - …' suffixes dropped."""
+    return _words(_DECORATION.sub("", title) or title)
 
 
 def pick_candidate(entries: list[dict], title: str, artist: str, duration: float) -> dict | None:
     """Best search result for `title` lasting `duration` seconds, or None.
-    Tolerance ±2 % (at least 3 s); variant words in a result title disqualify
-    it unless the requested title carries the same word."""
+    The result's title must contain the song's title; duration (±2 %, at
+    least 3 s) narrows it to the same edition; variant words in a result
+    title disqualify it unless the requested title carries the same word."""
     tol = max(3.0, duration * 0.02)
+    wanted = _core(title)
 
     def usable(e: dict) -> bool:
         d = e.get("duration")
         if not d or abs(d - duration) > tol:
             return False
-        hit = _VARIANT.search(e.get("title") or "")
+        name = e.get("title") or ""
+        if f" {wanted} " not in f" {_core(name)} " and f" {wanted} " not in f" {_words(name)} ":
+            return False
+        hit = _VARIANT.search(name)
         return not hit or bool(re.search(rf"\b{re.escape(hit.group(0))}\b", title, re.I))
 
     good = [e for e in entries if usable(e)]
