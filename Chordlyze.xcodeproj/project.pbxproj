@@ -17,7 +17,6 @@
 		4DEDB662C731D977A0D075A9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A853A3C0BCE08FF833A993F5 /* Assets.xcassets */; };
 		693E17329B4789EEA5A5E1B1 /* LiveNowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2632D6D5B8D8A2C886C3E9D /* LiveNowView.swift */; };
 		6A2B6688285C7D9AA0B2A958 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62445138AF6604CD03089074 /* LoginView.swift */; };
-		7427BB89994D135EEB50B26F /* AutoSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23B15D6273A8FCAE054073D6 /* AutoSession.swift */; };
 		79274A76D689856807A47A46 /* ChordlyzeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B5F39F29A534B7E488CE8FE /* ChordlyzeApp.swift */; };
 		80ABEDD4F7DCA0F55379787E /* ChordShapes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30ACA8DA715E5954990AADD9 /* ChordShapes.swift */; };
 		819EA82C7039FDCF503E5133 /* LiveHostViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B720782996747E23D75C8D13 /* LiveHostViews.swift */; };
@@ -45,7 +44,6 @@
 		084B36CA9E995C690A1D8FEE /* ChordDiagramSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordDiagramSheet.swift; sourceTree = "<group>"; };
 		1876BBFA097772E3C9CF64D3 /* ChordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordView.swift; sourceTree = "<group>"; };
 		229879235E591BEFFB136C65 /* ArtworkColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkColor.swift; sourceTree = "<group>"; };
-		23B15D6273A8FCAE054073D6 /* AutoSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoSession.swift; sourceTree = "<group>"; };
 		30ACA8DA715E5954990AADD9 /* ChordShapes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordShapes.swift; sourceTree = "<group>"; };
 		3B5F39F29A534B7E488CE8FE /* ChordlyzeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordlyzeApp.swift; sourceTree = "<group>"; };
 		3E4FF07B614A2CF0ABCC7DAC /* SpotifyAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyAPI.swift; sourceTree = "<group>"; };
@@ -122,7 +120,6 @@
 			children = (
 				229879235E591BEFFB136C65 /* ArtworkColor.swift */,
 				A853A3C0BCE08FF833A993F5 /* Assets.xcassets */,
-				23B15D6273A8FCAE054073D6 /* AutoSession.swift */,
 				E1243AB5316165B94E89C1FE /* BackendClient.swift */,
 				A8E7624FBC0E6E81935CF050 /* ChordDrillListener.swift */,
 				3B5F39F29A534B7E488CE8FE /* ChordlyzeApp.swift */,
@@ -215,7 +212,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				D4D4778DF0881A4E1A722B5A /* ArtworkColor.swift in Sources */,
-				7427BB89994D135EEB50B26F /* AutoSession.swift in Sources */,
 				2BA907A328198DD7AD731B7C /* BackendClient.swift in Sources */,
 				C3DA1E6478B27FDDD14302A9 /* ChordDiagramSheet.swift in Sources */,
 				DC87311DE722AD2BC2AB3ACA /* ChordDrillListener.swift in Sources */,

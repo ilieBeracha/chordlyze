@@ -1,15 +1,11 @@
-"""Off-server full-song ingest.
+"""Off-server whole-song ingest.
 
 YouTube refuses downloads from Fly's datacenter IPs, so this runs on a
 machine with a residential connection: it asks the backend which library
 songs still lack a whole-song, large-vocabulary analysis, fetches the
-matching upload's audio with yt-dlp, and either
-
-  * recognizes the chords here with the ISMIR2019 large-vocabulary model
-    (sevenths, sus, dim, aug, inversions; see scripts/setup_ismir.sh) and
-    POSTs the result to /analysis/submit, or
-  * when that model is not installed, uploads the audio to POST /analyze for
-    the server's maj/min recognizer.
+matching upload's audio with yt-dlp, recognizes the chords here with the
+ISMIR2019 model (sevenths, sus, dim, aug, inversions; see
+scripts/setup_ismir.sh) and POSTs the result to /analysis/submit.
 
     python ingest_worker.py                    # one pass over pending songs
     python ingest_worker.py --watch            # repeat every 5 minutes
@@ -23,7 +19,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import mimetypes
 import os
 import subprocess
 import sys
@@ -31,7 +26,6 @@ import tempfile
 import time
 import urllib.parse
 import urllib.request
-import uuid
 from pathlib import Path
 
 from chordlyze_backend.analysis.beats import track_beats
@@ -60,28 +54,6 @@ def _post_json(path: str, payload: dict, timeout: int = 120) -> dict:
     req = urllib.request.Request(f"{BASE}{path}", data=json.dumps(payload).encode(),
                                  method="POST", headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read())
-
-
-def upload(path: Path, track_id: str, title: str, artist: str | None) -> dict:
-    """Fallback: server-side (madmom) recognition of the raw audio."""
-    boundary = f"chordlyze-{uuid.uuid4()}"
-    body = bytearray()
-    # No whisper alignment: synced lyrics already exist, and it overlapping
-    # the next chord analysis has crashed the server.
-    fields = {"track_id": track_id, "title": title, "align": "false"}
-    if artist:
-        fields["artist"] = artist
-    for name, value in fields.items():
-        body += f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n".encode()
-    ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-    body += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
-             f"filename=\"{path.name}\"\r\nContent-Type: {ctype}\r\n\r\n").encode()
-    body += path.read_bytes()
-    body += f"\r\n--{boundary}--\r\n".encode()
-    req = urllib.request.Request(f"{BASE}/analyze", data=bytes(body), method="POST",
-                                 headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
-    with urllib.request.urlopen(req, timeout=900) as resp:
         return json.loads(resp.read())
 
 
@@ -124,8 +96,7 @@ def submit(audio: Path, item: dict) -> dict:
 
 def pending() -> list[dict]:
     """Library entries this worker can improve: previews first, then whole
-    songs still charted by the maj/min recognizer (only when the
-    large-vocabulary model is installed here)."""
+    songs still charted by the maj/min recognizer."""
     with urllib.request.urlopen(f"{BASE}/library", timeout=30) as resp:
         library = json.loads(resp.read())["items"]
     previews, upgrades = [], []
@@ -134,7 +105,7 @@ def pending() -> list[dict]:
             continue
         if entry.get("source") == "itunes_preview":
             previews.append(entry)
-        elif ismir_available() and entry.get("model", "madmom") != ISMIR_MODEL:
+        elif entry.get("model", "madmom") != ISMIR_MODEL:
             upgrades.append(entry)
     return previews + upgrades
 
@@ -142,7 +113,7 @@ def pending() -> list[dict]:
 def run_once(items: list[dict] | None = None) -> int:
     if items is None:
         items = pending()
-    print(f"{len(items)} pending ({'ismir2019' if ismir_available() else 'server madmom'})", flush=True)
+    print(f"{len(items)} pending", flush=True)
     done = 0
     for item in items:
         title, artist = item["title"], item.get("artist")
@@ -157,12 +128,12 @@ def run_once(items: list[dict] | None = None) -> int:
                 continue
             try:
                 t0 = time.time()
-                result = submit(audio, item) if ismir_available() else upload(audio, item["track_id"], title, artist)
+                result = submit(audio, item)
             finally:
                 audio.unlink(missing_ok=True)
             span = result["chords"][-1]["end"] if result.get("chords") else 0
             print(f"ok   {title!r}: {len(result.get('chords', []))} segments over {span:.0f}s "
-                  f"({result.get('model')}) in {time.time() - t0:.0f}s", flush=True)
+                  f"in {time.time() - t0:.0f}s", flush=True)
             done += 1
         except Exception as exc:
             print(f"fail {title!r}: {exc}", file=sys.stderr, flush=True)
@@ -177,6 +148,8 @@ def main() -> None:
     parser.add_argument("--manifest", type=Path,
                         help="JSON list of {track_id,title,artist,artwork,isrc} to ingest")
     args = parser.parse_args()
+    if not ismir_available():
+        sys.exit(f"ISMIR2019 model not installed under {ISMIR_DIR}; run scripts/setup_ismir.sh")
     if args.manifest:
         run_once(json.loads(args.manifest.read_text()))
         return

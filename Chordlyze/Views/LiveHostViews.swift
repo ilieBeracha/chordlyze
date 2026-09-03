@@ -19,46 +19,24 @@ struct SpotifyLiveView: View {
                     }
                     .id(playing.track.id)  // rebuild per song
                 } else {
-                    LiveWaitingView(title: playing.track.name,
-                                    subtitle: playing.track.artistNames.uppercased(),
-                                    message: nowPlaying.analysisFailed
-                                        ? "Chords unavailable for this song."
-                                        : "Analyzing chords…",
-                                    spinning: !nowPlaying.analysisFailed)
+                    WaitingView(title: playing.track.name,
+                                subtitle: playing.track.artistNames.uppercased(),
+                                message: nowPlaying.analysisFailed
+                                    ? "Chords unavailable for this song."
+                                    : "Analyzing chords…",
+                                spinning: !nowPlaying.analysisFailed)
                 }
             } else {
-                LiveWaitingView(title: "Nothing playing", subtitle: "",
-                                message: "Play something on Spotify.", spinning: false)
+                WaitingView(title: "Nothing playing", subtitle: "",
+                            message: "Play something on Spotify.", spinning: false)
             }
         }
     }
 }
 
-/// Same, bound to the mic identification session.
-struct MicLiveView: View {
-    @ObservedObject private var session = AutoSession.shared
-
-    var body: some View {
-        Group {
-            if let entry = session.nowEntry {
-                if let analysis = entry.analysis {
-                    LiveNowView(title: entry.title, artist: entry.artist,
-                                analysis: analysis) { session.livePosition(for: entry.id) }
-                        .id(entry.id)  // rebuild per song
-                } else {
-                    LiveWaitingView(title: entry.title, subtitle: entry.artist.uppercased(),
-                                    message: "Analyzing chords…", spinning: true)
-                }
-            } else {
-                LiveWaitingView(title: "Listening…", subtitle: "",
-                                message: "Play your music out loud.", spinning: true)
-            }
-        }
-    }
-}
-
-/// Placeholder shown while the current song has no analysis yet.
-struct LiveWaitingView: View {
+/// Song header over a centered status line: shown while a song's chords are
+/// loading, and in their place when there are none.
+struct WaitingView: View {
     let title: String
     let subtitle: String
     let message: String
@@ -88,7 +66,9 @@ struct LiveWaitingView: View {
                 Text(message)
                     .font(.system(size: 14))
                     .foregroundStyle(Palette.secondary)
+                    .multilineTextAlignment(.center)
             }
+            .padding(.horizontal, 30)
             Spacer()
         }
         .padding(.horizontal, 24)

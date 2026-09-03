@@ -9,7 +9,7 @@ struct ChordAnalysis: Decodable {
     let key: String?
     let keyConfidence: Double?
     let chords: [ChordSegment]
-    /// "itunes_preview" | "youtube" | "upload"; nil on entries saved before it existed.
+    /// "itunes_preview" | "youtube"; nil on entries saved before it existed.
     let source: String?
     /// Seconds of audio the chords describe; nil on entries saved before the field.
     let analyzedEnd: Double?
@@ -68,16 +68,23 @@ struct ChordSegment: Decodable, Identifiable {
     }
 }
 
+/// The backend said no (anything but 200/404) or could not be reached.
+/// Callers retry these; a 404 is a plain `nil` result, never an error.
+struct BackendError: LocalizedError {
+    let status: Int
+    let detail: String
+    var errorDescription: String? { "Backend returned \(status): \(detail)" }
+}
+
 enum BackendClient {
-    /// Instant result if this track was analyzed before — by any source; the
-    /// ISRC lets the backend match analyses made via mic capture too.
-    static func cachedAnalysis(trackID: String, isrc: String? = nil) async -> ChordAnalysis? {
+    /// Saved analysis for a track, by any source; the ISRC lets the backend
+    /// find an analysis saved under another id for the same recording.
+    /// nil when none is saved.
+    static func cachedAnalysis(trackID: String, isrc: String? = nil) async throws -> ChordAnalysis? {
         var comps = URLComponents(url: Config.backendBaseURL.appendingPathComponent("analysis/track/\(trackID)"),
                                   resolvingAgainstBaseURL: false)!
         if let isrc { comps.queryItems = [.init(name: "isrc", value: isrc)] }
-        guard let (data, response) = try? await URLSession.shared.data(from: comps.url!),
-              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-        return try? JSONDecoder().decode(ChordAnalysis.self, from: data)
+        return try await fetch(URLRequest(url: comps.url!))
     }
 
     struct LibraryItem: Decodable, Identifiable {
@@ -107,7 +114,7 @@ enum BackendClient {
         return try JSONDecoder().decode(Page.self, from: data).items
     }
 
-    struct LyricsResult {
+    struct LyricsResult: Decodable {
         let lines: [LyricLine]
         /// False when line times were synthesized from unsynced lyrics.
         let synced: Bool
@@ -118,34 +125,32 @@ enum BackendClient {
         var betaNote: String? {
             if !synced { return "lyrics not synced — not from Spotify · beta" }
             if matched == "fuzzy" { return "lyrics matched externally — not from Spotify · beta" }
-            if matched == "aligned" { return "lyrics timed from song audio · beta" }
             return nil
         }
     }
 
-    /// Time-synced lyrics; nil when the song has none. Duration/album narrow
-    /// the match to the right version of the song.
+    /// Time-synced lyrics; nil when the song has none. `duration` is the
+    /// length of the recording the chords sit on (Spotify's, else the
+    /// analyzed audio's) and gates the match to that edition of the song;
+    /// the sheet and the live view must ask with the same values or they
+    /// get different answers.
     static func lyrics(title: String, artist: String,
-                       duration: Double? = nil, album: String? = nil) async -> LyricsResult? {
-        struct Response: Decodable { let lines: [LyricLine]; let synced: Bool?; let matched: String? }
+                       duration: Double, album: String?) async throws -> LyricsResult? {
         var comps = URLComponents(url: Config.backendBaseURL.appendingPathComponent("lyrics"),
                                   resolvingAgainstBaseURL: false)!
-        comps.queryItems = [.init(name: "title", value: title), .init(name: "artist", value: artist)]
-        if let duration { comps.queryItems?.append(.init(name: "duration", value: String(Int(duration)))) }
+        comps.queryItems = [.init(name: "title", value: title), .init(name: "artist", value: artist),
+                            .init(name: "duration", value: String(Int(duration)))]
         if let album { comps.queryItems?.append(.init(name: "album", value: album)) }
-        guard let (data, response) = try? await URLSession.shared.data(from: comps.url!),
-              (response as? HTTPURLResponse)?.statusCode == 200,
-              let parsed = try? JSONDecoder().decode(Response.self, from: data) else { return nil }
-        return LyricsResult(lines: parsed.lines, synced: parsed.synced ?? true,
-                            matched: parsed.matched)
+        return try await fetch(URLRequest(url: comps.url!))
     }
 
-    /// Server-side analysis, no audio needed from the device: the whole song
-    /// from a matching upload when `durationMs` finds one, else the 30 s
-    /// iTunes preview. Returns nil if the song is found nowhere.
+    /// Chords for a song with no audio from the device: the saved analysis
+    /// when there is one, else a fresh one from the 30 s iTunes preview
+    /// (the ingest worker upgrades it to the whole song later). nil when the
+    /// song is found nowhere.
     static func analyzeTrack(trackID: String, isrc: String?,
                              title: String?, artist: String?,
-                             durationMs: Int? = nil) async -> ChordAnalysis? {
+                             durationMs: Int? = nil) async throws -> ChordAnalysis? {
         var req = URLRequest(url: Config.backendBaseURL.appendingPathComponent("analyze_track"))
         req.httpMethod = "POST"
         let boundary = "chordlyze-\(UUID().uuidString)"
@@ -162,12 +167,47 @@ enum BackendClient {
         }
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
         req.httpBody = body
-        guard let (data, response) = try? await URLSession.shared.data(for: req),
-              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-        return try? JSONDecoder().decode(ChordAnalysis.self, from: data)
+        return try await fetch(req)
     }
 
-    /// Upload an audio file and get its chord analysis.
+    /// Same, for a Spotify track.
+    static func analyzeTrack(_ track: Track) async throws -> ChordAnalysis? {
+        try await analyzeTrack(trackID: track.id, isrc: track.isrc,
+                               title: track.name, artist: track.artistNames,
+                               durationMs: track.durationMs)
+    }
+
+    /// `operation` again on a transport or 5xx failure, with a short pause
+    /// between tries; a nil (404) result returns at once.
+    static func retrying<T>(attempts: Int = 3,
+                            _ operation: () async throws -> T?) async throws -> T? {
+        var attempt = 1
+        while true {
+            do {
+                return try await operation()
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                if attempt >= attempts { throw error }
+                attempt += 1
+                try await Task.sleep(for: .seconds(2 * attempt))
+            }
+        }
+    }
+
+    /// nil on 404; throws BackendError on any other non-200 response.
+    private static func fetch<T: Decodable>(_ request: URLRequest) async throws -> T? {
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 404 { return nil }
+        guard status == 200 else {
+            throw BackendError(status: status, detail: String(data: data, encoding: .utf8) ?? "")
+        }
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    // MARK: - Practice
+
     struct PracticeReport: Decodable, Identifiable {
         struct ChordScore: Decodable, Identifiable {
             let name: String
@@ -234,40 +274,5 @@ enum BackendClient {
                           userInfo: [NSLocalizedDescriptionKey: "Scoring failed: \(detail)"])
         }
         return try JSONDecoder().decode(PracticeReport.self, from: data)
-    }
-
-    static func analyze(fileURL: URL, trackID: String? = nil,
-                        title: String? = nil, artist: String? = nil) async throws -> ChordAnalysis {
-        let boundary = "chordlyze-\(UUID().uuidString)"
-        var req = URLRequest(url: Config.backendBaseURL.appendingPathComponent("analyze"))
-        req.httpMethod = "POST"
-        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        req.timeoutInterval = 600
-
-        let needsScopedAccess = fileURL.startAccessingSecurityScopedResource()
-        defer { if needsScopedAccess { fileURL.stopAccessingSecurityScopedResource() } }
-        let fileData = try Data(contentsOf: fileURL)
-
-        var body = Data()
-        let fields: [(String, String?)] = [("track_id", trackID), ("title", title), ("artist", artist)]
-        for (name, value) in fields {
-            guard let value else { continue }
-            body.append("--\(boundary)\r\n".data(using: .utf8)!)
-            body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".data(using: .utf8)!)
-        }
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileURL.lastPathComponent)\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: application/octet-stream\r\n\r\n".data(using: .utf8)!)
-        body.append(fileData)
-        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
-        req.httpBody = body
-
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            let detail = String(data: data, encoding: .utf8) ?? ""
-            throw NSError(domain: "Chordlyze", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Analysis failed: \(detail)"])
-        }
-        return try JSONDecoder().decode(ChordAnalysis.self, from: data)
     }
 }

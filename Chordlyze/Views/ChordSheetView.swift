@@ -6,6 +6,8 @@ struct AnalysisTabsView: View {
     let analysis: ChordAnalysis
     let title: String
     let artist: String
+    /// Album name, when known: narrows the lyrics match to this version.
+    var album: String? = nil
     /// Enables the Practice flow (needs the backend's reference chart key).
     var trackID: String? = nil
     /// Full song length when known: the sheet's timeline runs to the end of
@@ -38,10 +40,10 @@ struct AnalysisTabsView: View {
                     toolbox
                     .padding(.bottom, 12)
                     if showTimeline {
-                        AnalysisResultView(analysis: analysis, transposeBy: shift, embedded: true,
+                        AnalysisResultView(analysis: analysis, transposeBy: shift,
                                            onChordTap: { selectedChord = SelectedChord(name: $0) })
                     } else {
-                        ChordSheetView(analysis: analysis, title: title, artist: artist,
+                        ChordSheetView(analysis: analysis, title: title, artist: artist, album: album,
                                        trackDuration: trackDuration, transposeBy: shift,
                                        onChordTap: { selectedChord = SelectedChord(name: $0) })
                     }
@@ -144,35 +146,6 @@ struct AnalysisTabsView: View {
             .frame(width: 0.5, height: 34)
     }
 
-    private var transposeStepper: some View {
-        HStack(spacing: 0) {
-            Button {
-                if manualShift > -6 { manualShift -= 1 }
-            } label: {
-                Image(systemName: "minus")
-                    .frame(width: 30, height: 26)
-            }
-            Button {
-                manualShift = 0
-            } label: {
-                Text(manualShift == 0 ? "±0" : String(format: "%+d", manualShift))
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .foregroundStyle(manualShift == 0 ? Palette.secondary : Color.spotifyGreen)
-                    .frame(width: 34)
-            }
-            Button {
-                if manualShift < 6 { manualShift += 1 }
-            } label: {
-                Image(systemName: "plus")
-                    .frame(width: 30, height: 26)
-            }
-        }
-        .font(.system(size: 12, weight: .semibold))
-        .foregroundStyle(.white)
-        .buttonStyle(.plain)
-        .background(Capsule().fill(Palette.elevated))
-    }
-
     private var header: some View {
         HStack(spacing: 10) {
             BackCircle(size: 38)
@@ -244,6 +217,7 @@ struct ChordSheetView: View {
     let analysis: ChordAnalysis
     let title: String
     let artist: String
+    var album: String? = nil
     var trackDuration: Double? = nil
     var transposeBy: Int = 0
     var onChordTap: ((String) -> Void)? = nil
@@ -255,7 +229,7 @@ struct ChordSheetView: View {
         VStack(alignment: .leading, spacing: 0) {
             if analysis.isPreview {
                 coverageLabel("Chords come from a 30-second preview at an unknown point in the song, so they can't be placed on the lyrics.")
-                AnalysisResultView(analysis: analysis, transposeBy: transposeBy, embedded: true,
+                AnalysisResultView(analysis: analysis, transposeBy: transposeBy,
                                    onChordTap: onChordTap)
             } else if let rows {
                 if let lyricsNote {
@@ -280,10 +254,19 @@ struct ChordSheetView: View {
         .task {
             guard rows == nil, !analysis.isPreview else { return }
             // Without lyrics the timeline is instrumental rows end to end.
-            let result = await BackendClient.lyrics(title: title, artist: artist)
-            rows = SheetModel.build(analysis: analysis, lines: result?.lines ?? [],
-                                    duration: trackDuration)
-            lyricsNote = result == nil ? "No synced lyrics for this song." : result?.betaNote
+            do {
+                let result = try await BackendClient.retrying {
+                    try await BackendClient.lyrics(title: title, artist: artist,
+                                                   duration: trackDuration ?? analysis.coverageEnd,
+                                                   album: album)
+                }
+                rows = SheetModel.build(analysis: analysis, lines: result?.lines ?? [],
+                                        duration: trackDuration)
+                lyricsNote = result == nil ? "No synced lyrics for this song." : result?.betaNote
+            } catch {
+                rows = SheetModel.build(analysis: analysis, lines: [], duration: trackDuration)
+                lyricsNote = "Lyrics unavailable right now."
+            }
         }
     }
 

@@ -1,132 +1,31 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
-/// Track screen: shows the analysis when it exists (instant from cache or the
-/// iTunes preview), else offers Listen / Import capture.
+/// Track screen: the analysis (saved, or fresh from the iTunes preview) as
+/// the chord sheet; a placeholder until it arrives or when the song is
+/// found nowhere.
 struct ChordView: View {
     let track: Track
     @State private var analysis: ChordAnalysis?
-    @State private var isAnalyzing = false
-    @State private var showImporter = false
-    @State private var error: String?
-    @StateObject private var recorder = ListenRecorder()
+    @State private var failure: String?
 
     var body: some View {
         Group {
-            if let analysis, !recorder.isRecording {
+            if let analysis {
                 AnalysisTabsView(analysis: analysis, title: track.name, artist: track.artistNames,
-                                 trackID: track.id,
+                                 album: track.album.name, trackID: track.id,
                                  trackDuration: track.durationMs.map { Double($0) / 1000 })
             } else {
-                captureScreen
-            }
-        }
-        .background(Color.black.ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
-        .onChange(of: recorder.isRecording) { _, recording in
-            if !recording, let url = recorder.fileURL, !isAnalyzing, analysis == nil {
-                analyze(url)
-            }
-        }
-        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.audio]) { result in
-            switch result {
-            case .success(let url): analyze(url)
-            case .failure(let err): error = err.localizedDescription
+                WaitingView(title: track.name, subtitle: track.artistNames.uppercased(),
+                            message: failure ?? "Analyzing chords…", spinning: failure == nil)
             }
         }
         .task {
-            guard analysis == nil else { return }
-            if let cached = await BackendClient.cachedAnalysis(trackID: track.id, isrc: track.isrc) {
-                analysis = cached
-                return
-            }
-            isAnalyzing = true
-            analysis = await BackendClient.analyzeTrack(trackID: track.id, isrc: track.isrc,
-                                                        title: track.name, artist: track.artistNames,
-                                                        durationMs: track.durationMs)
-            isAnalyzing = false
-        }
-    }
-
-    private var captureScreen: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack { BackCircle(); Spacer() }
-                Text(track.name)
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                Text(track.artistNames)
-                    .font(.system(size: 15))
-                    .foregroundStyle(Palette.secondary)
-
-                if recorder.isRecording {
-                    VStack(spacing: 12) {
-                        Label(String(format: "Listening… %.0fs", recorder.elapsed),
-                              systemImage: "waveform.badge.mic")
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                            .symbolEffect(.pulse)
-                        Text("Play the song out loud near your device.")
-                            .font(.caption).foregroundStyle(Palette.secondary)
-                        Button("Stop & Analyze") { recorder.stop() }
-                            .buttonStyle(.borderedProminent)
-                            .tint(Color.spotifyGreen)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 40)
-                } else if isAnalyzing {
-                    HStack {
-                        ProgressView()
-                        Text("Analyzing chords…").foregroundStyle(Palette.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 40)
-                } else {
-                    ContentUnavailableView {
-                        Label("No analysis yet", systemImage: "waveform")
-                    } description: {
-                        Text("This song has no iTunes preview. Listen while it plays, or import an audio file.")
-                    } actions: {
-                        Button {
-                            startListening()
-                        } label: {
-                            Label("Listen", systemImage: "mic.fill")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color.spotifyGreen)
-                        Button("Import Audio") { showImporter = true }
-                            .buttonStyle(.bordered)
-                    }
-                }
-                if let error { Text(error).font(.footnote).foregroundStyle(Palette.destructive) }
-            }
-            .padding(20)
-        }
-    }
-
-    private func startListening() {
-        error = nil
-        analysis = nil
-        Task {
-            guard await recorder.requestPermission() else {
-                error = "Microphone access denied — enable it in Settings."
-                return
-            }
-            do { try recorder.start() }
-            catch { self.error = "Could not start recording: \(error.localizedDescription)" }
-        }
-    }
-
-    private func analyze(_ url: URL) {
-        isAnalyzing = true
-        error = nil
-        Task {
-            defer { isAnalyzing = false }
             do {
-                analysis = try await BackendClient.analyze(fileURL: url, trackID: track.id,
-                                                           title: track.name, artist: track.artistNames)
+                analysis = try await BackendClient.retrying { try await BackendClient.analyzeTrack(track) }
+                if analysis == nil { failure = "Chords unavailable for this song." }
+            } catch {
+                failure = "Couldn't reach the chord service: \(error.localizedDescription)"
             }
-            catch { self.error = error.localizedDescription }
         }
     }
 }
@@ -135,7 +34,6 @@ struct ChordView: View {
 struct AnalysisResultView: View {
     let analysis: ChordAnalysis
     var transposeBy: Int = 0
-    var embedded: Bool = false
     var onChordTap: ((String) -> Void)? = nil
 
     private func show(_ name: String) -> String {

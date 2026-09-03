@@ -105,47 +105,28 @@ struct SearchView: View {
 struct SearchAnalysisView: View {
     let song: SearchView.ITunesSong
     @State private var analysis: ChordAnalysis?
-    @State private var failed = false
+    @State private var failure: String?
 
     var body: some View {
         Group {
             if let analysis {
                 AnalysisTabsView(analysis: analysis, title: song.trackName, artist: song.artistName,
                                  trackID: "itunes-\(song.trackId)")
-            } else if failed {
-                VStack(spacing: 12) {
-                    HStack { BackCircle(); Spacer() }
-                    Spacer()
-                    Text("Could not analyze this song.")
-                        .foregroundStyle(Palette.secondary)
-                    Spacer()
-                }
-                .padding(20)
             } else {
-                VStack(spacing: 14) {
-                    HStack { BackCircle(); Spacer() }
-                    Spacer()
-                    ProgressView()
-                    Text("Analyzing \(song.trackName)…")
-                        .font(.system(size: 14))
-                        .foregroundStyle(Palette.secondary)
-                    Spacer()
-                }
-                .padding(20)
+                WaitingView(title: song.trackName, subtitle: song.artistName.uppercased(),
+                            message: failure ?? "Analyzing chords…", spinning: failure == nil)
             }
         }
-        .background(Color.black.ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
         .task {
-            let trackID = "itunes-\(song.trackId)"
-            if let cached = await BackendClient.cachedAnalysis(trackID: trackID) {
-                analysis = cached
-                return
+            do {
+                analysis = try await BackendClient.retrying {
+                    try await BackendClient.analyzeTrack(trackID: "itunes-\(song.trackId)", isrc: nil,
+                                                         title: song.trackName, artist: song.artistName)
+                }
+                if analysis == nil { failure = "Chords unavailable for this song." }
+            } catch {
+                failure = "Couldn't reach the chord service: \(error.localizedDescription)"
             }
-            analysis = await BackendClient.analyzeTrack(trackID: trackID, isrc: nil,
-                                                        title: song.trackName,
-                                                        artist: song.artistName)
-            failed = analysis == nil
         }
     }
 }

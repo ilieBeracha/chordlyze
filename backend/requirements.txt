@@ -50,5 +50,4 @@ uvloop==0.22.1
 watchfiles==1.2.0
 websockets==17.1
 madmom @ git+https://github.com/CPJKU/madmom.git@27f032e8947204902c675e5e341a3faf5dc86dae
-faster-whisper==1.1.1
 yt-dlp==2026.8.19

@@ -20,7 +20,7 @@ struct LiveNowView: View {
     @State private var position: Double = 0
     @State private var rows: [SheetModel.Row] = []
     @State private var lyricLines: [LyricLine] = []
-    @State private var noLyrics = false
+    @State private var lyrics: LyricsState = .loading
     @State private var selectedChord: SelectedChord?
     @State private var seekDenied = false
     @State private var lyricsNote: String?
@@ -33,6 +33,15 @@ struct LiveNowView: View {
     struct SelectedChord: Identifiable {
         let name: String
         var id: String { name }
+    }
+    enum LyricsState {
+        case loading
+        /// The song has lyrics with times: the teleprompter follows them.
+        case loaded
+        /// The song has none (404): follow the chords alone.
+        case none
+        /// The lyrics service could not be reached; the chords still work.
+        case failed
     }
     /// Static: an instance timer is recreated (and its countdown reset) every
     /// time the parent re-renders, which in practice mode is every second.
@@ -80,12 +89,10 @@ struct LiveNowView: View {
 
             Spacer()
 
-            if noLyrics {
-                chordFollow
-            } else if rows.isEmpty {
-                ProgressView()
-            } else {
+            if lyrics == .loaded {
                 teleprompter
+            } else {
+                chordFollow
             }
 
             Spacer()
@@ -111,10 +118,20 @@ struct LiveNowView: View {
         .sheet(item: $selectedChord) { selected in
             ChordDiagramSheet(chord: selected.name)
         }
-        .task {
-            guard let result = await BackendClient.lyrics(title: title, artist: artist,
-                                                          duration: trackDuration, album: album) else {
-                noLyrics = true
+        .task { await loadLyrics() }
+    }
+
+    /// Same query as the chord sheet (title, artist, this recording's length,
+    /// album), so both screens show the same lyrics for a song.
+    private func loadLyrics() async {
+        lyrics = .loading
+        do {
+            guard let result = try await BackendClient.retrying({
+                try await BackendClient.lyrics(title: title, artist: artist,
+                                               duration: trackDuration ?? analysis.coverageEnd,
+                                               album: album)
+            }) else {
+                lyrics = .none
                 return
             }
             lyricLines = result.lines
@@ -126,6 +143,11 @@ struct LiveNowView: View {
                 resyncable = true
                 lyricsNote = "lyrics roughly timed — tap the sung line to sync · beta"
             }
+            lyrics = .loaded
+        } catch is CancellationError {
+            return
+        } catch {
+            lyrics = .failed
         }
     }
 
@@ -333,7 +355,18 @@ struct LiveNowView: View {
         }
     }
 
-    // MARK: - Chord-only follow (no synced lyrics)
+    // MARK: - Chord-only follow (lyrics absent, loading, or unreachable)
+
+    private var followNote: String {
+        switch lyrics {
+        case .loading: return "Loading lyrics…"
+        case .failed: return "Couldn't load lyrics — following the chords."
+        case .none, .loaded:
+            if analysis.isPreview { return "No synced lyrics." }
+            return position < analysis.coverageEnd ? "No synced lyrics — follow the chords."
+                                                   : "Past the analyzed part of the song."
+        }
+    }
 
     private var chordFollow: some View {
         let events = SheetModel.events(analysis)
@@ -345,11 +378,16 @@ struct LiveNowView: View {
             return Array(after.prefix(3))
         }()
         return VStack(spacing: 30) {
-            Text(analysis.isPreview ? "No synced lyrics."
-                 : covered ? "No synced lyrics — follow the chords."
-                 : "Past the analyzed part of the song.")
-                .font(.system(size: 13))
-                .foregroundStyle(Palette.secondary)
+            VStack(spacing: 10) {
+                Text(followNote)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Palette.secondary)
+                if lyrics == .failed {
+                    Button("Retry") { Task { await loadLyrics() } }
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color.spotifyGreen)
+                }
+            }
             if !analysis.isPreview {
                 Button {
                     if let current { selectedChord = SelectedChord(name: current.display(transposedBy: 0)) }

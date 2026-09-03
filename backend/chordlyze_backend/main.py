@@ -1,44 +1,48 @@
 """Chordlyze backend API.
 
-POST /analyze        — multipart audio upload, returns chords + key + roman numerals.
-GET  /analysis/{id}  — fetch a cached analysis by content hash.
-GET  /health         — liveness.
+POST /analyze_track           — chords for a song, no client audio: the saved
+                                analysis, else a fresh one from the 30 s iTunes
+                                preview (later upgraded by the ingest worker).
+POST /analysis/submit         — whole-song chords recognized off-server.
+GET  /analysis/track/{id}     — saved analysis for a track (or its ISRC twin).
+GET  /lyrics                  — time-synced lyrics from LRCLIB.
+GET  /library                 — every saved analysis.
+POST /practice_take           — score a practice recording against the chart.
+GET  /practice/history/{id}   — past takes for a track.
+GET  /health                  — liveness.
 
-Results are cached on disk keyed by SHA-256 of the audio bytes, so re-analyzing
-the same track is instant.
+Analyses are JSON files under CACHE_DIR: track-<id>.json, isrc-<ISRC>.json,
+lyrics4-<digest>.json, take-<id>.json.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
-import sys
 import tempfile
 import threading
 import time
 import urllib.error
-import uuid
 import urllib.parse
 import urllib.request
+import uuid
 from pathlib import Path
 
 import anyio.to_thread
-from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, UploadFile
+from fastapi import FastAPI, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from .analysis.beats import track_beats
 from .analysis.chord import parse_label
 from .analysis.engine import AudioDecodeError, ChordSegment, merge_adjacent, recognize_chords
 from .analysis.keyfinder import analyze
-from .fulltrack import fetch_full_track
-
-import os
 
 CACHE_DIR = Path(os.environ.get("CHORDLYZE_CACHE",
                                 str(Path(__file__).resolve().parent.parent / "analysis_cache")))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Chordlyze", version="0.1.0")
+app = FastAPI(title="Chordlyze", version="0.2.0")
 
 
 @app.get("/health")
@@ -50,32 +54,21 @@ _MODEL_LOCK = threading.Lock()
 
 
 def _recognize_locked(path: Path):
-    """Chords (model-locked) plus beat times for the same audio."""
+    """Chords (model-locked: madmom is not thread-safe) plus beat times."""
     with _MODEL_LOCK:
         segments = recognize_chords(path)
     return segments, track_beats(path)
 
+
+# MARK: - Saved analyses
 
 def _track_cache_path(track_id: str) -> Path:
     safe = "".join(c for c in track_id if c.isalnum())
     return CACHE_DIR / f"track-{safe}.json"
 
 
-_ISRC_RE = re.compile(r"[A-Za-z]{2}[A-Za-z0-9]{3}\d{7}")
-
-
 def _isrc_cache_path(isrc: str) -> Path:
     return CACHE_DIR / f"isrc-{isrc.upper()}.json"
-
-
-def _derive_isrc(track_id: str, isrc: str | None) -> str | None:
-    """Mic captures are keyed 'shazam-<isrc>' — recover the ISRC from the key
-    so the same song analyzed via Spotify and via mic share one analysis."""
-    if isrc:
-        return isrc
-    if track_id.startswith("shazam-") and _ISRC_RE.fullmatch(track_id[7:]):
-        return track_id[7:]
-    return None
 
 
 # Recognizers by how much of the harmony they can name. Entries saved before
@@ -107,8 +100,8 @@ def _save_track(track_id: str, result: dict, title: str | None, artist: str | No
     if track_path.exists() and _quality(json.loads(track_path.read_text())) > _quality(entry):
         return False
     track_path.write_text(json.dumps(entry))
-    if derived := _derive_isrc(track_id, isrc):
-        path = _isrc_cache_path(derived)
+    if isrc:
+        path = _isrc_cache_path(isrc)
         if path.exists() and _quality(json.loads(path.read_text())) > _quality(entry):
             return True
         path.write_text(json.dumps(entry))
@@ -117,109 +110,20 @@ def _save_track(track_id: str, result: dict, title: str | None, artist: str | No
 
 def _cached_by_isrc(track_id: str, isrc: str | None,
                     title: str | None, artist: str | None) -> dict | None:
-    """Analysis saved under the same ISRC by the other source, if any;
+    """Analysis saved under the same ISRC by another track id, if any;
     re-saves it under this track_id for future direct hits."""
-    derived = _derive_isrc(track_id, isrc)
-    if not derived:
+    if not isrc:
         return None
-    path = _isrc_cache_path(derived)
+    path = _isrc_cache_path(isrc)
     if not path.exists():
         return None
     entry = json.loads(path.read_text())
     _save_track(track_id, entry, title or entry.get("title"),
-                artist or entry.get("artist"), derived)
+                artist or entry.get("artist"), isrc)
     return json.loads(_track_cache_path(track_id).read_text())
 
 
-def _align_digest(title: str, artist: str) -> str:
-    return hashlib.sha256(f"{title}|{artist}".lower().encode()).hexdigest()[:24]
-
-
-def _fetch_lyric_texts(title: str, artist: str) -> list[str]:
-    data = _lrclib_get({"track_name": title, "artist_name": artist})
-    if data is None or not (data.get("syncedLyrics") or data.get("plainLyrics")):
-        data = _search_lrclib(title, artist, None)
-    if data is None:
-        return []
-    if data.get("syncedLyrics"):
-        return [ln["text"] for ln in parse_synced_lyrics(data["syncedLyrics"])]
-    return [ln.strip() for ln in (data.get("plainLyrics") or "").splitlines()
-            if ln.strip()]
-
-
-def _align_task(audio_path: str, title: str, artist: str) -> None:
-    """Background: real lyric line times from the captured audio (whisper)."""
-    from .alignment import align
-    try:
-        out = _align_cache_path(title, artist)
-        if out.exists():
-            return
-        texts = _fetch_lyric_texts(title, artist)
-        if not texts:
-            return
-        aligned = align(audio_path, texts)
-        if aligned:
-            out.write_text(json.dumps({"duration": None, "lines": aligned,
-                                       "synced": True, "matched": "aligned"}))
-    finally:
-        Path(audio_path).unlink(missing_ok=True)
-
-
-def _align_cache_path(title: str, artist: str) -> Path:
-    return CACHE_DIR / f"align-{_align_digest(title, artist)}.json"
-
-
-@app.post("/analyze")
-async def analyze_upload(
-    background: BackgroundTasks,
-    file: UploadFile,
-    track_id: str | None = Form(default=None),
-    title: str | None = Form(default=None),
-    artist: str | None = Form(default=None),
-    align: bool = Form(default=True),
-) -> dict:
-    """`align=false` skips the background whisper lyric alignment: pointless
-    when synced lyrics already exist, and heavy enough to crash the 2 GB
-    machine when it overlaps the next chord analysis."""
-    data = await file.read()
-    if not data:
-        raise HTTPException(400, "empty upload")
-    digest = hashlib.sha256(data).hexdigest()
-    cached = CACHE_DIR / f"{digest}.json"
-    if cached.exists():
-        result = json.loads(cached.read_text())
-        if track_id:
-            _save_track(track_id, result, title, artist)
-        return result
-
-    suffix = Path(file.filename or "audio").suffix or ".bin"
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(data)
-        tmp_path = Path(tmp.name)
-    try:
-        # Off the event loop so uploads/health stay responsive; the lock keeps
-        # the (non-thread-safe) madmom model to one inference at a time.
-        segments, tempo = await anyio.to_thread.run_sync(_recognize_locked, tmp_path)
-    except AudioDecodeError as exc:
-        raise HTTPException(422, str(exc)) from exc
-    finally:
-        tmp_path.unlink(missing_ok=True)
-
-    result = analyze(segments)
-    result["tempo"] = tempo
-    result["source"] = "upload"
-    result["model"] = "madmom"
-    result["id"] = digest
-    cached.write_text(json.dumps(result))
-    if track_id:
-        _save_track(track_id, result, title, artist)
-    if align and title and not _align_cache_path(title, artist or "").exists():
-        # Full-song audio in hand: align real lyric times in the background.
-        keep = CACHE_DIR / f"align-src-{digest}{suffix}"
-        keep.write_bytes(data)
-        background.add_task(_align_task, str(keep), title, artist or "")
-    return result
-
+# MARK: - iTunes preview analysis
 
 def _itunes_query(url: str) -> list[dict]:
     with urllib.request.urlopen(url, timeout=15) as resp:
@@ -247,23 +151,6 @@ def _itunes_lookup(isrc: str | None, title: str | None, artist: str | None) -> d
     return None
 
 
-def _full_track_analysis(title: str, artist: str, duration: float):
-    """Whole-song chords+tempo from a matching YouTube upload; None when no
-    upload matches or YouTube refuses (logged so a block is visible)."""
-    from yt_dlp.utils import DownloadError
-    try:
-        full = fetch_full_track(title, artist, duration)
-    except DownloadError as exc:
-        print(f"[fulltrack] youtube refused {title!r}: {exc}", file=sys.stderr)
-        return None
-    if full is None:
-        return None
-    try:
-        return _recognize_locked(full)
-    finally:
-        full.unlink(missing_ok=True)
-
-
 @app.post("/analyze_track")
 async def analyze_track(
     track_id: str = Form(...),
@@ -272,9 +159,10 @@ async def analyze_track(
     artist: str | None = Form(default=None),
     duration: float | None = Form(default=None),
 ) -> dict:
-    """Analyze the whole song from a matching YouTube upload; fall back to the
-    30 s iTunes preview. No client audio needed. `duration` (seconds) picks
-    the right upload; iTunes' track length is used when it's absent."""
+    """The saved analysis when there is one, else chords from the 30 s iTunes
+    preview so the song has something right away. Whole-song recognition
+    happens off-server (ingest_worker.py) and replaces the preview through
+    /analysis/submit. 404 when the song is not on iTunes either."""
     cached = _track_cache_path(track_id)
     if cached.exists():
         return json.loads(cached.read_text())
@@ -282,38 +170,36 @@ async def analyze_track(
         return hit
 
     def fetch_and_recognize():
-        song = _itunes_lookup(isrc, title, artist) or {}
-        name = title or song.get("trackName")
-        who = artist or song.get("artistName") or ""
-        length = duration or (song.get("trackTimeMillis") or 0) / 1000
-        if name and length:
-            if full := _full_track_analysis(name, who, length):
-                return song, "youtube", full
+        song = _itunes_lookup(isrc, title, artist)
         if not song:
-            raise HTTPException(404, "song not found on iTunes or YouTube")
+            raise HTTPException(404, "song not found on iTunes")
         with tempfile.NamedTemporaryFile(suffix=".m4a", delete=False) as tmp:
             with urllib.request.urlopen(song["previewUrl"], timeout=30) as resp:
                 tmp.write(resp.read())
             tmp_path = Path(tmp.name)
         try:
-            return song, "itunes_preview", _recognize_locked(tmp_path)
+            return song, _recognize_locked(tmp_path)
         finally:
             tmp_path.unlink(missing_ok=True)
 
     try:
-        song, source, (segments, tempo) = await anyio.to_thread.run_sync(fetch_and_recognize)
+        song, (segments, tempo) = await anyio.to_thread.run_sync(fetch_and_recognize)
     except AudioDecodeError as exc:
         raise HTTPException(422, str(exc)) from exc
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise HTTPException(503, f"iTunes unavailable: {exc}") from exc
 
     result = analyze(segments)
     result["tempo"] = tempo
-    result["source"] = source
+    result["source"] = "itunes_preview"
     result["model"] = "madmom"
     _save_track(track_id, result,
                 title or song.get("trackName"), artist or song.get("artistName"),
                 isrc, artwork=song.get("artworkUrl100"))
     return json.loads(cached.read_text())
 
+
+# MARK: - Off-server submission
 
 class SubmittedSegment(BaseModel):
     start: float
@@ -363,6 +249,8 @@ def submit_analysis(body: SubmittedAnalysis) -> dict:
     return json.loads(_track_cache_path(body.track_id).read_text())
 
 
+# MARK: - Lyrics
+
 _LRC_LINE = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]\s?(.*)")
 # Enhanced LRC (A2) word timestamps inside a line: <mm:ss.xx>word
 _LRC_WORD = re.compile(r"<(\d+):(\d+(?:\.\d+)?)>")
@@ -398,16 +286,21 @@ def parse_synced_lyrics(synced: str) -> list[dict]:
 
 
 def _lrclib(endpoint: str, params: dict):
+    """One LRCLIB call. None on 404; 503 to the client when LRCLIB itself is
+    down or unreachable, so an outage reads as "try again", never as "no
+    lyrics for this song"."""
     q = urllib.parse.urlencode(params)
     req = urllib.request.Request(f"https://lrclib.net/api/{endpoint}?{q}",
-                                 headers={"User-Agent": "Chordlyze/0.1"})
+                                 headers={"User-Agent": "Chordlyze/0.2"})
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             return None
-        raise
+        raise HTTPException(503, f"lyrics service returned {exc.code}") from exc
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise HTTPException(503, f"lyrics service unreachable: {exc}") from exc
 
 
 def _lrclib_get(params: dict) -> dict | None:
@@ -489,11 +382,6 @@ def lyrics(title: str, artist: str = "", duration: float | None = None,
     digest = hashlib.sha256(
         f"{title}|{artist}|{album or ''}|{round(duration) if duration else ''}"
         .lower().encode()).hexdigest()[:24]
-    # Audio-aligned times (from a full-song capture) beat every other source.
-    aligned = _align_cache_path(title, artist)
-    if aligned.exists():
-        return json.loads(aligned.read_text())
-
     # v4: tighter fuzzy gate (±5s, high bar without duration).
     cached = CACHE_DIR / f"lyrics4-{digest}.json"
     if cached.exists():
@@ -531,6 +419,8 @@ def lyrics(title: str, artist: str = "", duration: float | None = None,
     return result
 
 
+# MARK: - Library
+
 @app.get("/library")
 def library() -> dict:
     items = []
@@ -550,126 +440,17 @@ def library() -> dict:
     return {"items": items}
 
 
-@app.post("/library/backfill_difficulty")
-def backfill_difficulty() -> dict:
-    """Compute difficulty for analyses saved before the field existed."""
-    from .analysis.difficulty import difficulty
-    updated = 0
-    for path in CACHE_DIR.glob("track-*.json"):
-        data = json.loads(path.read_text())
-        if data.get("difficulty") is not None or not data.get("chords"):
-            continue
-        data["difficulty"] = difficulty(data["chords"])
-        path.write_text(json.dumps(data))
-        updated += 1
-    return {"updated": updated}
+@app.get("/analysis/track/{track_id}")
+def get_track_analysis(track_id: str, isrc: str | None = None) -> dict:
+    cached = _track_cache_path(track_id)
+    if cached.exists():
+        return json.loads(cached.read_text())
+    if hit := _cached_by_isrc(track_id, isrc, None, None):
+        return hit
+    raise HTTPException(404, "no analysis for this track yet")
 
 
-_FULL_BACKFILL_RUNNING = False
-
-
-def _backfill_full() -> None:
-    """Re-analyze preview-based library entries from whole-song audio so
-    their chords sit on the real timeline instead of a looped guess."""
-    global _FULL_BACKFILL_RUNNING
-    _FULL_BACKFILL_RUNNING = True
-    try:
-        for path in CACHE_DIR.glob("track-*.json"):
-            data = json.loads(path.read_text())
-            if data.get("source") != "itunes_preview" or not data.get("title"):
-                continue
-            track_id = data.get("track_id", path.stem.removeprefix("track-"))
-            try:
-                song = _itunes_lookup(None, data["title"], data.get("artist")) or {}
-                length = (song.get("trackTimeMillis") or 0) / 1000
-                full = (_full_track_analysis(data["title"], data.get("artist") or "", length)
-                        if length else None)
-            except Exception as exc:
-                print(f"[fulltrack] backfill {data['title']!r} failed: {exc}", file=sys.stderr)
-                full = None
-            if full is None:
-                time.sleep(3)  # iTunes search rate limit (~20/min)
-                continue
-            segments, tempo = full
-            result = analyze(segments)
-            result["tempo"] = tempo
-            result["source"] = "youtube"
-            result["model"] = "madmom"
-            _save_track(track_id, result, data["title"], data.get("artist"),
-                        artwork=data.get("artwork"))
-            print(f"[fulltrack] backfilled {data['title']!r}", file=sys.stderr)
-    finally:
-        _FULL_BACKFILL_RUNNING = False
-
-
-@app.post("/library/backfill_full")
-def backfill_full(background: BackgroundTasks) -> dict:
-    """Queue full-song re-analysis of every preview-based entry (slow: one to
-    two minutes per song). Reports how many remain; no-op while one runs."""
-    remaining = sum(1 for p in CACHE_DIR.glob("track-*.json")
-                    if json.loads(p.read_text()).get("source") == "itunes_preview")
-    if not _FULL_BACKFILL_RUNNING:
-        background.add_task(_backfill_full)
-    return {"remaining": remaining, "running": _FULL_BACKFILL_RUNNING}
-
-
-def _backfill_tempo() -> None:
-    """Beat-track saved preview analyses that predate the tempo field. Only
-    iTunes-preview analyses can be redone: uploaded audio isn't kept."""
-    for path in CACHE_DIR.glob("track-*.json"):
-        data = json.loads(path.read_text())
-        if "tempo" in data or data.get("source") != "itunes_preview" or not data.get("title"):
-            continue
-        try:
-            song = _itunes_lookup(None, data["title"], data.get("artist"))
-            if song is None:
-                continue
-            with tempfile.NamedTemporaryFile(suffix=".m4a", delete=False) as tmp:
-                with urllib.request.urlopen(song["previewUrl"], timeout=30) as resp:
-                    tmp.write(resp.read())
-                tmp_path = Path(tmp.name)
-            try:
-                data["tempo"] = track_beats(tmp_path)
-            finally:
-                tmp_path.unlink(missing_ok=True)
-        except Exception:
-            continue
-        path.write_text(json.dumps(data))
-        time.sleep(3)  # iTunes search rate limit (~20/min)
-
-
-@app.post("/library/backfill_tempo")
-def backfill_tempo(background: BackgroundTasks) -> dict:
-    missing = sum(1 for p in CACHE_DIR.glob("track-*.json")
-                  if "tempo" not in (d := json.loads(p.read_text()))
-                  and d.get("source") == "itunes_preview")
-    background.add_task(_backfill_tempo)
-    return {"queued": missing}
-
-
-def _backfill_artwork() -> None:
-    """Fill missing artwork on saved analyses via iTunes search (rate-limited)."""
-    for path in CACHE_DIR.glob("track-*.json"):
-        data = json.loads(path.read_text())
-        if data.get("artwork") or not data.get("title"):
-            continue
-        try:
-            song = _itunes_lookup(None, data["title"], data.get("artist"))
-        except Exception:
-            continue
-        if song and song.get("artworkUrl100"):
-            data["artwork"] = song["artworkUrl100"]
-            path.write_text(json.dumps(data))
-        time.sleep(3)  # iTunes search rate limit (~20/min)
-
-
-@app.post("/library/backfill_artwork")
-def backfill_artwork(background: BackgroundTasks) -> dict:
-    missing = sum(1 for p in CACHE_DIR.glob("track-*.json")
-                  if not json.loads(p.read_text()).get("artwork"))
-    background.add_task(_backfill_artwork)
-    return {"queued": missing}
-
+# MARK: - Practice
 
 @app.post("/practice_take")
 async def practice_take(
@@ -718,21 +499,3 @@ def practice_history(track_id: str) -> dict:
             takes.append(data)
     takes.sort(key=lambda t: t.get("at", 0), reverse=True)
     return {"takes": takes}
-
-
-@app.get("/analysis/track/{track_id}")
-def get_track_analysis(track_id: str, isrc: str | None = None) -> dict:
-    cached = _track_cache_path(track_id)
-    if cached.exists():
-        return json.loads(cached.read_text())
-    if hit := _cached_by_isrc(track_id, isrc, None, None):
-        return hit
-    raise HTTPException(404, "no analysis for this track yet")
-
-
-@app.get("/analysis/{analysis_id}")
-def get_analysis(analysis_id: str) -> dict:
-    cached = CACHE_DIR / f"{analysis_id}.json"
-    if not cached.exists():
-        raise HTTPException(404, "analysis not found")
-    return json.loads(cached.read_text())

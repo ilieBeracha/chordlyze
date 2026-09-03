@@ -15,6 +15,8 @@ final class SpotifyNowPlaying: ObservableObject {
     }
 
     @Published private(set) var playing: Playing?
+    /// Analysis of `playing`'s track; nil while it is being fetched. Never
+    /// an older track's: it is cleared the moment the track changes.
     @Published private(set) var analysis: ChordAnalysis?
     /// Analysis was attempted for the current track and nothing came back.
     @Published private(set) var analysisFailed = false
@@ -26,7 +28,9 @@ final class SpotifyNowPlaying: ObservableObject {
     /// when `progress_ms` was sampled, so it is not used for timing.)
     private var anchor: (offset: TimeInterval, at: ContinuousClock.Instant)?
     private var pollTask: Task<Void, Never>?
+    /// Track id the analysis (or the fetch in flight) belongs to.
     private var analysisKey: String?
+    private var analysisTask: Task<Void, Never>?
     private var api: SpotifyAPI?
     /// A fresh report within this much of the running prediction is poll
     /// jitter, not new information: keep the anchor so the display doesn't hop.
@@ -90,7 +94,7 @@ final class SpotifyNowPlaying: ObservableObject {
                 anchor = nil
             }
             playing = next
-            await analyzeIfNeeded(track)
+            fetchAnalysisIfNeeded(track)
         } catch let error as NSError where error.code == 401 || error.code == 403 {
             // Missing scope on an old login (or dev-mode block): stop hammering.
             needsReauth = true
@@ -113,20 +117,21 @@ final class SpotifyNowPlaying: ObservableObject {
         }
     }
 
-    private func analyzeIfNeeded(_ track: Track) async {
+    /// One fetch per track, in its own task: the poll loop never waits on
+    /// it, so a song change is noticed while the previous song is still
+    /// being analyzed, and that stale result is dropped when it arrives.
+    private func fetchAnalysisIfNeeded(_ track: Track) {
         guard analysisKey != track.id else { return }
         analysisKey = track.id
+        analysisTask?.cancel()
         analysis = nil
         analysisFailed = false
-        var result = await BackendClient.cachedAnalysis(trackID: track.id, isrc: track.isrc)
-        if result == nil {
-            result = await BackendClient.analyzeTrack(trackID: track.id, isrc: track.isrc,
-                                                      title: track.name, artist: track.artistNames,
-                                                      durationMs: track.durationMs)
+        analysisTask = Task { [weak self] in
+            let result = try? await BackendClient.retrying { try await BackendClient.analyzeTrack(track) }
+            guard let self, !Task.isCancelled, self.analysisKey == track.id else { return }
+            self.analysis = result
+            self.analysisFailed = result == nil
         }
-        guard analysisKey == track.id else { return }  // song changed meanwhile
-        analysis = result
-        analysisFailed = result == nil
     }
 }
 

@@ -49,7 +49,7 @@ struct LibraryView: View {
                     errorView(error)
                 } else if items.isEmpty {
                     ContentUnavailableView("No analyses yet", systemImage: "music.note",
-                                           description: Text("Play something with Auto Session, or open a song from your playlists."))
+                                           description: Text("Open a song from your playlists, or search for one."))
                         .padding(.top, 40)
                 } else {
                     VStack(spacing: 0) {
@@ -217,6 +217,7 @@ struct LibraryView: View {
 struct SavedAnalysisView: View {
     let item: BackendClient.LibraryItem
     @State private var analysis: ChordAnalysis?
+    @State private var failure: String?
 
     var body: some View {
         Group {
@@ -225,14 +226,19 @@ struct SavedAnalysisView: View {
                                  title: item.title ?? "Unknown song", artist: item.artist ?? "",
                                  trackID: item.trackId)
             } else {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.black.ignoresSafeArea())
-                    .toolbar(.hidden, for: .navigationBar)
+                WaitingView(title: item.title ?? "Unknown song", subtitle: (item.artist ?? "").uppercased(),
+                            message: failure ?? "Loading chords…", spinning: failure == nil)
             }
         }
         .task {
-            analysis = await BackendClient.cachedAnalysis(trackID: item.trackId)
+            do {
+                analysis = try await BackendClient.retrying {
+                    try await BackendClient.cachedAnalysis(trackID: item.trackId)
+                }
+                if analysis == nil { failure = "This analysis is no longer saved." }
+            } catch {
+                failure = "Couldn't load the chords: \(error.localizedDescription)"
+            }
         }
     }
 }
