@@ -45,7 +45,6 @@ struct ChordLyricLine: View {
                         Text(chord.name)
                             .font(chordFont)
                             .foregroundStyle(Color.spotifyGreen)
-                            .opacity(chord.estimated ? 0.65 : 1)
                     }
                     .buttonStyle(.plain)
                     .disabled(onChordTap == nil)

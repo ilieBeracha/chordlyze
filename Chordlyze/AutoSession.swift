@@ -32,7 +32,7 @@ final class AutoSession: ObservableObject {
     @Published var statusLine = ""
     /// Song currently identified as playing, with its live position anchor.
     @Published private(set) var nowPlayingKey: String?
-    private var liveAnchor: (key: String, offset: TimeInterval, at: Date)?
+    private var liveAnchor: (key: String, offset: TimeInterval, at: ContinuousClock.Instant)?
 
     /// Entry for the song currently identified as playing.
     var nowEntry: Entry? {
@@ -42,7 +42,7 @@ final class AutoSession: ObservableObject {
     /// Current playback position inside the identified song, if known.
     func livePosition(for key: String) -> TimeInterval? {
         guard let anchor = liveAnchor, anchor.key == key else { return nil }
-        return anchor.offset + Date().timeIntervalSince(anchor.at)
+        return anchor.offset + anchor.at.duration(to: .now).seconds
     }
 
     /// Safety cap so one capture can't grow unbounded (radio stream, no song change).
@@ -122,7 +122,7 @@ final class AutoSession: ObservableObject {
         let key = (item.isrc).map { "shazam-\($0)" } ?? item.shazamID.map { "shazam-\($0)" }
         guard let key else { return }
         // Every match (repeats included) refreshes the live position anchor.
-        liveAnchor = (key, item.predictedCurrentMatchOffset, Date())
+        liveAnchor = (key, item.predictedCurrentMatchOffset, .now)
         nowPlayingKey = key
         guard key != currentKey else { return }
 

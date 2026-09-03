@@ -40,16 +40,9 @@ enum ChordShapes {
         "Bm":  .init([-1, 2, 4, 4, 3, 2], base: 2),
     ]
 
-    /// Pitch classes (0 = C) sounding in the chord, for the piano strip.
+    /// Pitch classes (0 = C) sounding in the chord, for the piano strip; nil
+    /// for a quality the app cannot voice.
     static func pianoNotes(for display: String) -> [Int]? {
-        guard let (root, suffix) = ChordMath.parse(display) else { return nil }
-        let intervals: [Int]
-        switch suffix {
-        case "": intervals = [0, 4, 7]
-        case "m": intervals = [0, 3, 7]
-        case "°": intervals = [0, 3, 6]
-        default: return nil
-        }
-        return intervals.map { (root + $0) % 12 }
+        Chord(display: display)?.pitchClasses
     }
 }

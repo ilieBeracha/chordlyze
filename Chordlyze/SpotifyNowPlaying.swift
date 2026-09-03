@@ -21,10 +21,16 @@ final class SpotifyNowPlaying: ObservableObject {
     /// Token lacks the playback scope (or Spotify refused) — reconnect in Profile.
     @Published private(set) var needsReauth = false
 
-    private var anchor: (offset: TimeInterval, at: Date)?
+    /// Playback position `offset` was true at monotonic instant `at`.
+    /// (Spotify's own `timestamp` field is when its state last changed, not
+    /// when `progress_ms` was sampled, so it is not used for timing.)
+    private var anchor: (offset: TimeInterval, at: ContinuousClock.Instant)?
     private var pollTask: Task<Void, Never>?
     private var analysisKey: String?
     private var api: SpotifyAPI?
+    /// A fresh report within this much of the running prediction is poll
+    /// jitter, not new information: keep the anchor so the display doesn't hop.
+    private static let jitterTolerance: TimeInterval = 0.4
 
     /// Begin (or resume) polling. Safe to call repeatedly.
     func start(api: SpotifyAPI) {
@@ -45,31 +51,52 @@ final class SpotifyNowPlaying: ObservableObject {
         pollTask = nil
     }
 
-    /// Current playback position; frozen while paused.
+    /// Current playback position; frozen while paused; nil when Spotify has
+    /// not reported one.
     func livePosition() -> TimeInterval? {
+        position(at: .now)
+    }
+
+    private func position(at instant: ContinuousClock.Instant) -> TimeInterval? {
         guard let anchor else { return nil }
         guard playing?.isPlaying == true else { return anchor.offset }
-        return anchor.offset + Date().timeIntervalSince(anchor.at)
+        return anchor.offset + anchor.at.duration(to: instant).seconds
     }
 
     private func poll() async {
         guard let api else { return }
         do {
+            let sent = ContinuousClock.now
             let current = try await api.currentlyPlaying()
+            let received = ContinuousClock.now
             guard let current, let track = current.item else {
                 playing = nil
                 anchor = nil
                 return
             }
-            anchor = (Double(current.progressMs ?? 0) / 1000, Date())
-            playing = Playing(track: track, isPlaying: current.isPlaying)
+            // progress_ms was read somewhere inside the round trip; the midpoint
+            // is the best guess and halves the latency error.
+            let sampledAt = sent.advanced(by: sent.duration(to: received) / 2)
+            let next = Playing(track: track, isPlaying: current.isPlaying)
+            if let ms = current.progressMs {
+                let reported = Double(ms) / 1000
+                let predicted = playing == next ? position(at: sampledAt) : nil
+                if let predicted, abs(predicted - reported) < Self.jitterTolerance {
+                    // Same track, same state, agrees with the running clock: keep it.
+                } else {
+                    anchor = (reported, sampledAt)
+                }
+            } else {
+                anchor = nil
+            }
+            playing = next
             await analyzeIfNeeded(track)
         } catch let error as NSError where error.code == 401 || error.code == 403 {
             // Missing scope on an old login (or dev-mode block): stop hammering.
             needsReauth = true
             stop()
         } catch {
-            // Transient network error — keep the last known state.
+            // Transient network error or rate limit — keep the last known state.
         }
     }
 
@@ -79,7 +106,7 @@ final class SpotifyNowPlaying: ObservableObject {
         guard let api else { return false }
         do {
             try await api.seek(toMs: Int(seconds * 1000))
-            anchor = (seconds, Date())  // optimistic; next poll confirms
+            anchor = (seconds, .now)  // optimistic; next poll confirms
             return true
         } catch {
             return false
@@ -100,5 +127,11 @@ final class SpotifyNowPlaying: ObservableObject {
         guard analysisKey == track.id else { return }  // song changed meanwhile
         analysis = result
         analysisFailed = result == nil
+    }
+}
+
+extension Duration {
+    var seconds: TimeInterval {
+        Double(components.seconds) + Double(components.attoseconds) / 1e18
     }
 }

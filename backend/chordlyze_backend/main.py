@@ -189,6 +189,7 @@ async def analyze_upload(
 
     result = analyze(segments)
     result["tempo"] = tempo
+    result["source"] = "upload"
     result["id"] = digest
     cached.write_text(json.dumps(result))
     if track_id:
@@ -620,7 +621,7 @@ async def practice_take(
         tmp.write(data)
         tmp_path = Path(tmp.name)
     try:
-        segments = await anyio.to_thread.run_sync(_recognize_locked, tmp_path)
+        segments, _tempo = await anyio.to_thread.run_sync(_recognize_locked, tmp_path)
     except AudioDecodeError as exc:
         raise HTTPException(422, str(exc)) from exc
     finally:

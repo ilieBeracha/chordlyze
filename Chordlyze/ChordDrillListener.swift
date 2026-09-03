@@ -15,25 +15,14 @@ final class ChordDrillListener: ObservableObject {
     private var stable: String?
     private var candidate: (name: String, since: Date)?
 
-    private static let noteIndex: [String: Int] = [
-        "C": 0, "C#": 1, "Db": 1, "D": 2, "D#": 3, "Eb": 3, "E": 4, "F": 5,
-        "F#": 6, "Gb": 6, "G": 7, "G#": 8, "Ab": 8, "A": 9, "A#": 10,
-        "Bb": 10, "B": 11,
-    ]
-
-    /// Pitch-class template for a display name like "F#m" or "C".
+    /// Pitch-class template for a display name like "F#m7" or "C/E"; nil for
+    /// a quality the app cannot voice (no template is better than a wrong one).
     static func template(for name: String) -> [Float]? {
-        var root = name
-        var minor = false
-        if root.hasSuffix("m") && !root.hasSuffix("dim") {
-            minor = true
-            root = String(root.dropLast())
-        }
-        guard let pc = noteIndex[root] else { return nil }
+        guard let notes = Chord(display: name)?.pitchClasses else { return nil }
         var chroma = [Float](repeating: 0, count: 12)
-        chroma[pc] = 1.0
-        chroma[(pc + (minor ? 3 : 4)) % 12] = 0.9
-        chroma[(pc + 7) % 12] = 0.9
+        for (index, pc) in notes.enumerated() {
+            chroma[pc] = max(chroma[pc], index == 0 ? 1.0 : 0.9)  // root weighs most
+        }
         return chroma
     }
 

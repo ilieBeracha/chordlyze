@@ -61,6 +61,9 @@ def dominant_label(segments, start: float, end: float) -> str:
     return max(cover.items(), key=lambda kv: kv[1])[0]
 
 
+# One madmom decoder frame plus float slack.
+BOUNDARY_TOLERANCE = 0.11
+
 CASES = [
     ("major_key", ["C:maj", "F:maj", "G:maj", "C:maj"], "C major"),
     ("pop_loop", ["A:min", "F:maj", "C:maj", "G:maj"], "C major"),
@@ -81,6 +84,17 @@ def test_recognizes_known_progression(tmp_path, name, progression, expected_key)
         # Ignore 0.25s boundary slack at each edge of the chord window.
         got = dominant_label(segments, i * chord_dur + 0.25, (i + 1) * chord_dur - 0.25)
         assert got == expected, f"chord {i}: expected {expected}, got {got} (all: {[s.label for s in segments]})"
+
+    # Placement, separately from identity: every true chord change must have a
+    # recognized change within one decoder frame (100 ms) of it. Measured on
+    # this pipeline: median 0 ms, max 100 ms — a model swap that lags gets
+    # caught here rather than on stage.
+    starts = [s.start for s in segments[1:]]
+    for i in range(1, len(progression)):
+        truth = i * chord_dur
+        nearest = min(starts, key=lambda s: abs(s - truth))
+        assert abs(nearest - truth) <= BOUNDARY_TOLERANCE, \
+            f"change {i}: expected at {truth}s, nearest recognized at {nearest}s"
 
     result = analyze(segments)
     assert result["key"] == expected_key

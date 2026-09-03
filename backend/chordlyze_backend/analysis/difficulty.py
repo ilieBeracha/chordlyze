@@ -6,23 +6,11 @@ coarse level used for badges.
 """
 from __future__ import annotations
 
+from .chord import display as _display
+
 # Beginner-friendly open shapes on guitar.
 _OPEN_SHAPES = {"C", "A", "G", "E", "D", "Am", "Em", "Dm", "A7", "E7", "D7",
                 "G7", "C7", "B7"}
-
-
-def _display(label: str) -> str:
-    """'C:maj' -> 'C', 'A:min' -> 'Am' (mirrors the client's display names)."""
-    if label == "N":
-        return "N.C."
-    parts = label.split(":")
-    root = parts[0]
-    quality = parts[1] if len(parts) > 1 else "maj"
-    if quality == "maj":
-        return root
-    if quality == "min":
-        return root + "m"
-    return root + quality
 
 
 def difficulty(chords: list[dict]) -> dict | None:

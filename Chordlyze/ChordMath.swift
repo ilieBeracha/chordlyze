@@ -1,29 +1,14 @@
 import Foundation
 
-/// Transposition + capo suggestion over display chord names ("C", "F#m", "B°").
+/// Transposition + capo suggestion over display chord names ("C", "F#m", "B°", "C/E").
 enum ChordMath {
-    static let roots = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-
     /// Easy open-position shapes on guitar.
     private static let openShapes: Set<String> = ["C", "A", "G", "E", "D", "Am", "Em", "Dm"]
 
-    static func parse(_ display: String) -> (root: Int, suffix: String)? {
-        guard display != "N.C.", let first = display.first, first.isLetter else { return nil }
-        var rootText = String(first)
-        var rest = String(display.dropFirst())
-        if rest.first == "#" {
-            rootText.append("#")
-            rest.removeFirst()
-        }
-        guard let index = roots.firstIndex(of: rootText) else { return nil }
-        return (index, rest)
-    }
-
-    /// "F#m" shifted by −2 → "Em". Non-chords pass through untouched.
+    /// "F#m" shifted by −2 → "Em"; a slash bass moves with it. Non-chords pass through untouched.
     static func transpose(_ display: String, by semitones: Int) -> String {
-        guard semitones != 0, let (root, suffix) = parse(display) else { return display }
-        let shifted = ((root + semitones) % 12 + 12) % 12
-        return roots[shifted] + suffix
+        guard semitones != 0, let chord = Chord(display: display) else { return display }
+        return chord.transposed(by: semitones).display
     }
 
     /// Capo fret (0–9) that turns the most playing time into open shapes.

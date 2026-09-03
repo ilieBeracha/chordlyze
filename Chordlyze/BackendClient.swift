@@ -9,7 +9,10 @@ struct ChordAnalysis: Decodable {
     let key: String?
     let keyConfidence: Double?
     let chords: [ChordSegment]
-    let source: String?  // "itunes_preview" when analyzed from a preview excerpt
+    /// "itunes_preview" | "youtube" | "upload"; nil on entries saved before it existed.
+    let source: String?
+    /// Seconds of audio the chords describe; nil on entries saved before the field.
+    let analyzedEnd: Double?
     let difficulty: Difficulty?
     /// Beat grid on the chord timeline; nil for analyses made before beat tracking.
     let tempo: Tempo?
@@ -22,8 +25,15 @@ struct ChordAnalysis: Decodable {
     enum CodingKeys: String, CodingKey {
         case key
         case keyConfidence = "key_confidence"
+        case analyzedEnd = "analyzed_end"
         case chords, source, difficulty, tempo
     }
+
+    /// Last second the chords cover. Playback past it has no chord information.
+    var coverageEnd: Double { analyzedEnd ?? chords.last?.end ?? 0 }
+    /// 30 s excerpt at an unknown offset in the song: its chords cannot be
+    /// placed on the song's timeline at all.
+    var isPreview: Bool { source == "itunes_preview" }
 }
 
 struct WordStamp: Decodable {
@@ -48,18 +58,13 @@ struct ChordSegment: Decodable, Identifiable {
     var id: Double { start }
     var duration: Double { end - start }
 
-    /// "C:maj" -> "C", "A:min" -> "Am", "N" -> "N.C."
+    /// Parsed label; nil for "N" (no chord).
+    var chord: Chord? { Chord(label: label) }
+
+    /// "C:maj" -> "C", "A:min7" -> "Am7", "N" -> "N.C." An unparsable label
+    /// shows as-is rather than as some other chord.
     var displayName: String {
-        if label == "N" { return "N.C." }
-        let parts = label.split(separator: ":")
-        let root = String(parts[0])
-        let quality = parts.count > 1 ? String(parts[1]) : "maj"
-        switch quality {
-        case "maj": return root
-        case "min": return root + "m"
-        case "dim": return root + "°"
-        default: return root + quality
-        }
+        chord?.display ?? (label == "N" ? "N.C." : label)
     }
 }
 

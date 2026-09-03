@@ -6,7 +6,17 @@ the same timeline (plus an optional start offset).
 """
 from __future__ import annotations
 
-from .analysis.difficulty import _display
+from .analysis.chord import display as _display
+from .analysis.chord import parse_label
+
+
+def _same(a: str, b: str) -> bool:
+    """Chord identity for scoring: root and quality; the bass note played
+    under a slash chord is the player's choice, not a mistake."""
+    ca, cb = parse_label(a), parse_label(b)
+    if ca is None or cb is None:
+        return ca is cb
+    return ca.without_bass() == cb.without_bass()
 
 
 def _overlap(a0: float, a1: float, b0: float, b1: float) -> float:
@@ -40,7 +50,7 @@ def score_take(reference: list[dict], detected: list[dict],
         name = _display(r["label"])
         dur = r1 - r0
         hit = sum(_overlap(r0, r1, d["start"], d["end"])
-                  for d in det if _display(d["label"]) == name)
+                  for d in det if _same(d["label"], r["label"]))
         hit = min(hit, dur)
         correct_time += hit
         total_time += dur
@@ -60,7 +70,7 @@ def score_take(reference: list[dict], detected: list[dict],
             continue
         landed = None
         for d in det:
-            if _display(d["label"]) == to and d["end"] > t - 0.5:
+            if _same(d["label"], cur["label"]) and d["end"] > t - 0.5:
                 landed = max(0.0, d["start"] - t)
                 break
         agg = transitions.setdefault((frm, to), {"from": frm, "to": to,
@@ -90,10 +100,9 @@ def score_take(reference: list[dict], detected: list[dict],
             seg = _overlap(float(r["start"]), float(r["end"]), s0, s1)
             if seg <= 0:
                 continue
-            name = _display(r["label"])
             got = sum(_overlap(max(float(r["start"]), s0), min(float(r["end"]), s1),
                                d["start"], d["end"])
-                      for d in det if _display(d["label"]) == name)
+                      for d in det if _same(d["label"], r["label"]))
             tot += seg
             hit += min(got, seg)
         sections.append({"start": round(s0, 1), "end": round(s1, 1),

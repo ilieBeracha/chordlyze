@@ -58,7 +58,8 @@ struct AnalysisTabsView: View {
     /// One contained control strip: Practice · Transpose · Capo.
     private var toolbox: some View {
         HStack(spacing: 0) {
-            if let trackID {
+            // A preview excerpt has no song timeline to score a take against.
+            if let trackID, !analysis.isPreview {
                 NavigationLink {
                     PracticeView(analysis: analysis, title: title,
                                  artist: artist, trackID: trackID)
@@ -247,19 +248,19 @@ struct ChordSheetView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let rendered {
+            if analysis.isPreview {
+                coverageLabel("Chords come from a 30-second preview at an unknown point in the song, so they can't be placed on the lyrics.")
+                AnalysisResultView(analysis: analysis, transposeBy: transposeBy, embedded: true,
+                                   onChordTap: onChordTap)
+            } else if let rendered {
                 if let lyricsNote {
                     Text(lyricsNote)
                         .font(.system(size: 9))
                         .foregroundStyle(Palette.faint)
                         .padding(.bottom, 8)
                 }
-                if rendered.contains(where: { $0.chords.contains(where: \.estimated) }) {
-                    Label("Green chords are analyzed; gray ones continue the song's loop (estimate).",
-                          systemImage: "info.circle")
-                        .font(.caption2)
-                        .foregroundStyle(Palette.tertiary)
-                        .padding(.bottom, 12)
+                if let last = rendered.last, analysis.coverageEnd < last.id {
+                    coverageLabel("Chords analyzed up to \(Self.mmss(analysis.coverageEnd)); later lines have none.")
                 }
                 ForEach(rendered) { line in
                     lineView(line)
@@ -275,7 +276,7 @@ struct ChordSheetView: View {
             }
         }
         .task {
-            guard rendered == nil else { return }
+            guard rendered == nil, !analysis.isPreview else { return }
             if let result = await BackendClient.lyrics(title: title, artist: artist) {
                 rendered = SheetModel.build(analysis: analysis, lines: result.lines)
                 lyricsNote = result.betaNote
@@ -283,6 +284,17 @@ struct ChordSheetView: View {
                 failed = true
             }
         }
+    }
+
+    private func coverageLabel(_ text: String) -> some View {
+        Label(text, systemImage: "info.circle")
+            .font(.caption2)
+            .foregroundStyle(Palette.tertiary)
+            .padding(.bottom, 12)
+    }
+
+    private static func mmss(_ seconds: Double) -> String {
+        String(format: "%d:%02d", Int(max(0, seconds)) / 60, Int(max(0, seconds)) % 60)
     }
 
     private func lineView(_ line: SheetModel.RenderLine) -> some View {
@@ -300,7 +312,7 @@ struct ChordSheetView: View {
                         } label: {
                             Text(name)
                                 .font(.system(size: 13, weight: .bold, design: .rounded))
-                                .foregroundStyle(chord.estimated ? Palette.secondary : Color.spotifyGreen)
+                                .foregroundStyle(Color.spotifyGreen)
                                 .padding(.vertical, 3)
                                 .padding(.horizontal, 9)
                                 .background(RoundedRectangle(cornerRadius: 7)

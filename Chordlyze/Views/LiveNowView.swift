@@ -32,8 +32,9 @@ struct LiveNowView: View {
         var id: String { name }
     }
     /// Static: an instance timer is recreated (and its countdown reset) every
-    /// time the parent re-renders, which in practice mode is every 0.5 s.
-    private static let clock = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+    /// time the parent re-renders, which in practice mode is every second.
+    /// 100 ms ticks keep the display within one decoder frame of the clock.
+    private static let clock = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
 
     /// Position on the lyric timeline (song position plus manual re-anchor).
     private var lyricPosition: Double { position + lyricsOffset }
@@ -41,7 +42,17 @@ struct LiveNowView: View {
         lines.lastIndex(where: { $0.id <= lyricPosition })
     }
     private var duration: Double {
-        trackDuration ?? max(lines.last?.end ?? 0, analysis.chords.last?.end ?? 0, 1)
+        trackDuration ?? max(lines.last?.end ?? 0, analysis.coverageEnd, 1)
+    }
+    /// What the chords do and do not cover, said up front instead of guessed past.
+    private var coverageNote: String? {
+        if analysis.isPreview {
+            return "Chords from a 30-second preview — not synced to this playback."
+        }
+        if let trackDuration, analysis.coverageEnd + 5 < trackDuration {
+            return "Chords analyzed up to \(timestamp(analysis.coverageEnd)); the rest of the song has none."
+        }
+        return nil
     }
 
     var body: some View {
@@ -53,6 +64,17 @@ struct LiveNowView: View {
                     .foregroundStyle(Palette.faint)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(.top, 6)
+            }
+            if let coverageNote {
+                Text(coverageNote)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 8)
+            }
+            if analysis.isPreview {
+                previewChords
+                    .padding(.top, 10)
             }
 
             Spacer()
@@ -74,8 +96,14 @@ struct LiveNowView: View {
         .background(backdrop)
         .toolbar(.hidden, for: .navigationBar)
         .onReceive(Self.clock) { _ in
-            if let live = livePosition() {
+            guard let live = livePosition() else { return }
+            // Animate only when the current line changes; the position itself
+            // must not lag behind the clock.
+            let next = lines.lastIndex(where: { $0.id <= live + lyricsOffset })
+            if next != currentIndex {
                 withAnimation(.easeInOut(duration: 0.35)) { position = live }
+            } else {
+                position = live
             }
         }
         .sheet(item: $selectedChord) { selected in
@@ -323,63 +351,84 @@ struct LiveNowView: View {
         .padding(.horizontal, 16)
         .background(
             RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(group.estimated ? Color.clear : Palette.greenTintFill)
+                .fill(Palette.greenTintFill)
                 .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .stroke(Palette.greenTintBorder,
-                            style: StrokeStyle(lineWidth: 1, dash: group.estimated ? [4, 3] : [])))
+                    .stroke(Palette.greenTintBorder, lineWidth: 1))
         )
-        .opacity(group.estimated ? 0.8 : 1)
+    }
+
+    // MARK: - Preview excerpt (chords known, position in the song unknown)
+
+    /// The excerpt's progression as a static strip: what the song plays,
+    /// without pretending to know when.
+    private var previewChords: some View {
+        var loop: [String] = []
+        for seg in analysis.chords where seg.label != "N" && loop.last != seg.displayName {
+            if loop.count == 8 { break }
+            loop.append(seg.displayName)
+        }
+        return FlowLayout(spacing: 6) {
+            ForEach(Array(loop.enumerated()), id: \.offset) { _, name in
+                Button {
+                    selectedChord = SelectedChord(name: name)
+                } label: {
+                    Text(name)
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.spotifyGreen)
+                        .padding(.vertical, 5)
+                        .padding(.horizontal, 11)
+                        .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(Palette.greenTintFill))
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 
     // MARK: - Chord-only follow (no synced lyrics)
 
     private var chordFollow: some View {
         let real = analysis.chords.filter { $0.label != "N" }
-        let span = real.last?.end ?? 0
-        // Analysis may cover only an excerpt (e.g. 30s preview): once playback
-        // passes the analyzed window, loop the progression as an estimate.
-        let looped = span > 0 && position >= span
-        let t = looped ? position.truncatingRemainder(dividingBy: span) : position
-        let index = real.lastIndex(where: { $0.start <= t })
+        let covered = !analysis.isPreview && position < analysis.coverageEnd
+        let index = covered ? real.lastIndex(where: { $0.start <= position }) : nil
         let current = index.map { real[$0] }
         let upcoming: [ChordSegment] = {
-            guard let index, !real.isEmpty else { return Array(real.prefix(3)) }
-            return (1...3).compactMap { step in
-                let next = index + step
-                if next < real.count { return real[next] }
-                return looped ? real[next % real.count] : nil
-            }
+            guard covered else { return [] }
+            guard let index else { return Array(real.prefix(3)) }
+            return Array(real[(index + 1)..<min(real.count, index + 4)])
         }()
         return VStack(spacing: 30) {
-            Text(looped ? "No synced lyrics — progression loops (estimate)."
-                        : "No synced lyrics — follow the chords.")
+            Text(analysis.isPreview ? "No synced lyrics."
+                 : covered ? "No synced lyrics — follow the chords."
+                 : "Past the analyzed part of the song.")
                 .font(.system(size: 13))
                 .foregroundStyle(Palette.secondary)
-            Button {
-                if let current { selectedChord = SelectedChord(name: current.displayName) }
-            } label: {
-                Text(current?.displayName ?? "…")
-                    .font(.system(size: 64, weight: .heavy, design: .rounded))
-                    .foregroundStyle(Color.spotifyGreen)
-                    .padding(.vertical, 24)
-                    .padding(.horizontal, 44)
-                    .background(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .fill(Palette.greenTintFill)
-                            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .stroke(Palette.greenTintBorder, lineWidth: 1))
-                    )
+            if !analysis.isPreview {
+                Button {
+                    if let current { selectedChord = SelectedChord(name: current.displayName) }
+                } label: {
+                    Text(current?.displayName ?? (covered ? "…" : "—"))
+                        .font(.system(size: 64, weight: .heavy, design: .rounded))
+                        .foregroundStyle(Color.spotifyGreen)
+                        .padding(.vertical, 24)
+                        .padding(.horizontal, 44)
+                        .background(
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .fill(Palette.greenTintFill)
+                                .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                    .stroke(Palette.greenTintBorder, lineWidth: 1))
+                        )
+                }
+                .buttonStyle(.plain)
+                .animation(.easeInOut(duration: 0.2), value: current?.id)
             }
-            .buttonStyle(.plain)
-            .animation(.easeInOut(duration: 0.2), value: current?.id)
             if !upcoming.isEmpty {
                 HStack(spacing: 12) {
                     Text("NEXT")
                         .font(.system(size: 11, weight: .bold))
                         .tracking(1.2)
                         .foregroundStyle(Palette.tertiary)
-                    // Positional ids: looping can repeat the same segment.
-                    ForEach(Array(upcoming.enumerated()), id: \.offset) { _, chord in
+                    ForEach(upcoming) { chord in
                         Text(chord.displayName)
                             .font(.system(size: 17, weight: .bold, design: .rounded))
                             .foregroundStyle(Palette.secondaryAlt)
@@ -395,18 +444,16 @@ struct LiveNowView: View {
         let id = UUID()
         let name: String
         let count: Int
-        let estimated: Bool
     }
 
     /// Collapse consecutive repeats: [C#m, C#m, B] -> [C#m ×2, B].
     private func grouped(_ chords: [SheetModel.PlacedChord]) -> [ChordGroup] {
         var out: [ChordGroup] = []
         for chord in chords {
-            if let last = out.last, last.name == chord.name, last.estimated == chord.estimated {
-                out[out.count - 1] = ChordGroup(name: last.name, count: last.count + 1,
-                                                estimated: last.estimated)
+            if let last = out.last, last.name == chord.name {
+                out[out.count - 1] = ChordGroup(name: last.name, count: last.count + 1)
             } else {
-                out.append(ChordGroup(name: chord.name, count: 1, estimated: chord.estimated))
+                out.append(ChordGroup(name: chord.name, count: 1))
             }
         }
         return out
