@@ -41,7 +41,8 @@ struct ChordView: View {
             }
             isAnalyzing = true
             analysis = await BackendClient.analyzeTrack(trackID: track.id, isrc: track.isrc,
-                                                        title: track.name, artist: track.artistNames)
+                                                        title: track.name, artist: track.artistNames,
+                                                        durationMs: track.durationMs)
             isAnalyzing = false
         }
     }

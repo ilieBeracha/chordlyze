@@ -135,10 +135,12 @@ enum BackendClient {
                             matched: parsed.matched)
     }
 
-    /// Server-side analysis from the song's public iTunes preview — no audio needed
-    /// from the device. Returns nil if the song isn't on iTunes.
+    /// Server-side analysis, no audio needed from the device: the whole song
+    /// from a matching upload when `durationMs` finds one, else the 30 s
+    /// iTunes preview. Returns nil if the song is found nowhere.
     static func analyzeTrack(trackID: String, isrc: String?,
-                             title: String?, artist: String?) async -> ChordAnalysis? {
+                             title: String?, artist: String?,
+                             durationMs: Int? = nil) async -> ChordAnalysis? {
         var req = URLRequest(url: Config.backendBaseURL.appendingPathComponent("analyze_track"))
         req.httpMethod = "POST"
         let boundary = "chordlyze-\(UUID().uuidString)"
@@ -146,7 +148,8 @@ enum BackendClient {
         req.timeoutInterval = 180
         var body = Data()
         let fields: [(String, String?)] = [("track_id", trackID), ("isrc", isrc),
-                                           ("title", title), ("artist", artist)]
+                                           ("title", title), ("artist", artist),
+                                           ("duration", durationMs.map { String(Double($0) / 1000) })]
         for (name, value) in fields {
             guard let value else { continue }
             body.append("--\(boundary)\r\n".data(using: .utf8)!)

@@ -94,7 +94,8 @@ final class SpotifyNowPlaying: ObservableObject {
         var result = await BackendClient.cachedAnalysis(trackID: track.id, isrc: track.isrc)
         if result == nil {
             result = await BackendClient.analyzeTrack(trackID: track.id, isrc: track.isrc,
-                                                      title: track.name, artist: track.artistNames)
+                                                      title: track.name, artist: track.artistNames,
+                                                      durationMs: track.durationMs)
         }
         guard analysisKey == track.id else { return }  // song changed meanwhile
         analysis = result

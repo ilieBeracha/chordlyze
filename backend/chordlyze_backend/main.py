@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 import tempfile
 import threading
 import time
@@ -27,6 +28,7 @@ from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, UploadFile
 from .analysis.beats import track_beats
 from .analysis.engine import AudioDecodeError, recognize_chords
 from .analysis.keyfinder import analyze
+from .fulltrack import fetch_full_track
 
 import os
 
@@ -221,14 +223,34 @@ def _itunes_lookup(isrc: str | None, title: str | None, artist: str | None) -> d
     return None
 
 
+def _full_track_analysis(title: str, artist: str, duration: float):
+    """Whole-song chords+tempo from a matching YouTube upload; None when no
+    upload matches or YouTube refuses (logged so a block is visible)."""
+    from yt_dlp.utils import DownloadError
+    try:
+        full = fetch_full_track(title, artist, duration)
+    except DownloadError as exc:
+        print(f"[fulltrack] youtube refused {title!r}: {exc}", file=sys.stderr)
+        return None
+    if full is None:
+        return None
+    try:
+        return _recognize_locked(full)
+    finally:
+        full.unlink(missing_ok=True)
+
+
 @app.post("/analyze_track")
 async def analyze_track(
     track_id: str = Form(...),
     isrc: str | None = Form(default=None),
     title: str | None = Form(default=None),
     artist: str | None = Form(default=None),
+    duration: float | None = Form(default=None),
 ) -> dict:
-    """Fetch the song's public iTunes preview and analyze it — no client audio needed."""
+    """Analyze the whole song from a matching YouTube upload; fall back to the
+    30 s iTunes preview. No client audio needed. `duration` (seconds) picks
+    the right upload; iTunes' track length is used when it's absent."""
     cached = _track_cache_path(track_id)
     if cached.exists():
         return json.loads(cached.read_text())
@@ -236,26 +258,32 @@ async def analyze_track(
         return hit
 
     def fetch_and_recognize():
-        song = _itunes_lookup(isrc, title, artist)
-        if song is None:
-            raise HTTPException(404, "song not found on iTunes")
+        song = _itunes_lookup(isrc, title, artist) or {}
+        name = title or song.get("trackName")
+        who = artist or song.get("artistName") or ""
+        length = duration or (song.get("trackTimeMillis") or 0) / 1000
+        if name and length:
+            if full := _full_track_analysis(name, who, length):
+                return song, "youtube", full
+        if not song:
+            raise HTTPException(404, "song not found on iTunes or YouTube")
         with tempfile.NamedTemporaryFile(suffix=".m4a", delete=False) as tmp:
             with urllib.request.urlopen(song["previewUrl"], timeout=30) as resp:
                 tmp.write(resp.read())
             tmp_path = Path(tmp.name)
         try:
-            return song, _recognize_locked(tmp_path)
+            return song, "itunes_preview", _recognize_locked(tmp_path)
         finally:
             tmp_path.unlink(missing_ok=True)
 
     try:
-        song, (segments, tempo) = await anyio.to_thread.run_sync(fetch_and_recognize)
+        song, source, (segments, tempo) = await anyio.to_thread.run_sync(fetch_and_recognize)
     except AudioDecodeError as exc:
         raise HTTPException(422, str(exc)) from exc
 
     result = analyze(segments)
     result["tempo"] = tempo
-    result["source"] = "itunes_preview"
+    result["source"] = source
     _save_track(track_id, result,
                 title or song.get("trackName"), artist or song.get("artistName"),
                 isrc, artwork=song.get("artworkUrl100"))
@@ -460,6 +488,53 @@ def backfill_difficulty() -> dict:
         path.write_text(json.dumps(data))
         updated += 1
     return {"updated": updated}
+
+
+_FULL_BACKFILL_RUNNING = False
+
+
+def _backfill_full() -> None:
+    """Re-analyze preview-based library entries from whole-song audio so
+    their chords sit on the real timeline instead of a looped guess."""
+    global _FULL_BACKFILL_RUNNING
+    _FULL_BACKFILL_RUNNING = True
+    try:
+        for path in CACHE_DIR.glob("track-*.json"):
+            data = json.loads(path.read_text())
+            if data.get("source") != "itunes_preview" or not data.get("title"):
+                continue
+            track_id = data.get("track_id", path.stem.removeprefix("track-"))
+            try:
+                song = _itunes_lookup(None, data["title"], data.get("artist")) or {}
+                length = (song.get("trackTimeMillis") or 0) / 1000
+                full = (_full_track_analysis(data["title"], data.get("artist") or "", length)
+                        if length else None)
+            except Exception as exc:
+                print(f"[fulltrack] backfill {data['title']!r} failed: {exc}", file=sys.stderr)
+                full = None
+            if full is None:
+                time.sleep(3)  # iTunes search rate limit (~20/min)
+                continue
+            segments, tempo = full
+            result = analyze(segments)
+            result["tempo"] = tempo
+            result["source"] = "youtube"
+            _save_track(track_id, result, data["title"], data.get("artist"),
+                        artwork=data.get("artwork"))
+            print(f"[fulltrack] backfilled {data['title']!r}", file=sys.stderr)
+    finally:
+        _FULL_BACKFILL_RUNNING = False
+
+
+@app.post("/library/backfill_full")
+def backfill_full(background: BackgroundTasks) -> dict:
+    """Queue full-song re-analysis of every preview-based entry (slow: one to
+    two minutes per song). Reports how many remain; no-op while one runs."""
+    remaining = sum(1 for p in CACHE_DIR.glob("track-*.json")
+                    if json.loads(p.read_text()).get("source") == "itunes_preview")
+    if not _FULL_BACKFILL_RUNNING:
+        background.add_task(_backfill_full)
+    return {"remaining": remaining, "running": _FULL_BACKFILL_RUNNING}
 
 
 def _backfill_tempo() -> None:
