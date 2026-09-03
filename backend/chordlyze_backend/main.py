@@ -158,7 +158,11 @@ async def analyze_upload(
     track_id: str | None = Form(default=None),
     title: str | None = Form(default=None),
     artist: str | None = Form(default=None),
+    align: bool = Form(default=True),
 ) -> dict:
+    """`align=false` skips the background whisper lyric alignment: pointless
+    when synced lyrics already exist, and heavy enough to crash the 2 GB
+    machine when it overlaps the next chord analysis."""
     data = await file.read()
     if not data:
         raise HTTPException(400, "empty upload")
@@ -189,7 +193,7 @@ async def analyze_upload(
     cached.write_text(json.dumps(result))
     if track_id:
         _save_track(track_id, result, title, artist)
-    if title and not _align_cache_path(title, artist or "").exists():
+    if align and title and not _align_cache_path(title, artist or "").exists():
         # Full-song audio in hand: align real lyric times in the background.
         keep = CACHE_DIR / f"align-src-{digest}{suffix}"
         keep.write_bytes(data)

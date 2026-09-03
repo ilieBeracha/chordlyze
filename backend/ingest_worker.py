@@ -39,7 +39,9 @@ def itunes_duration(title: str, artist: str | None) -> float | None:
 def upload(path: Path, track_id: str, title: str, artist: str | None) -> dict:
     boundary = f"chordlyze-{uuid.uuid4()}"
     body = bytearray()
-    fields = {"track_id": track_id, "title": title}
+    # No whisper alignment: synced lyrics already exist, and it overlapping
+    # the next chord analysis has crashed the server.
+    fields = {"track_id": track_id, "title": title, "align": "false"}
     if artist:
         fields["artist"] = artist
     for name, value in fields.items():
