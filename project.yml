@@ -27,10 +27,12 @@ targets:
       path: Chordlyze/Info.plist
       properties:
         CFBundleIconName: AppIcon
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
         CFBundleURLTypes:
           - CFBundleURLSchemes: [chordlyze]
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
-        NSMicrophoneUsageDescription: Chordlyze listens to the song playing around you to analyze its chords.
+        NSMicrophoneUsageDescription: Chordlyze listens to songs and your playing to recognize chords and score practice.
         UIBackgroundModes: [audio]

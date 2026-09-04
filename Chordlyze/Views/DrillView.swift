@@ -8,16 +8,19 @@ struct DrillView: View {
 
     @StateObject private var listener = ChordDrillListener()
     @State private var running = false
+    @State private var starting = false
+    @State private var drillTask: Task<Void, Never>?
     @State private var remaining = 60
     @State private var result: (score: Int, newBest: Bool)?
     @State private var error: String?
     @AppStorage private var best: Int
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
 
     init(from: String, to: String) {
         self.from = from
         self.to = to
-        _best = AppStorage(wrappedValue: 0, "drillBest-\([from, to].sorted().joined(separator: "-"))")
+        _best = AppStorage(wrappedValue: 0, "drillBest-v2-\([from, to].sorted().joined(separator: "-"))")
     }
 
     var body: some View {
@@ -47,9 +50,15 @@ struct DrillView: View {
         .padding(.bottom, 34)
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .onDisappear {
-            // Ends the countdown loop too: it checks `running` every second.
-            if running { running = false; listener.stop() }
+        .onDisappear { cancel() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background {
+                cancel()
+                error = "The drill stopped when the app left the screen. Start again when you’re ready."
+            }
+        }
+        .onChange(of: listener.failure) { _, message in
+            if let message { cancel(); error = message }
         }
     }
 
@@ -77,16 +86,23 @@ struct DrillView: View {
                     Text("changes")
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.secondary)
+                    Text(listeningStatus)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(minHeight: 32)
                 }
             } else {
-                Text("Switch between the two chords as many times as you can in 60 seconds. The mic counts clean changes.")
+                Text("Switch between the two chords for 60 seconds. Strum all the chord’s notes and let each chord ring briefly. Only recognized changes count.")
                     .font(.system(size: 14))
                     .foregroundStyle(Palette.secondary)
                     .multilineTextAlignment(.center)
                 Button {
-                    Task { await start() }
+                    guard drillTask == nil else { return }
+                    starting = true
+                    drillTask = Task { await start() }
                 } label: {
-                    Text("Start")
+                    Text(starting ? "Starting…" : "Start")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(.black)
                         .padding(.vertical, 13)
@@ -94,6 +110,7 @@ struct DrillView: View {
                         .background(Capsule().fill(Color.spotifyGreen))
                 }
                 .buttonStyle(.plain)
+                .disabled(drillTask != nil)
             }
             if let error {
                 Text(error)
@@ -130,6 +147,8 @@ struct DrillView: View {
         let active = listener.current == name && running
         return Text(name)
             .font(.system(size: 30, weight: .heavy, design: .rounded))
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
             .foregroundStyle(active ? .black : Color.spotifyGreen)
             .frame(width: 108, height: 84)
             .background(
@@ -143,25 +162,55 @@ struct DrillView: View {
 
     private func start() async {
         error = nil
+        defer { starting = false; drillTask = nil }
         do {
             try await listener.start(chordA: from, chordB: to)
+            try Task.checkCancellation()
+            starting = false
+            running = true
+            remaining = 60
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(60))
+            while clock.now < deadline {
+                try await clock.sleep(until: min(deadline, clock.now.advanced(by: .milliseconds(100))))
+                let left = clock.now.duration(to: deadline).components
+                let seconds = max(0, Int(ceil(Double(left.seconds) + Double(left.attoseconds) / 1e18)))
+                if remaining != seconds { withAnimation { remaining = seconds } }
+            }
+            try await listener.finish()
+        } catch is CancellationError {
+            return
         } catch {
+            listener.stop()
+            running = false
             self.error = error.localizedDescription
             return
         }
-        running = true
-        remaining = 60
-        while remaining > 0, running {
-            try? await Task.sleep(for: .seconds(1))
-            withAnimation { remaining -= 1 }
-        }
-        // Left the screen mid-drill: nothing to score.
         guard running else { return }
-        listener.stop()
         running = false
         let score = listener.changes
         let newBest = score > best
         if newBest { best = score }
         result = (score, newBest)
+    }
+
+    private func cancel() {
+        drillTask?.cancel()
+        // Keep the task until its defer runs, so a late permission response
+        // cannot clear a replacement task or start another microphone session.
+        listener.stop()
+        running = false
+        starting = false
+    }
+
+    private var listeningStatus: String {
+        switch listener.evidence {
+        case .quiet: return "Ready for your next strum"
+        case .uncertain: return "Listening for a clear chord"
+        case .chord(let name):
+            if listener.current != nil { return "Chord recognized" }
+            if name == from || name == to { return "Let the chord ring briefly" }
+            return "Hearing \(name) — play \(from) or \(to)"
+        }
     }
 }

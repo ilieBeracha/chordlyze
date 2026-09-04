@@ -1,0 +1,818 @@
+{
+  "audit_date": "2026-09-04",
+  "repository_revision": "91a0c69",
+  "ismir_checkout_revision": "481f4ce703f8822b99f4037e9104ba1760e21ea3",
+  "scope": "Local code and synthetic probes only; not a real-world accuracy benchmark. No production code changed.",
+  "baseline_tests": {
+    "passed": 76,
+    "xfailed": 15,
+    "warnings": 31,
+    "seconds": 12.5
+  },
+  "model_comparison": {
+    "triads": {
+      "madmom": {
+        "modal_correct": 4,
+        "total": 4,
+        "rows": [
+          {
+            "truth": "C:maj",
+            "got": "C:maj",
+            "correct": true
+          },
+          {
+            "truth": "F:maj",
+            "got": "F:maj",
+            "correct": true
+          },
+          {
+            "truth": "G:maj",
+            "got": "G:maj",
+            "correct": true
+          },
+          {
+            "truth": "C:maj",
+            "got": "C:maj",
+            "correct": true
+          }
+        ],
+        "metrics": {
+          "thirds": 1.0,
+          "thirds_inv": 1.0,
+          "triads": 1.0,
+          "triads_inv": 1.0,
+          "tetrads": 1.0,
+          "tetrads_inv": 1.0,
+          "root": 1.0,
+          "mirex": 1.0,
+          "majmin": 1.0,
+          "majmin_inv": 1.0,
+          "sevenths": 1.0,
+          "sevenths_inv": 1.0,
+          "underseg": 1.0,
+          "overseg": 1.0,
+          "seg": 1.0
+        }
+      },
+      "ismir2019": {
+        "modal_correct": 4,
+        "total": 4,
+        "rows": [
+          {
+            "truth": "C:maj",
+            "got": "C:maj",
+            "correct": true
+          },
+          {
+            "truth": "F:maj",
+            "got": "F:maj",
+            "correct": true
+          },
+          {
+            "truth": "G:maj",
+            "got": "G:maj",
+            "correct": true
+          },
+          {
+            "truth": "C:maj",
+            "got": "C:maj",
+            "correct": true
+          }
+        ],
+        "metrics": {
+          "thirds": 0.9949,
+          "thirds_inv": 0.9949,
+          "triads": 0.9949,
+          "triads_inv": 0.9949,
+          "tetrads": 0.9949,
+          "tetrads_inv": 0.9949,
+          "root": 0.9949,
+          "mirex": 0.9949,
+          "majmin": 0.9949,
+          "majmin_inv": 0.9949,
+          "sevenths": 0.9949,
+          "sevenths_inv": 0.9949,
+          "underseg": 0.9978,
+          "overseg": 0.9949,
+          "seg": 0.9949
+        }
+      }
+    },
+    "rich": {
+      "madmom": {
+        "modal_correct": 0,
+        "total": 12,
+        "rows": [
+          {
+            "truth": "C:7",
+            "got": "C:maj",
+            "correct": false
+          },
+          {
+            "truth": "F:maj7",
+            "got": "F:maj",
+            "correct": false
+          },
+          {
+            "truth": "D:min7",
+            "got": "D:min",
+            "correct": false
+          },
+          {
+            "truth": "B:hdim7",
+            "got": "G:maj",
+            "correct": false
+          },
+          {
+            "truth": "G#:dim7",
+            "got": "G#:min",
+            "correct": false
+          },
+          {
+            "truth": "C:sus4",
+            "got": "C:maj",
+            "correct": false
+          },
+          {
+            "truth": "G:sus2",
+            "got": "G:maj",
+            "correct": false
+          },
+          {
+            "truth": "B:dim",
+            "got": "G:maj",
+            "correct": false
+          },
+          {
+            "truth": "E:aug",
+            "got": "E:maj",
+            "correct": false
+          },
+          {
+            "truth": "C:maj/3",
+            "got": "C:maj",
+            "correct": false
+          },
+          {
+            "truth": "A:min/b3",
+            "got": "A:min",
+            "correct": false
+          },
+          {
+            "truth": "G:7/b7",
+            "got": "G:maj",
+            "correct": false
+          }
+        ],
+        "metrics": {
+          "thirds": 0.8292,
+          "thirds_inv": 0.5875,
+          "triads": 0.4833,
+          "triads_inv": 0.2417,
+          "tetrads": 0.1583,
+          "tetrads_inv": 0.0,
+          "root": 0.8292,
+          "mirex": 0.4917,
+          "majmin": 0.9667,
+          "majmin_inv": 0.4833,
+          "sevenths": 0.3167,
+          "sevenths_inv": 0.0,
+          "underseg": 0.8708,
+          "overseg": 0.9083,
+          "seg": 0.8708
+        }
+      },
+      "ismir2019": {
+        "modal_correct": 10,
+        "total": 12,
+        "rows": [
+          {
+            "truth": "C:7",
+            "got": "C:7",
+            "correct": true
+          },
+          {
+            "truth": "F:maj7",
+            "got": "F:maj7",
+            "correct": true
+          },
+          {
+            "truth": "D:min7",
+            "got": "D:min7",
+            "correct": true
+          },
+          {
+            "truth": "B:hdim7",
+            "got": "B:hdim7",
+            "correct": true
+          },
+          {
+            "truth": "G#:dim7",
+            "got": "Ab:dim7",
+            "correct": true
+          },
+          {
+            "truth": "C:sus4",
+            "got": "C:sus4",
+            "correct": true
+          },
+          {
+            "truth": "G:sus2",
+            "got": "G:maj",
+            "correct": false
+          },
+          {
+            "truth": "B:dim",
+            "got": "B:dim",
+            "correct": true
+          },
+          {
+            "truth": "E:aug",
+            "got": "E:aug",
+            "correct": true
+          },
+          {
+            "truth": "C:maj/3",
+            "got": "C:maj/3",
+            "correct": true
+          },
+          {
+            "truth": "A:min/b3",
+            "got": "A:min/b3",
+            "correct": true
+          },
+          {
+            "truth": "G:7/b7",
+            "got": "G:7",
+            "correct": false
+          }
+        ],
+        "metrics": {
+          "thirds": 0.9702,
+          "thirds_inv": 0.8868,
+          "triads": 0.8868,
+          "triads_inv": 0.8035,
+          "tetrads": 0.8868,
+          "tetrads_inv": 0.8035,
+          "root": 0.9702,
+          "mirex": 0.8905,
+          "majmin": 0.9826,
+          "majmin_inv": 0.8159,
+          "sevenths": 0.9826,
+          "sevenths_inv": 0.8159,
+          "underseg": 0.9711,
+          "overseg": 0.9702,
+          "seg": 0.9702
+        }
+      }
+    }
+  },
+  "logic_probes": {
+    "rich_reference_triads_detected": {
+      "accuracy": 0.0,
+      "avg_lag": null,
+      "covered_start": 0.0,
+      "covered_end": 4.0,
+      "per_chord": [
+        {
+          "name": "Cmaj7",
+          "accuracy": 0.0,
+          "count": 1
+        }
+      ],
+      "transitions": [],
+      "sections": [
+        {
+          "start": 0.0,
+          "end": 1.0,
+          "accuracy": 0.0
+        },
+        {
+          "start": 1.0,
+          "end": 2.0,
+          "accuracy": 0.0
+        },
+        {
+          "start": 2.0,
+          "end": 3.0,
+          "accuracy": 0.0
+        },
+        {
+          "start": 3.0,
+          "end": 4.0,
+          "accuracy": 0.0
+        }
+      ]
+    },
+    "partial_inside_long_chord": {
+      "accuracy": 0.5,
+      "avg_lag": null,
+      "covered_start": 0.0,
+      "covered_end": 8.0,
+      "per_chord": [
+        {
+          "name": "C",
+          "accuracy": 0.5,
+          "count": 1
+        }
+      ],
+      "transitions": [],
+      "sections": [
+        {
+          "start": 0.0,
+          "end": 2.0,
+          "accuracy": 0.0
+        },
+        {
+          "start": 2.0,
+          "end": 4.0,
+          "accuracy": 1.0
+        },
+        {
+          "start": 4.0,
+          "end": 6.0,
+          "accuracy": 1.0
+        },
+        {
+          "start": 6.0,
+          "end": 8.0,
+          "accuracy": 0.0
+        }
+      ]
+    },
+    "silence_at_take_edges": {
+      "accuracy": 1.0,
+      "avg_lag": null,
+      "covered_start": 4.0,
+      "covered_end": 8.0,
+      "per_chord": [
+        {
+          "name": "G",
+          "accuracy": 1.0,
+          "count": 1
+        }
+      ],
+      "transitions": [],
+      "sections": [
+        {
+          "start": 4.0,
+          "end": 5.0,
+          "accuracy": 1.0
+        },
+        {
+          "start": 5.0,
+          "end": 6.0,
+          "accuracy": 1.0
+        },
+        {
+          "start": 6.0,
+          "end": 7.0,
+          "accuracy": 1.0
+        },
+        {
+          "start": 7.0,
+          "end": 8.0,
+          "accuracy": 1.0
+        }
+      ]
+    },
+    "all_half_second_changes": {
+      "error": "take does not overlap the song"
+    },
+    "old_note_as_new_change": {
+      "accuracy": 0.037,
+      "avg_lag": 0.0,
+      "covered_start": 0.0,
+      "covered_end": 8.0,
+      "per_chord": [
+        {
+          "name": "G",
+          "accuracy": 0.0,
+          "count": 1
+        },
+        {
+          "name": "C",
+          "accuracy": 0.075,
+          "count": 1
+        }
+      ],
+      "transitions": [
+        {
+          "from": "C",
+          "to": "G",
+          "avg_lag": 0.0,
+          "misses": 0,
+          "count": 1
+        }
+      ],
+      "sections": [
+        {
+          "start": 0.0,
+          "end": 2.0,
+          "accuracy": 0.0
+        },
+        {
+          "start": 2.0,
+          "end": 4.0,
+          "accuracy": 0.15
+        },
+        {
+          "start": 4.0,
+          "end": 6.0,
+          "accuracy": 0.0
+        },
+        {
+          "start": 6.0,
+          "end": 8.0,
+          "accuracy": 0.0
+        }
+      ]
+    },
+    "same_title_wrong_artist": {
+      "id": "other-recording",
+      "title": "Song",
+      "channel": "Unrelated Artist - Topic",
+      "duration": 200
+    },
+    "key_vote_order": {
+      "Am-first": {
+        "tonic": "C",
+        "mode": "major",
+        "confidence": 1.0
+      },
+      "C-first": {
+        "tonic": "C",
+        "mode": "major",
+        "confidence": 1.0
+      }
+    }
+  },
+  "swift_dsp_probes": [
+    {
+      "frames": 16,
+      "input": "C major",
+      "meanAm": 0.5857810135930777,
+      "meanC": 0.928779412060976,
+      "sr": 44100,
+      "winnerCounts": {
+        "C": 16
+      }
+    },
+    {
+      "frames": 16,
+      "input": "A minor",
+      "meanAm": 0.9108677841722965,
+      "meanC": 0.6945126429200172,
+      "sr": 44100,
+      "winnerCounts": {
+        "Am": 16
+      }
+    },
+    {
+      "frames": 16,
+      "input": "F major (neither target)",
+      "meanAm": 0.7649694606661797,
+      "meanC": 0.5004124697297812,
+      "sr": 44100,
+      "winnerCounts": {
+        "Am": 16
+      }
+    },
+    {
+      "frames": 16,
+      "input": "E minor (neither target)",
+      "meanAm": 0.5207096338272095,
+      "meanC": 0.6187547408044338,
+      "sr": 44100,
+      "winnerCounts": {
+        "C": 12,
+        "rejected": 4
+      }
+    },
+    {
+      "frames": 16,
+      "input": "C only, pure sine",
+      "meanAm": 0.5550998523831367,
+      "meanC": 0.6167420521378517,
+      "sr": 44100,
+      "winnerCounts": {
+        "C": 16
+      }
+    },
+    {
+      "frames": 16,
+      "input": "C only, six harmonics",
+      "meanAm": 0.5532784946262836,
+      "meanC": 0.6639031991362572,
+      "sr": 44100,
+      "winnerCounts": {
+        "C": 16
+      }
+    },
+    {
+      "frames": 16,
+      "input": "C-E dyad (missing fifth)",
+      "meanAm": 0.734892476350069,
+      "meanC": 0.8289116472005844,
+      "sr": 44100,
+      "winnerCounts": {
+        "C": 16
+      }
+    },
+    {
+      "frames": 16,
+      "input": "C major, quiet",
+      "meanAm": 0,
+      "meanC": 0,
+      "sr": 44100,
+      "winnerCounts": {
+        "rejected": 16
+      }
+    },
+    {
+      "frames": 16,
+      "input": "silence",
+      "meanAm": 0,
+      "meanC": 0,
+      "sr": 44100,
+      "winnerCounts": {
+        "rejected": 16
+      }
+    },
+    {
+      "frames": 16,
+      "input": "C major",
+      "meanAm": 0.5716061666607857,
+      "meanC": 0.9177504479885101,
+      "sr": 48000,
+      "winnerCounts": {
+        "C": 16
+      }
+    },
+    {
+      "frames": 16,
+      "input": "A minor",
+      "meanAm": 0.6878371424973011,
+      "meanC": 0.6842906400561333,
+      "sr": 48000,
+      "winnerCounts": {
+        "Am": 11,
+        "C": 5
+      }
+    },
+    {
+      "frames": 16,
+      "input": "F major (neither target)",
+      "meanAm": 0.7454418130218983,
+      "meanC": 0.5580933690071106,
+      "sr": 48000,
+      "winnerCounts": {
+        "Am": 16
+      }
+    },
+    {
+      "frames": 16,
+      "input": "E minor (neither target)",
+      "meanAm": 0.53903504088521,
+      "meanC": 0.6352841891348362,
+      "sr": 48000,
+      "winnerCounts": {
+        "C": 13,
+        "rejected": 3
+      }
+    },
+    {
+      "frames": 16,
+      "input": "C only, pure sine",
+      "meanAm": 0.46810338646173477,
+      "meanC": 0.5200729258358479,
+      "sr": 48000,
+      "winnerCounts": {
+        "rejected": 16
+      }
+    },
+    {
+      "frames": 16,
+      "input": "C only, six harmonics",
+      "meanAm": 0.506393026560545,
+      "meanC": 0.6265084519982338,
+      "sr": 48000,
+      "winnerCounts": {
+        "C": 16
+      }
+    },
+    {
+      "frames": 16,
+      "input": "C-E dyad (missing fifth)",
+      "meanAm": 0.7251607365906239,
+      "meanC": 0.8185809552669525,
+      "sr": 48000,
+      "winnerCounts": {
+        "C": 16
+      }
+    },
+    {
+      "frames": 16,
+      "input": "C major, quiet",
+      "meanAm": 0,
+      "meanC": 0,
+      "sr": 48000,
+      "winnerCounts": {
+        "rejected": 16
+      }
+    },
+    {
+      "frames": 16,
+      "input": "silence",
+      "meanAm": 0,
+      "meanC": 0,
+      "sr": 48000,
+      "winnerCounts": {
+        "rejected": 16
+      }
+    },
+    {
+      "inversion_templates_identical": true
+    }
+  ],
+  "nonmusic_probes": {
+    "silence": {
+      "madmom": [
+        {
+          "start": 0.0,
+          "end": 4.0,
+          "label": "N"
+        }
+      ],
+      "ismir2019": [
+        {
+          "start": 0.0,
+          "end": 4.017,
+          "label": "N"
+        }
+      ]
+    },
+    "white-noise": {
+      "madmom": [
+        {
+          "start": 0.0,
+          "end": 4.0,
+          "label": "N"
+        }
+      ],
+      "ismir2019": [
+        {
+          "start": 0.0,
+          "end": 4.017,
+          "label": "N"
+        }
+      ]
+    },
+    "unpitched-clicks": {
+      "madmom": [
+        {
+          "start": 0.0,
+          "end": 4.0,
+          "label": "N"
+        }
+      ],
+      "ismir2019": [
+        {
+          "start": 0.0,
+          "end": 4.017,
+          "label": "N"
+        }
+      ]
+    }
+  },
+  "decoder_variants": {
+    "original-5.0": {
+      "correct": 10,
+      "segments": 16,
+      "errors": [
+        {
+          "truth": "G:sus2",
+          "got": "G:maj",
+          "correct": false
+        },
+        {
+          "truth": "G:7/b7",
+          "got": "G:7",
+          "correct": false
+        }
+      ]
+    },
+    "original-15.0": {
+      "correct": 10,
+      "segments": 13,
+      "errors": [
+        {
+          "truth": "G:sus2",
+          "got": "G:maj",
+          "correct": false
+        },
+        {
+          "truth": "G:7/b7",
+          "got": "G:7",
+          "correct": false
+        }
+      ]
+    },
+    "original-30.0": {
+      "correct": 10,
+      "segments": 13,
+      "errors": [
+        {
+          "truth": "G:sus2",
+          "got": "G:maj",
+          "correct": false
+        },
+        {
+          "truth": "G:7/b7",
+          "got": "G:7",
+          "correct": false
+        }
+      ]
+    },
+    "original-60.0": {
+      "correct": 10,
+      "segments": 13,
+      "errors": [
+        {
+          "truth": "G:sus2",
+          "got": "G:maj",
+          "correct": false
+        },
+        {
+          "truth": "G:7/b7",
+          "got": "G:7",
+          "correct": false
+        }
+      ]
+    },
+    "expanded-5.0": {
+      "correct": 10,
+      "segments": 16,
+      "errors": [
+        {
+          "truth": "G:sus2",
+          "got": "G:maj",
+          "correct": false
+        },
+        {
+          "truth": "G:7/b7",
+          "got": "G:7",
+          "correct": false
+        }
+      ]
+    },
+    "expanded-15.0": {
+      "correct": 10,
+      "segments": 13,
+      "errors": [
+        {
+          "truth": "G:sus2",
+          "got": "G:maj",
+          "correct": false
+        },
+        {
+          "truth": "G:7/b7",
+          "got": "G:7",
+          "correct": false
+        }
+      ]
+    },
+    "expanded-30.0": {
+      "correct": 10,
+      "segments": 13,
+      "errors": [
+        {
+          "truth": "G:sus2",
+          "got": "G:maj",
+          "correct": false
+        },
+        {
+          "truth": "G:7/b7",
+          "got": "G:7",
+          "correct": false
+        }
+      ]
+    },
+    "expanded-60.0": {
+      "correct": 10,
+      "segments": 13,
+      "errors": [
+        {
+          "truth": "G:sus2",
+          "got": "G:maj",
+          "correct": false
+        },
+        {
+          "truth": "G:7/b7",
+          "got": "G:7",
+          "correct": false
+        }
+      ]
+    }
+  }
+}

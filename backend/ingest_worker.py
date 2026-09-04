@@ -18,27 +18,27 @@ Environment: CHORDLYZE_ISMIR_DIR (default ~/.chordlyze/ismir2019).
 from __future__ import annotations
 
 import argparse
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
-import subprocess
 import sys
-import tempfile
 import time
+import threading
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
 from chordlyze_backend.analysis.beats import track_beats
+from chordlyze_backend.analysis.engine import recognize_audio
+from chordlyze_backend.analysis.ismir import ismir_available, model_directory
+from chordlyze_backend.analysis.provenance import is_current
 from chordlyze_backend.fulltrack import fetch_full_track
 
-BASE = "https://chordlyze-api.fly.dev"
+BASE = os.environ.get("CHORDLYZE_API_URL", "https://chordlyze-api.fly.dev").rstrip("/")
 ITUNES_SLEEP = 3  # iTunes search rate limit (~20/min)
-ISMIR_DIR = Path(os.environ.get("CHORDLYZE_ISMIR_DIR", "~/.chordlyze/ismir2019")).expanduser()
+ISMIR_DIR = model_directory()
 ISMIR_MODEL = "ismir2019"
-
-
-def ismir_available() -> bool:
-    return (ISMIR_DIR / "chord_recognition.py").exists() and (ISMIR_DIR / ".venv/bin/python").exists()
 
 
 def itunes_duration(title: str, artist: str | None) -> float | None:
@@ -71,32 +71,23 @@ def parse_lab(text: str) -> list[dict]:
 
 
 def recognize_ismir(audio: Path) -> list[dict]:
-    """Run the ISMIR2019 model on `audio` (any ffmpeg-readable format)."""
-    with tempfile.TemporaryDirectory() as tmp:
-        wav = Path(tmp) / "audio.wav"
-        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(audio),
-                        "-ac", "1", "-ar", "44100", str(wav)], check=True)
-        lab = Path(tmp) / "chords.lab"
-        proc = subprocess.run([str(ISMIR_DIR / ".venv/bin/python"), "chord_recognition.py",
-                               str(wav), str(lab)], cwd=ISMIR_DIR, capture_output=True, text=True)
-        if proc.returncode != 0:
-            raise RuntimeError(f"ISMIR2019 failed: {proc.stderr.strip().splitlines()[-1]}")
-        return parse_lab(lab.read_text())
+    """Compatibility entry point; API and ingest now share one implementation."""
+    return [s.to_dict() for s in recognize_audio(audio, model=ISMIR_MODEL).segments]
 
 
 def submit(audio: Path, item: dict) -> dict:
     """Recognize here and hand the server the chords, not the audio."""
-    payload = {"track_id": item["track_id"], "model": ISMIR_MODEL, "source": "youtube",
+    recognition = recognize_audio(audio, model=ISMIR_MODEL)
+    payload = {"track_id": item["track_id"], **recognition.metadata(), "source": "youtube",
                "title": item["title"], "artist": item.get("artist"),
                "artwork": item.get("artwork"), "isrc": item.get("isrc"),
-               "segments": recognize_ismir(audio),
+               "segments": [s.to_dict() for s in recognition.segments],
                "tempo": track_beats(audio)}
     return _post_json("/analysis/submit", payload)
 
 
 def pending() -> list[dict]:
-    """Library entries this worker can improve: previews first, then whole
-    songs still charted by the maj/min recognizer."""
+    """Previews first, then outdated models or analysis revisions."""
     with urllib.request.urlopen(f"{BASE}/library", timeout=30) as resp:
         library = json.loads(resp.read())["items"]
     previews, upgrades = [], []
@@ -105,27 +96,47 @@ def pending() -> list[dict]:
             continue
         if entry.get("source") == "itunes_preview":
             previews.append(entry)
-        elif entry.get("model", "madmom") != ISMIR_MODEL:
+        elif not is_current(entry, model=ISMIR_MODEL):
             upgrades.append(entry)
     return previews + upgrades
 
 
-def run_once(items: list[dict] | None = None) -> int:
+class LookupThrottle:
+    """One iTunes request every three seconds, shared by all download workers."""
+    def __init__(self, interval: float = ITUNES_SLEEP):
+        self.interval = interval
+        self.lock = threading.Lock()
+        self.next_request = 0.0
+
+    def wait(self) -> None:
+        with self.lock:
+            delay = max(0.0, self.next_request - time.monotonic())
+            if delay:
+                time.sleep(delay)
+            self.next_request = time.monotonic() + self.interval
+
+
+def run_once(items: list[dict] | None = None, *, jobs: int = 3) -> int:
+    """Overlap bounded downloads; the shared recognizer serializes inference."""
+    if not 1 <= jobs <= 4:
+        raise ValueError("jobs must be between 1 and 4")
     if items is None:
         items = pending()
     print(f"{len(items)} pending", flush=True)
-    done = 0
-    for item in items:
+    throttle = LookupThrottle()
+
+    def process(item: dict) -> str:
         title, artist = item["title"], item.get("artist")
         try:
+            throttle.wait()
             duration = itunes_duration(title, artist)
             if not duration:
                 print(f"skip {title!r}: no iTunes length", flush=True)
-                continue
+                return "skipped"
             audio = fetch_full_track(title, artist or "", duration)
             if audio is None:
                 print(f"skip {title!r}: no upload within duration tolerance", flush=True)
-                continue
+                return "skipped"
             try:
                 t0 = time.time()
                 result = submit(audio, item)
@@ -134,12 +145,24 @@ def run_once(items: list[dict] | None = None) -> int:
             span = result["chords"][-1]["end"] if result.get("chords") else 0
             print(f"ok   {title!r}: {len(result.get('chords', []))} segments over {span:.0f}s "
                   f"in {time.time() - t0:.0f}s", flush=True)
-            done += 1
+            return "updated"
         except Exception as exc:
             print(f"fail {title!r}: {exc}", file=sys.stderr, flush=True)
-        finally:
-            time.sleep(ITUNES_SLEEP)
-    return done
+            return "failed"
+
+    counts: Counter = Counter()
+    pool = ThreadPoolExecutor(max_workers=jobs, thread_name_prefix="ingest")
+    futures = [pool.submit(process, item) for item in items]
+    try:
+        for future in as_completed(futures):
+            counts[future.result()] += 1
+    finally:
+        # On interruption, finish only running items; a new invocation queries
+        # the server and automatically excludes successfully upgraded entries.
+        pool.shutdown(wait=True, cancel_futures=True)
+    print(f"Refresh finished: {counts['updated']} updated, {counts['skipped']} skipped, "
+          f"{counts['failed']} failed, {len(items)} total", flush=True)
+    return counts["updated"]
 
 
 def main() -> None:
@@ -147,14 +170,16 @@ def main() -> None:
     parser.add_argument("--watch", action="store_true", help="repeat every 5 minutes")
     parser.add_argument("--manifest", type=Path,
                         help="JSON list of {track_id,title,artist,artwork,isrc} to ingest")
+    parser.add_argument("--jobs", type=int, choices=range(1, 5), default=3,
+                        help="bounded concurrent downloads (default 3); model inference stays serialized")
     args = parser.parse_args()
     if not ismir_available():
         sys.exit(f"ISMIR2019 model not installed under {ISMIR_DIR}; run scripts/setup_ismir.sh")
     if args.manifest:
-        run_once(json.loads(args.manifest.read_text()))
+        run_once(json.loads(args.manifest.read_text()), jobs=args.jobs)
         return
     while True:
-        run_once()
+        run_once(jobs=args.jobs)
         if not args.watch:
             break
         time.sleep(300)

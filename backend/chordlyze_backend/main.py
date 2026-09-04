@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import tempfile
@@ -26,21 +27,32 @@ import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 import anyio.to_thread
 from fastapi import FastAPI, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .analysis.beats import track_beats
 from .analysis.chord import parse_label
-from .analysis.engine import AudioDecodeError, ChordSegment, merge_adjacent, recognize_chords
+from .analysis.engine import AudioDecodeError, ChordSegment, merge_adjacent, recognize_audio
+from .analysis.ismir import RecognitionUnavailable, close as close_recognizer
+from .analysis.provenance import (ANALYSIS_VERSION, MODEL_QUALITIES, MODEL_RANK,
+                                  MODEL_REVISIONS, is_current, quality)
 from .analysis.keyfinder import analyze
 
 CACHE_DIR = Path(os.environ.get("CHORDLYZE_CACHE",
                                 str(Path(__file__).resolve().parent.parent / "analysis_cache")))
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Chordlyze", version="0.2.0")
+@asynccontextmanager
+async def lifespan(_app):
+    yield
+    await anyio.to_thread.run_sync(close_recognizer)
+
+
+app = FastAPI(title="Chordlyze", version="0.3.0", lifespan=lifespan)
+logger = logging.getLogger(__name__)
 
 
 @app.get("/health")
@@ -48,14 +60,13 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-_MODEL_LOCK = threading.Lock()
+_CACHE_LOCK = threading.RLock()
 
 
 def _recognize_locked(path: Path):
-    """Chords (model-locked: madmom is not thread-safe) plus beat times."""
-    with _MODEL_LOCK:
-        segments = recognize_chords(path)
-    return segments, track_beats(path)
+    """Legacy preview recognizer (internally serialized) plus beat times."""
+    result = recognize_audio(path, model="madmom")
+    return result, track_beats(path)
 
 
 # MARK: - Saved analyses
@@ -71,14 +82,27 @@ def _isrc_cache_path(isrc: str) -> Path:
 
 # Recognizers by how much of the harmony they can name. Entries saved before
 # the field existed are madmom's.
-_MODEL_RANK = {"madmom": 0, "ismir2019": 1}
+_MODEL_RANK = MODEL_RANK
 
 
-def _quality(entry: dict) -> tuple[int, int]:
-    """(whole song?, recognizer rank): a saved analysis is only ever replaced
-    by one at least this good."""
-    return (0 if entry.get("source") == "itunes_preview" else 1,
-            _MODEL_RANK.get(entry.get("model", "madmom"), 0))
+_quality = quality
+
+
+def _read_analysis(path: Path) -> dict:
+    entry = json.loads(path.read_text())
+    return {**entry, "analysis_stale": not is_current(entry)}
+
+
+def _write_analysis(path: Path, entry: dict) -> None:
+    """Readers see either complete revision, never a partially written file."""
+    with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as tmp:
+        pending = Path(tmp.name)
+        try:
+            json.dump(entry, tmp, allow_nan=False)
+            tmp.flush()
+            os.replace(pending, path)
+        finally:
+            pending.unlink(missing_ok=True)
 
 
 def _save_track(track_id: str, result: dict, title: str | None, artist: str | None,
@@ -86,24 +110,22 @@ def _save_track(track_id: str, result: dict, title: str | None, artist: str | No
     """Save under the track id (and its ISRC, when known). False when a better
     analysis is already stored: a preview never replaces a whole song, and a
     maj/min chart never replaces a large-vocabulary one."""
-    entry = dict(result)
-    entry["track_id"] = track_id
-    if title:
-        entry["title"] = title
-    if artist:
-        entry["artist"] = artist
-    if artwork:
-        entry["artwork"] = artwork
-    track_path = _track_cache_path(track_id)
-    if track_path.exists() and _quality(json.loads(track_path.read_text())) > _quality(entry):
-        return False
-    track_path.write_text(json.dumps(entry))
-    if isrc:
-        path = _isrc_cache_path(isrc)
-        if path.exists() and _quality(json.loads(path.read_text())) > _quality(entry):
-            return True
-        path.write_text(json.dumps(entry))
-    return True
+    with _CACHE_LOCK:
+        entry = dict(result)
+        entry.pop("analysis_stale", None)
+        entry["track_id"] = track_id
+        for name, value in (("title", title), ("artist", artist), ("artwork", artwork), ("isrc", isrc)):
+            if value:
+                entry[name] = value
+        track_path = _track_cache_path(track_id)
+        if track_path.exists() and _quality(_read_analysis(track_path)) > _quality(entry):
+            return False
+        _write_analysis(track_path, entry)
+        if isrc:
+            path = _isrc_cache_path(isrc)
+            if not path.exists() or _quality(_read_analysis(path)) <= _quality(entry):
+                _write_analysis(path, entry)
+        return True
 
 
 def _cached_by_isrc(track_id: str, isrc: str | None,
@@ -118,7 +140,7 @@ def _cached_by_isrc(track_id: str, isrc: str | None,
     entry = json.loads(path.read_text())
     _save_track(track_id, entry, title or entry.get("title"),
                 artist or entry.get("artist"), isrc)
-    return json.loads(_track_cache_path(track_id).read_text())
+    return _read_analysis(_track_cache_path(track_id))
 
 
 # MARK: - iTunes preview analysis
@@ -171,9 +193,12 @@ async def analyze_track(
     pins the exact iTunes track when the client picked one."""
     cached = _track_cache_path(track_id)
     if cached.exists():
-        return json.loads(cached.read_text())
+        entry = _read_analysis(cached)
+        if not entry["analysis_stale"] or entry.get("source") != "itunes_preview":
+            return entry
     if hit := _cached_by_isrc(track_id, isrc, title, artist):
-        return hit
+        if not hit["analysis_stale"] or hit.get("source") != "itunes_preview":
+            return hit
 
     def fetch_and_recognize():
         song = _itunes_lookup(isrc, title, artist, itunes_id)
@@ -189,27 +214,27 @@ async def analyze_track(
             tmp_path.unlink(missing_ok=True)
 
     try:
-        song, (segments, tempo) = await anyio.to_thread.run_sync(fetch_and_recognize)
+        song, (recognition, tempo) = await anyio.to_thread.run_sync(fetch_and_recognize)
     except AudioDecodeError as exc:
         raise HTTPException(422, str(exc)) from exc
     except (urllib.error.URLError, TimeoutError) as exc:
         raise HTTPException(503, f"iTunes unavailable: {exc}") from exc
 
-    result = analyze(segments)
+    result = analyze(recognition.segments)
+    result.update(recognition.metadata())
     result["tempo"] = tempo
     result["source"] = "itunes_preview"
-    result["model"] = "madmom"
     _save_track(track_id, result,
                 title or song.get("trackName"), artist or song.get("artistName"),
                 isrc, artwork=song.get("artworkUrl100"))
-    return json.loads(cached.read_text())
+    return _read_analysis(cached)
 
 
 # MARK: - Off-server submission
 
 class SubmittedSegment(BaseModel):
-    start: float
-    end: float
+    start: float = Field(ge=0, allow_inf_nan=False)
+    end: float = Field(gt=0, allow_inf_nan=False)
     label: str
 
 
@@ -226,12 +251,20 @@ class SubmittedAnalysis(BaseModel):
     isrc: str | None = None
     artwork: str | None = None
     tempo: dict | None = None
+    analysis_version: int = Field(default=0, ge=0, le=ANALYSIS_VERSION)
+    model_revision: str | None = None
+    audio_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    audio_duration: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
 
 @app.post("/analysis/submit")
 def submit_analysis(body: SubmittedAnalysis) -> dict:
     if body.model not in _MODEL_RANK:
         raise HTTPException(422, f"unknown model {body.model!r}")
+    if body.analysis_version == ANALYSIS_VERSION and (
+            body.model_revision != MODEL_REVISIONS[body.model]
+            or body.audio_sha256 is None or body.audio_duration is None):
+        raise HTTPException(422, "current analyses require matching model revision, audio hash and duration")
     if not body.segments:
         raise HTTPException(422, "no segments")
     segments: list[ChordSegment] = []
@@ -240,19 +273,23 @@ def submit_analysis(body: SubmittedAnalysis) -> dict:
             raise HTTPException(422, f"empty segment at {seg.start}")
         if segments and seg.start < segments[-1].end - 1e-6:
             raise HTTPException(422, f"segments overlap or are unordered at {seg.start}")
+        if body.audio_duration is not None and seg.end > body.audio_duration + 1e-6:
+            raise HTTPException(422, "segment extends past the analyzed audio")
         try:
-            parse_label(seg.label)
+            chord = parse_label(seg.label)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
-        segments.append(ChordSegment(seg.start, seg.end, seg.label))
+        segments.append(ChordSegment(seg.start, seg.end, chord.label if chord else "N"))
     result = analyze(merge_adjacent(segments))
     result["tempo"] = body.tempo
     result["source"] = body.source
     result["model"] = body.model
+    result.update(analysis_version=body.analysis_version, model_revision=body.model_revision,
+                  audio_sha256=body.audio_sha256, audio_duration=body.audio_duration)
     if not _save_track(body.track_id, result, body.title, body.artist, body.isrc,
                        artwork=body.artwork):
         raise HTTPException(409, "a better analysis is already stored for this track")
-    return json.loads(_track_cache_path(body.track_id).read_text())
+    return _read_analysis(_track_cache_path(body.track_id))
 
 
 # MARK: - Lyrics
@@ -442,6 +479,10 @@ def library() -> dict:
             "difficulty": data.get("difficulty"),
             "source": data.get("source"),
             "model": data.get("model", "madmom"),
+            "isrc": data.get("isrc"),
+            "analysis_version": data.get("analysis_version", 0),
+            "model_revision": data.get("model_revision"),
+            "analysis_stale": not is_current(data),
         })
     return {"items": items}
 
@@ -450,7 +491,7 @@ def library() -> dict:
 def get_track_analysis(track_id: str, isrc: str | None = None) -> dict:
     cached = _track_cache_path(track_id)
     if cached.exists():
-        return json.loads(cached.read_text())
+        return _read_analysis(cached)
     if hit := _cached_by_isrc(track_id, isrc, None, None):
         return hit
     raise HTTPException(404, "no analysis for this track yet")
@@ -462,7 +503,7 @@ def get_track_analysis(track_id: str, isrc: str | None = None) -> dict:
 async def practice_take(
     file: UploadFile,
     track_id: str = Form(...),
-    offset: float = Form(default=0.0),
+    offset: float = Form(default=0.0, allow_inf_nan=False),
 ) -> dict:
     """Score a practice recording (instrument only, song in headphones)
     against the track's reference chart."""
@@ -470,24 +511,42 @@ async def practice_take(
     if not ref_path.exists():
         raise HTTPException(404, "no analysis for this track yet")
     reference = json.loads(ref_path.read_text())
-
-    data = await file.read()
-    if not data:
-        raise HTTPException(400, "empty upload")
+    if reference.get("source") == "itunes_preview":
+        raise HTTPException(409, "a full-song chart is required to score a recording")
     suffix = Path(file.filename or "take.m4a").suffix or ".m4a"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(data)
         tmp_path = Path(tmp.name)
     try:
-        segments, _tempo = await anyio.to_thread.run_sync(_recognize_locked, tmp_path)
+        size = 0
+        with tmp_path.open("wb") as target:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > 64 * 1024 * 1024:
+                    raise HTTPException(413, "recording exceeds 64 MB")
+                target.write(chunk)
+        if size == 0:
+            raise HTTPException(400, "empty upload")
+        recognition = await anyio.to_thread.run_sync(
+            lambda: recognize_audio(tmp_path, model="ismir2019", max_duration=600))
     except AudioDecodeError as exc:
         raise HTTPException(422, str(exc)) from exc
+    except RecognitionUnavailable as exc:
+        logger.warning("Practice recognition unavailable: %s", exc)
+        raise HTTPException(503, "chord recognition is temporarily unavailable; please retry") from exc
     finally:
         tmp_path.unlink(missing_ok=True)
 
     from .practice import score_take
-    report = score_take(reference.get("chords", []),
-                        [s.to_dict() for s in segments], offset)
+    comparison = "major_minor" if reference.get("model", "madmom") == "madmom" else "root_quality"
+    try:
+        report = score_take(reference.get("chords", []),
+                            [s.to_dict() for s in recognition.segments], offset,
+                            take_duration=recognition.duration, comparison=comparison,
+                            supported_qualities=MODEL_QUALITIES[recognition.model])
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     if "error" in report:
         raise HTTPException(422, report["error"])
-    return {"take_id": uuid.uuid4().hex[:12], "track_id": track_id, **report}
+    return {"take_id": uuid.uuid4().hex[:12], "track_id": track_id, **report,
+            **recognition.metadata(), "reference_analysis_version": reference.get("analysis_version", 0),
+            "reference_model_revision": reference.get("model_revision")}

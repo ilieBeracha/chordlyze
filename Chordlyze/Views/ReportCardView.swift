@@ -34,10 +34,20 @@ struct ReportCardView: View {
                     Text("chords on target")
                         .font(.system(size: 13))
                         .foregroundStyle(Palette.secondary)
-                    if let lag = report.avgLag {
+                    if let error = report.avgTimingError {
+                        Text(String(format: "avg change timing error %.1fs", error))
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.tertiary)
+                    } else if let lag = report.avgLag {
                         Text(String(format: "avg change lag %.1fs", lag))
                             .font(.system(size: 12))
                             .foregroundStyle(Palette.tertiary)
+                    }
+                    if report.comparison == "major_minor" {
+                        Text("Scored at this chart’s major/minor level")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.secondary)
+                            .multilineTextAlignment(.center)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -81,12 +91,12 @@ struct ReportCardView: View {
                                 Text("\(t.misses)/\(t.count) missed")
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(Palette.destructive)
-                            } else if let lag = t.avgLag {
-                                Text(String(format: "%.1fs late", lag))
+                            } else if let timing = t.timingLabel {
+                                Text(timing)
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(lag > 0.5 ? Palette.warning : Palette.secondary)
+                                    .foregroundStyle((t.timingError ?? 0) > 0.5 ? Palette.warning : Palette.secondary)
                             }
-                            if t.misses > 0 || (t.avgLag ?? 0) > 0.5 {
+                            if t.misses > 0 || (t.timingError ?? 0) > 0.5 {
                                 NavigationLink {
                                     DrillView(from: t.from, to: t.to)
                                 } label: {

@@ -9,6 +9,8 @@ everywhere); live/cover/remix variants are filtered out.
 from __future__ import annotations
 
 import re
+import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -79,9 +81,22 @@ def fetch_full_track(title: str, artist: str, duration: float) -> Path | None:
     if chosen is None:
         return None
 
-    outtmpl = str(Path(tempfile.gettempdir()) / "chordlyze-yt-%(id)s.%(ext)s")
-    download = {"quiet": True, "no_warnings": True, "format": "bestaudio/best",
-                "noplaylist": True, "socket_timeout": 20, "outtmpl": outtmpl}
-    with yt_dlp.YoutubeDL(download) as ydl:
-        result = ydl.extract_info(f"https://www.youtube.com/watch?v={chosen['id']}", download=True)
-        return Path(ydl.prepare_filename(result))
+    # Different library IDs can resolve to the same upload. Give each job its
+    # own directory so concurrent downloads cannot overwrite/unlink each other.
+    with tempfile.TemporaryDirectory(prefix="chordlyze-download-") as directory:
+        outtmpl = str(Path(directory) / "%(id)s.%(ext)s")
+        download = {"quiet": True, "no_warnings": True, "noprogress": True,
+                    "format": "bestaudio/best", "noplaylist": True,
+                    "socket_timeout": 20, "outtmpl": outtmpl}
+        with yt_dlp.YoutubeDL(download) as ydl:
+            result = ydl.extract_info(f"https://www.youtube.com/watch?v={chosen['id']}", download=True)
+            source = Path(ydl.prepare_filename(result))
+        descriptor, destination = tempfile.mkstemp(prefix="chordlyze-audio-", suffix=source.suffix)
+        os.close(descriptor)
+        path = Path(destination)
+        try:
+            shutil.move(source, path)
+        except BaseException:
+            path.unlink(missing_ok=True)
+            raise
+        return path

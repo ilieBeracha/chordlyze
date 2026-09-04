@@ -1,123 +1,178 @@
-"""Scoring of a practice take against a song's reference chord chart.
+"""Grade the recorded intersection of a take and its reference chart.
 
-The take is recorded with the song in headphones, so the microphone hears only
-the player's instrument; the detected chords are compared to the reference at
-the same timeline (plus an optional start offset).
+Silence remains part of the recording span. Chord identity and transition
+timing are evaluated separately; each detected onset can match only one
+reference change. Bass voicing remains the player's choice.
 """
 from __future__ import annotations
 
-from .analysis.chord import display as _display
-from .analysis.chord import parse_label
+import math
+from dataclasses import dataclass, replace
+
+from .analysis.chord import Chord, parse_label
+
+SCORING_VERSION = 2
+EARLY_WINDOW = 0.5
+LATE_WINDOW = 3.0
 
 
-def _same(a: str, b: str) -> bool:
-    """Chord identity for scoring: root and quality; the bass note played
-    under a slash chord is the player's choice, not a mistake."""
-    ca, cb = parse_label(a), parse_label(b)
-    if ca is None or cb is None:
-        return ca is cb
-    return ca.without_bass() == cb.without_bass()
+@dataclass(frozen=True)
+class _Segment:
+    start: float
+    end: float
+    chord: Chord | None
+
+
+def _segments(rows: list[dict], comparison: str, offset: float = 0) -> list[_Segment]:
+    result: list[_Segment] = []
+    for row in rows:
+        start, end = float(row["start"]), float(row["end"])
+        if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end <= start:
+            raise ValueError("segments must have finite, nonnegative, increasing times")
+        start, end = start + offset, end + offset
+        if result and start < result[-1].end - 1e-6:
+            raise ValueError("segments overlap or are unordered")
+        chord = parse_label(row["label"])
+        if chord:
+            chord = chord.without_bass()
+            if comparison == "major_minor" and chord.family in ("maj", "min"):
+                chord = Chord(chord.root, chord.family)
+        if result and result[-1].chord == chord and abs(start - result[-1].end) < 1e-6:
+            result[-1] = replace(result[-1], end=end)
+        else:
+            result.append(_Segment(start, end, chord))
+    return result
 
 
 def _overlap(a0: float, a1: float, b0: float, b1: float) -> float:
     return max(0.0, min(a1, b1) - max(a0, b0))
 
 
-def score_take(reference: list[dict], detected: list[dict],
-               offset: float = 0.0) -> dict:
-    """reference/detected: [{start, end, label}]; offset shifts the take onto
-    the song timeline (take second 0 == song second `offset`)."""
-    ref = [r for r in reference if r.get("label") not in (None, "N")]
-    det = [{"start": float(d["start"]) + offset, "end": float(d["end"]) + offset,
-            "label": d["label"]}
-           for d in detected if d.get("label") not in (None, "N")]
-    if not ref:
-        return {"error": "no reference chords"}
-    take_start = det[0]["start"] if det else 0.0
-    take_end = det[-1]["end"] if det else 0.0
+def _mean(values: list[float]) -> float | None:
+    return round(sum(values) / len(values), 3) if values else None
 
-    # Judge only the part of the song the take covers.
-    covered = [r for r in ref
-               if _overlap(float(r["start"]), float(r["end"]), take_start, take_end) > 0.5]
+
+def _timing(offsets: list[float]) -> dict:
+    return {
+        # Preserve the original nonnegative late-only API field.
+        "avg_lag": _mean([max(0, x) for x in offsets]),
+        "avg_early": _mean([max(0, -x) for x in offsets]),
+        "avg_offset": _mean(offsets),
+        "avg_timing_error": _mean([abs(x) for x in offsets]),
+    }
+
+
+def score_take(reference: list[dict], detected: list[dict], offset: float = 0.0, *,
+               take_duration: float | None = None, comparison: str = "root_quality",
+               supported_qualities: set[str] | None = None) -> dict:
+    """Score a take whose second zero is song second offset.
+
+    The API supplies duration measured from decoded audio, independent of
+    recognized chords. Older direct callers may infer the span from all
+    detected intervals, including N. major_minor is only for references
+    from the legacy recognizer; rich charts keep exact root/quality grading.
+    """
+    if comparison not in ("root_quality", "major_minor"):
+        raise ValueError("unknown chord comparison")
+    if not math.isfinite(offset):
+        raise ValueError("offset must be finite")
+    if take_duration is not None and (not math.isfinite(take_duration) or take_duration <= 0):
+        raise ValueError("take duration must be positive and finite")
+    ref = _segments(reference, comparison)
+    det = _segments(detected, comparison, offset)
+    if not any(r.chord for r in ref):
+        return {"error": "no reference chords"}
+    if take_duration is None:
+        if not det:
+            return {"error": "take has no recording span"}
+        take_start, take_end = det[0].start, det[-1].end
+    else:
+        take_start, take_end = offset, offset + take_duration
+    if not math.isfinite(take_end):
+        raise ValueError("recording end must be finite")
+
+    covered = [replace(r, start=max(r.start, take_start), end=min(r.end, take_end))
+               for r in ref if r.chord and _overlap(r.start, r.end, take_start, take_end) > 0]
     if not covered:
         return {"error": "take does not overlap the song"}
+    if supported_qualities is not None:
+        unsupported = sorted({r.chord.display for r in covered
+                              if r.chord.quality not in supported_qualities})
+        if unsupported:
+            return {"error": "unsupported reference chords for this recognizer: " + ", ".join(unsupported)}
+
+    def hit_time(r: _Segment, start: float, end: float) -> float:
+        return sum(_overlap(start, end, d.start, d.end) for d in det if d.chord == r.chord)
 
     per_chord: dict[str, dict] = {}
-    correct_time = 0.0
-    total_time = 0.0
+    correct_time = total_time = 0.0
     for r in covered:
-        r0, r1 = float(r["start"]), float(r["end"])
-        name = _display(r["label"])
-        dur = r1 - r0
-        hit = sum(_overlap(r0, r1, d["start"], d["end"])
-                  for d in det if _same(d["label"], r["label"]))
-        hit = min(hit, dur)
+        duration = r.end - r.start
+        hit = hit_time(r, r.start, r.end)
         correct_time += hit
-        total_time += dur
-        agg = per_chord.setdefault(name, {"name": name, "hit": 0.0, "total": 0.0,
-                                          "count": 0})
-        agg["hit"] += hit
-        agg["total"] += dur
-        agg["count"] += 1
+        total_time += duration
+        row = per_chord.setdefault(r.chord.display, {"name": r.chord.display, "hit": 0.0,
+                                                    "total": 0.0, "count": 0})
+        row["hit"] += hit
+        row["total"] += duration
+        row["count"] += 1
 
-    # Transition lag: reference chord-change instants vs when the player
-    # actually landed the new chord.
     transitions: dict[tuple[str, str], dict] = {}
-    for prev, cur in zip(covered, covered[1:]):
-        t = float(cur["start"])
-        frm, to = _display(prev["label"]), _display(cur["label"])
-        if frm == to:
+    last_match = -1
+    for prev, cur in zip(ref, ref[1:]):
+        t = cur.start
+        if (prev.chord is None or cur.chord is None or prev.chord == cur.chord
+                or abs(prev.end - t) > 1e-6 or not take_start < t < take_end):
             continue
-        landed = None
-        for d in det:
-            if _same(d["label"], cur["label"]) and d["end"] > t - 0.5:
-                landed = max(0.0, d["start"] - t)
-                break
-        agg = transitions.setdefault((frm, to), {"from": frm, "to": to,
-                                                 "lags": [], "misses": 0, "count": 0})
-        agg["count"] += 1
-        if landed is None or landed > 3.0:
-            agg["misses"] += 1
+        frm, to = prev.chord.display, cur.chord.display
+        row = transitions.setdefault((frm, to), {"from": frm, "to": to, "offsets": [],
+                                                 "misses": 0, "count": 0})
+        row["count"] += 1
+        earliest = max(t - EARLY_WINDOW, prev.start, take_start)
+        latest = min(t + LATE_WINDOW, cur.end, take_end)
+        match = next((i for i, d in enumerate(det)
+                      if i > last_match and d.chord == cur.chord
+                      and earliest <= d.start < latest
+                      and _overlap(t, min(cur.end, take_end), d.start, d.end) > 0), None)
+        if match is None:
+            row["misses"] += 1
         else:
-            agg["lags"].append(landed)
+            last_match = match
+            row["offsets"].append(det[match].start - t)
 
-    transition_rows = []
-    for agg in transitions.values():
-        avg = round(sum(agg["lags"]) / len(agg["lags"]), 2) if agg["lags"] else None
-        transition_rows.append({"from": agg["from"], "to": agg["to"],
-                                "avg_lag": avg, "misses": agg["misses"],
-                                "count": agg["count"]})
-    transition_rows.sort(key=lambda r: (r["misses"], r["avg_lag"] or 0), reverse=True)
+    transition_rows = [{"from": row["from"], "to": row["to"], "misses": row["misses"],
+                        "count": row["count"], **_timing(row["offsets"])}
+                       for row in transitions.values()]
+    transition_rows.sort(key=lambda r: (r["misses"], r["avg_timing_error"] or 0), reverse=True)
 
-    # Section accuracy: covered span split into quarters.
-    span0, span1 = float(covered[0]["start"]), float(covered[-1]["end"])
-    quarter = max(1.0, (span1 - span0) / 4)
+    # Include reference rests within the recording; their score is unassessed,
+    # not a wrong chord. Every section is clipped to the actual covered span.
+    span0, span1 = max(take_start, ref[0].start), min(take_end, ref[-1].end)
+    quarter = (span1 - span0) / 4
     sections = []
     for i in range(4):
-        s0, s1 = span0 + i * quarter, span0 + (i + 1) * quarter
-        tot = hit = 0.0
+        start, end = span0 + i * quarter, span0 + (i + 1) * quarter
+        total = hit = 0.0
         for r in covered:
-            seg = _overlap(float(r["start"]), float(r["end"]), s0, s1)
-            if seg <= 0:
-                continue
-            got = sum(_overlap(max(float(r["start"]), s0), min(float(r["end"]), s1),
-                               d["start"], d["end"])
-                      for d in det if _same(d["label"], r["label"]))
-            tot += seg
-            hit += min(got, seg)
-        sections.append({"start": round(s0, 1), "end": round(s1, 1),
-                         "accuracy": round(hit / tot, 3) if tot else None})
+            a, b = max(r.start, start), min(r.end, end)
+            if b > a:
+                total += b - a
+                hit += hit_time(r, a, b)
+        sections.append({"start": round(start, 3), "end": round(end, 3),
+                         "accuracy": round(hit / total, 3) if total else None})
 
-    all_lags = [l for agg in transitions.values() for l in agg["lags"]]
+    offsets = [x for row in transitions.values() for x in row["offsets"]]
     return {
-        "accuracy": round(correct_time / total_time, 3) if total_time else 0.0,
-        "avg_lag": round(sum(all_lags) / len(all_lags), 2) if all_lags else None,
-        "covered_start": round(span0, 1),
-        "covered_end": round(span1, 1),
+        "scoring_version": SCORING_VERSION,
+        "comparison": comparison,
+        "accuracy": round(correct_time / total_time, 3),
+        **_timing(offsets),
+        "covered_start": round(span0, 3),
+        "covered_end": round(span1, 3),
+        "scored_duration": round(total_time, 3),
         "per_chord": sorted(
-            [{"name": a["name"], "accuracy": round(a["hit"] / a["total"], 3),
-              "count": a["count"]} for a in per_chord.values()],
-            key=lambda r: r["accuracy"]),
+            [{"name": r["name"], "accuracy": round(r["hit"] / r["total"], 3), "count": r["count"]}
+             for r in per_chord.values()], key=lambda r: r["accuracy"]),
         "transitions": transition_rows[:8],
         "sections": sections,
     }
