@@ -3,6 +3,7 @@ import SwiftUI
 /// Profile & settings: Spotify account, reconnect, disconnect.
 struct ProfileView: View {
     @EnvironmentObject var auth: SpotifyAuth
+    @ObservedObject private var nowPlaying = SpotifyNowPlaying.shared
     @State private var profile: SpotifyAPI.Profile?
 
     var body: some View {
@@ -28,9 +29,9 @@ struct ProfileView: View {
                         Text(profile?.displayName ?? "Spotify account")
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(.white)
-                        Text(profile.map { "@\($0.id)" } ?? "Connected")
+                        Text(accountStatus)
                             .font(.system(size: 13))
-                            .foregroundStyle(Palette.secondary)
+                            .foregroundStyle(nowPlaying.needsReauth ? Palette.warning : Palette.secondary)
                     }
                     Spacer()
                 }
@@ -52,7 +53,13 @@ struct ProfileView: View {
                     }
                 }
                 .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Palette.card))
-                .padding(.bottom, 26)
+                if let error = auth.lastError {
+                    Text(error)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.destructive)
+                        .padding(.top, 10)
+                }
+                Spacer().frame(height: 26)
 
                 SectionLabel("About")
                     .padding(.bottom, 10)
@@ -75,13 +82,18 @@ struct ProfileView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .task {
+        .task(id: auth.grants) {
             profile = try? await SpotifyAPI(auth: auth).me()
         }
     }
 
     private var initial: String {
         String((profile?.displayName ?? "S").prefix(1)).uppercased()
+    }
+
+    private var accountStatus: String {
+        if nowPlaying.needsReauth { return "Spotify stopped answering — reconnect below" }
+        return profile.map { "@\($0.id)" } ?? "Connected"
     }
 
     private func settingsRow(icon: String, label: String, tint: Color,

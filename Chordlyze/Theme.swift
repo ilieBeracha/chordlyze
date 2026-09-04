@@ -142,3 +142,39 @@ struct SongRow<Trailing: View>: View {
         .contentShape(Rectangle())
     }
 }
+
+/// Song key as a large root over a small mode ("A#" / "minor"), with the
+/// difficulty dot beside the root when known.
+struct KeyBadge: View {
+    let key: String
+    var difficulty: String? = nil
+
+    var body: some View {
+        let (root, mode) = Self.split(key)
+        VStack(alignment: .trailing, spacing: 0) {
+            HStack(spacing: 5) {
+                if let difficulty {
+                    Circle()
+                        .fill(Palette.difficulty(difficulty))
+                        .frame(width: 6, height: 6)
+                }
+                Text(root)
+                    .font(.system(size: 17, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Color.spotifyGreen)
+            }
+            if !mode.isEmpty {
+                Text(mode)
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.4)
+                    .foregroundStyle(Palette.tertiary)
+            }
+        }
+    }
+
+    /// "A# minor" -> ("A#", "minor"); keeps sharps/flats as the backend sent them.
+    private static func split(_ key: String) -> (root: String, mode: String) {
+        let parts = key.split(separator: " ", maxSplits: 1)
+        guard let first = parts.first else { return (key, "") }
+        return (String(first), parts.count > 1 ? parts[1].lowercased() : "")
+    }
+}

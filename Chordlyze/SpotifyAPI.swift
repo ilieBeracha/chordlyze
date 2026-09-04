@@ -18,7 +18,12 @@ struct Track: Identifiable, Decodable {
     let externalIds: ExternalIds?
     let durationMs: Int?
     struct Artist: Decodable { let name: String }
-    struct Album: Decodable { let name: String; let images: [SpotifyImage]? }
+    struct Album: Decodable {
+        let name: String
+        let images: [SpotifyImage]?
+        /// Largest image Spotify lists first.
+        var artworkURL: URL? { (images?.first?.url).flatMap(URL.init) }
+    }
     struct ExternalIds: Decodable { let isrc: String? }
 
     enum CodingKeys: String, CodingKey {

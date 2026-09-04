@@ -61,7 +61,7 @@ struct LibraryView: View {
                                         title: item.title ?? "Unknown song",
                                         artist: item.artist ?? "") {
                                     if let key = item.key {
-                                        keyBadge(key, difficulty: item.difficulty?.level)
+                                        KeyBadge(key: key, difficulty: item.difficulty?.level)
                                     }
                                 }
                             }
@@ -109,38 +109,6 @@ struct LibraryView: View {
                     .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
             }
         }
-    }
-
-    // MARK: - Rows
-
-    /// Large root over a small mode ("A#" / "minor"), difficulty dot beside it.
-    private func keyBadge(_ key: String, difficulty: String?) -> some View {
-        let (root, mode) = Self.splitKey(key)
-        return VStack(alignment: .trailing, spacing: 0) {
-            HStack(spacing: 5) {
-                if let difficulty {
-                    Circle()
-                        .fill(Palette.difficulty(difficulty))
-                        .frame(width: 6, height: 6)
-                }
-                Text(root)
-                    .font(.system(size: 17, weight: .heavy, design: .rounded))
-                    .foregroundStyle(Color.spotifyGreen)
-            }
-            if !mode.isEmpty {
-                Text(mode)
-                    .font(.system(size: 10, weight: .semibold))
-                    .tracking(0.4)
-                    .foregroundStyle(Palette.tertiary)
-            }
-        }
-    }
-
-    /// "A# minor" -> ("A#", "minor"); keeps sharps/flats as the backend sent them.
-    static func splitKey(_ key: String) -> (root: String, mode: String) {
-        let parts = key.split(separator: " ", maxSplits: 1)
-        guard let first = parts.first else { return (key, "") }
-        return (String(first), parts.count > 1 ? parts[1].lowercased() : "")
     }
 
     // MARK: - States

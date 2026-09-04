@@ -55,6 +55,19 @@ final class SpotifyNowPlaying: ObservableObject {
         pollTask = nil
     }
 
+    /// Stop and forget everything (sign-out).
+    func reset() {
+        stop()
+        analysisTask?.cancel()
+        analysisTask = nil
+        analysisKey = nil
+        playing = nil
+        anchor = nil
+        analysis = nil
+        analysisFailed = false
+        needsReauth = false
+    }
+
     /// Current playback position; frozen while paused; nil when Spotify has
     /// not reported one.
     func livePosition() -> TimeInterval? {

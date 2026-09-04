@@ -26,6 +26,8 @@ final class ArtworkColor: ObservableObject {
         colors[trackID] = clamped
     }
 
+    private static let context = CIContext(options: [.workingColorSpace: NSNull()])
+
     private static func averageColor(of image: UIImage) -> UIColor? {
         guard let cg = image.cgImage else { return nil }
         let ci = CIImage(cgImage: cg)
@@ -34,7 +36,6 @@ final class ArtworkColor: ObservableObject {
                                                  kCIInputExtentKey: CIVector(cgRect: ci.extent)]),
               let output = filter.outputImage else { return nil }
         var pixel = [UInt8](repeating: 0, count: 4)
-        let context = CIContext(options: [.workingColorSpace: NSNull()])
         context.render(output, toBitmap: &pixel, rowBytes: 4,
                        bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
                        format: .RGBA8, colorSpace: nil)

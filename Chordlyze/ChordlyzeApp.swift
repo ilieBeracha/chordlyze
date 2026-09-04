@@ -15,6 +15,11 @@ struct ChordlyzeApp: App {
             }
             .preferredColorScheme(.dark)
             .tint(.spotifyGreen)
+            .onChange(of: auth.isAuthorized) { _, authorized in
+                // Signed out: nothing should keep polling, and nothing from
+                // the old account should still be on screen after a re-login.
+                if !authorized { SpotifyNowPlaying.shared.reset() }
+            }
         }
     }
 }
