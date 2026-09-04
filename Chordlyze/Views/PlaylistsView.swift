@@ -369,7 +369,7 @@ struct TracksView: View {
                             Spacer()
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Color(hex: 0x5A5A5E))
+                                .foregroundStyle(Palette.chevron)
                         }
                         .padding(.vertical, 12)
                         .padding(.horizontal, 20)

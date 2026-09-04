@@ -26,6 +26,18 @@ enum Palette {
     static let greenTintFill = Color.spotifyGreen.opacity(0.13)
     static let greenTintBorder = Color.spotifyGreen.opacity(0.35)
     static let separator = Color(red: 84 / 255, green: 84 / 255, blue: 88 / 255).opacity(0.4)
+    /// Disclosure chevron on list rows.
+    static let chevron = Color(hex: 0x5A5A5E)
+    static let warning = Color(hex: 0xFFD60A)
+
+    /// Difficulty dot: "easy" | "medium" | "hard".
+    static func difficulty(_ level: String) -> Color {
+        switch level {
+        case "easy": return successCheck
+        case "medium": return warning
+        default: return destructive
+        }
+    }
 }
 
 extension String {
@@ -86,4 +98,47 @@ struct SelectedChord: Identifiable {
 /// "3:07" from seconds; negative clamps to 0:00.
 func mmss(_ seconds: Double) -> String {
     String(format: "%d:%02d", Int(max(0, seconds)) / 60, Int(max(0, seconds)) % 60)
+}
+
+/// List row for a song: artwork, title over artist, and whatever goes on
+/// the right (key badge, chevron). Library and Search share it.
+struct SongRow<Trailing: View>: View {
+    let artworkURL: URL?
+    let title: String
+    let artist: String
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
+        HStack(spacing: 13) {
+            AsyncImage(url: artworkURL) { image in
+                image.resizable().aspectRatio(contentMode: .fill)
+            } placeholder: {
+                LinearGradient(colors: [Palette.gray5, Palette.elevated],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+            }
+            .frame(width: 46, height: 46)
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if !artist.isEmpty {
+                    Text(artist)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            trailing()
+        }
+        .padding(.vertical, 9)
+        .padding(.horizontal, 20)
+        .contentShape(Rectangle())
+    }
 }

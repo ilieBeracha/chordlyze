@@ -150,7 +150,7 @@ enum BackendClient {
     /// song is found nowhere.
     static func analyzeTrack(trackID: String, isrc: String?,
                              title: String?, artist: String?,
-                             durationMs: Int? = nil) async throws -> ChordAnalysis? {
+                             durationMs: Int? = nil, itunesID: Int? = nil) async throws -> ChordAnalysis? {
         var req = URLRequest(url: Config.backendBaseURL.appendingPathComponent("analyze_track"))
         req.httpMethod = "POST"
         let boundary = "chordlyze-\(UUID().uuidString)"
@@ -159,7 +159,8 @@ enum BackendClient {
         var body = Data()
         let fields: [(String, String?)] = [("track_id", trackID), ("isrc", isrc),
                                            ("title", title), ("artist", artist),
-                                           ("duration", durationMs.map { String(Double($0) / 1000) })]
+                                           ("duration", durationMs.map { String(Double($0) / 1000) }),
+                                           ("itunes_id", itunesID.map(String.init))]
         for (name, value) in fields {
             guard let value else { continue }
             body.append("--\(boundary)\r\n".data(using: .utf8)!)

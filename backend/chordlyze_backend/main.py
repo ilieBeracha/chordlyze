@@ -129,12 +129,18 @@ def _itunes_query(url: str) -> list[dict]:
     return [r for r in results if r.get("previewUrl")]
 
 
-def _itunes_lookup(isrc: str | None, title: str | None, artist: str | None) -> dict | None:
+def _itunes_lookup(isrc: str | None, title: str | None, artist: str | None,
+                   itunes_id: int | None = None) -> dict | None:
     """Find a song on iTunes; returns the first result dict or None.
 
-    The public lookup-by-ISRC rarely resolves, so title+artist search is the
-    reliable path; ISRC is tried first as a free shot.
+    An iTunes track id (from the app's own iTunes search) is exact. The
+    public lookup-by-ISRC rarely resolves, so title+artist search is the
+    reliable path otherwise; ISRC is tried first as a free shot.
     """
+    if itunes_id:
+        songs = _itunes_query(f"https://itunes.apple.com/lookup?id={itunes_id}&entity=song")
+        if songs:
+            return songs[0]
     if isrc:
         songs = _itunes_query(
             f"https://itunes.apple.com/lookup?isrc={urllib.parse.quote(isrc)}&entity=song")
@@ -156,11 +162,13 @@ async def analyze_track(
     title: str | None = Form(default=None),
     artist: str | None = Form(default=None),
     duration: float | None = Form(default=None),
+    itunes_id: int | None = Form(default=None),
 ) -> dict:
     """The saved analysis when there is one, else chords from the 30 s iTunes
     preview so the song has something right away. Whole-song recognition
     happens off-server (ingest_worker.py) and replaces the preview through
-    /analysis/submit. 404 when the song is not on iTunes either."""
+    /analysis/submit. 404 when the song is not on iTunes either. `itunes_id`
+    pins the exact iTunes track when the client picked one."""
     cached = _track_cache_path(track_id)
     if cached.exists():
         return json.loads(cached.read_text())
@@ -168,7 +176,7 @@ async def analyze_track(
         return hit
 
     def fetch_and_recognize():
-        song = _itunes_lookup(isrc, title, artist)
+        song = _itunes_lookup(isrc, title, artist, itunes_id)
         if not song:
             raise HTTPException(404, "song not found on iTunes")
         with tempfile.NamedTemporaryFile(suffix=".m4a", delete=False) as tmp:

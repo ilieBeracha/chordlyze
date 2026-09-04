@@ -156,7 +156,7 @@ struct AnalysisTabsView: View {
                         .lineLimit(1)
                     if let diff = analysis.difficulty {
                         Circle()
-                            .fill(LibraryView.difficultyColor(diff.level))
+                            .fill(Palette.difficulty(diff.level))
                             .frame(width: 5, height: 5)
                         Text(diff.level.capitalized)
                             .font(.system(size: 13))

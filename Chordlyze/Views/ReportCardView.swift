@@ -84,7 +84,7 @@ struct ReportCardView: View {
                             } else if let lag = t.avgLag {
                                 Text(String(format: "%.1fs late", lag))
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(lag > 0.5 ? Color(hex: 0xFFD60A) : Palette.secondary)
+                                    .foregroundStyle(lag > 0.5 ? Palette.warning : Palette.secondary)
                             }
                             if t.misses > 0 || (t.avgLag ?? 0) > 0.5 {
                                 NavigationLink {
@@ -138,6 +138,6 @@ struct ReportCardView: View {
 
     private var scoreColor: Color {
         report.accuracy >= 0.8 ? Color.spotifyGreen
-            : report.accuracy >= 0.5 ? Color(hex: 0xFFD60A) : Palette.destructive
+            : report.accuracy >= 0.5 ? Palette.warning : Palette.destructive
     }
 }

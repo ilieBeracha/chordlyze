@@ -5,14 +5,17 @@ struct SearchView: View {
     @State private var query = ""
     @State private var results: [ITunesSong] = []
     @State private var searching = false
+    /// Last search failed (network) or found nothing; nil before any search.
+    @State private var note: String?
     @FocusState private var focused: Bool
 
     struct ITunesSong: Decodable, Identifiable {
         let trackId: Int
         let trackName: String
         let artistName: String
-        let artworkUrl60: String?
+        let artworkUrl100: String?
         var id: Int { trackId }
+        var artworkURL: URL? { artworkUrl100.flatMap(URL.init) }
     }
 
     var body: some View {
@@ -45,35 +48,23 @@ struct SearchView: View {
 
             ScrollView {
                 LazyVStack(spacing: 0) {
+                    if let note {
+                        Text(note)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Palette.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 40)
+                    }
                     ForEach(results) { song in
                         NavigationLink {
                             SearchAnalysisView(song: song)
                         } label: {
-                            HStack(spacing: 12) {
-                                AsyncImage(url: song.artworkUrl60.flatMap(URL.init)) { image in
-                                    image.resizable()
-                                } placeholder: {
-                                    Palette.elevated
-                                }
-                                .frame(width: 44, height: 44)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(song.trackName)
-                                        .font(.system(size: 16))
-                                        .foregroundStyle(.white)
-                                        .lineLimit(1)
-                                    Text(song.artistName)
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(Palette.secondary)
-                                        .lineLimit(1)
-                                }
-                                Spacer()
+                            SongRow(artworkURL: song.artworkURL, title: song.trackName,
+                                    artist: song.artistName) {
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Color(hex: 0x5A5A5E))
+                                    .foregroundStyle(Palette.chevron)
                             }
-                            .padding(.vertical, 10)
-                            .padding(.horizontal, 20)
                         }
                         .buttonStyle(.plain)
                     }
@@ -95,13 +86,19 @@ struct SearchView: View {
         comps.queryItems = [.init(name: "term", value: term),
                             .init(name: "entity", value: "song"),
                             .init(name: "limit", value: "20")]
-        guard let (data, _) = try? await URLSession.shared.data(from: comps.url!),
-              let parsed = try? JSONDecoder().decode(Response.self, from: data) else { return }
-        results = parsed.results
+        do {
+            let (data, _) = try await URLSession.shared.data(from: comps.url!)
+            results = try JSONDecoder().decode(Response.self, from: data).results
+            note = results.isEmpty ? "Nothing found for “\(term)”." : nil
+        } catch {
+            results = []
+            note = "Search failed: \(error.localizedDescription)"
+        }
     }
 }
 
-/// Analyzes a searched song (server fetches the iTunes preview) and shows the sheet.
+/// Analyzes a searched song (server fetches that exact iTunes track's
+/// preview) and shows the sheet.
 struct SearchAnalysisView: View {
     let song: SearchView.ITunesSong
     @State private var analysis: ChordAnalysis?
@@ -121,7 +118,8 @@ struct SearchAnalysisView: View {
             do {
                 analysis = try await BackendClient.retrying {
                     try await BackendClient.analyzeTrack(trackID: "itunes-\(song.trackId)", isrc: nil,
-                                                         title: song.trackName, artist: song.artistName)
+                                                         title: song.trackName, artist: song.artistName,
+                                                         itunesID: song.trackId)
                 }
                 if analysis == nil { failure = "Chords unavailable for this song." }
             } catch {

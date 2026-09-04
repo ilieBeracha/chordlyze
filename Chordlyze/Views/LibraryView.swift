@@ -57,7 +57,13 @@ struct LibraryView: View {
                             NavigationLink {
                                 SavedAnalysisView(item: item)
                             } label: {
-                                row(item)
+                                SongRow(artworkURL: item.artworkURL,
+                                        title: item.title ?? "Unknown song",
+                                        artist: item.artist ?? "") {
+                                    if let key = item.key {
+                                        keyBadge(key, difficulty: item.difficulty?.level)
+                                    }
+                                }
                             }
                             .buttonStyle(.plain)
                         }
@@ -86,7 +92,7 @@ struct LibraryView: View {
                 if !items.isEmpty {
                     Text("\(items.count) songs · \(distinctKeys) keys")
                         .font(.system(size: 12))
-                        .foregroundStyle(Color(hex: 0x8E8E93))
+                        .foregroundStyle(Palette.secondary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -107,65 +113,26 @@ struct LibraryView: View {
 
     // MARK: - Rows
 
-    private func row(_ item: BackendClient.LibraryItem) -> some View {
-        HStack(spacing: 13) {
-            AsyncImage(url: item.artworkURL) { image in
-                image.resizable().aspectRatio(contentMode: .fill)
-            } placeholder: {
-                LinearGradient(colors: [Color(hex: 0x2C2C2E), Color(hex: 0x1C1C1E)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing)
-            }
-            .frame(width: 46, height: 46)
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(item.title ?? "Unknown song")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if let artist = item.artist, !artist.isEmpty {
-                    Text(artist)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color(hex: 0x8E8E93))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+    /// Large root over a small mode ("A#" / "minor"), difficulty dot beside it.
+    private func keyBadge(_ key: String, difficulty: String?) -> some View {
+        let (root, mode) = Self.splitKey(key)
+        return VStack(alignment: .trailing, spacing: 0) {
+            HStack(spacing: 5) {
+                if let difficulty {
+                    Circle()
+                        .fill(Palette.difficulty(difficulty))
+                        .frame(width: 6, height: 6)
                 }
+                Text(root)
+                    .font(.system(size: 17, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Color.spotifyGreen)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            if let key = item.key {
-                let (root, mode) = Self.splitKey(key)
-                VStack(alignment: .trailing, spacing: 0) {
-                    HStack(spacing: 5) {
-                        if let level = item.difficulty?.level {
-                            Circle()
-                                .fill(Self.difficultyColor(level))
-                                .frame(width: 6, height: 6)
-                        }
-                        Text(root)
-                            .font(.system(size: 17, weight: .heavy, design: .rounded))
-                            .foregroundStyle(Color.spotifyGreen)
-                    }
-                    if !mode.isEmpty {
-                        Text(mode)
-                            .font(.system(size: 10, weight: .semibold))
-                            .tracking(0.4)
-                            .foregroundStyle(Color(hex: 0x5C5C60))
-                    }
-                }
+            if !mode.isEmpty {
+                Text(mode)
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.4)
+                    .foregroundStyle(Palette.tertiary)
             }
-        }
-        .padding(.vertical, 9)
-        .padding(.horizontal, 20)
-        .contentShape(Rectangle())
-    }
-
-    static func difficultyColor(_ level: String) -> Color {
-        switch level {
-        case "easy": return Color(hex: 0x30D158)
-        case "medium": return Color(hex: 0xFFD60A)
-        default: return Color(hex: 0xFF453A)
         }
     }
 
@@ -182,7 +149,7 @@ struct LibraryView: View {
         VStack(spacing: 16) {
             Text(message)
                 .font(.system(size: 13))
-                .foregroundStyle(Color(hex: 0x8E8E93))
+                .foregroundStyle(Palette.secondary)
                 .multilineTextAlignment(.center)
             Button {
                 Task { await load() }
