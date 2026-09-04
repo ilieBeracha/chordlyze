@@ -1,150 +1,145 @@
-import Accelerate
 import AVFoundation
 import Foundation
 
-/// Live detector for chord-change drills. Only distinguishes the two drilled
-/// chords: mic audio -> chroma vector -> cosine match against each chord's
-/// pitch-class template. Counts a change every time the stable winner flips.
+/// AVAudioEngine adapter for the deterministic streaming detector. Each start
+/// owns a new worker; generation checks reject late permission and UI callbacks.
 @MainActor
 final class ChordDrillListener: ObservableObject {
     @Published private(set) var current: String?
     @Published private(set) var changes = 0
+    @Published private(set) var evidence: DrillEvidence = .quiet
+    @Published private(set) var failure: String?
 
-    private let engine = AVAudioEngine()
-    private var templates: [(name: String, chroma: [Float])] = []
-    private var stable: String?
-    private var candidate: (name: String, since: Date)?
-
-    /// Pitch-class template for a display name like "F#m7" or "C/E"; nil for
-    /// a quality the app cannot voice (no template is better than a wrong one).
-    static func template(for name: String) -> [Float]? {
-        guard let notes = Chord(display: name)?.pitchClasses else { return nil }
-        var chroma = [Float](repeating: 0, count: 12)
-        for (index, pc) in notes.enumerated() {
-            chroma[pc] = max(chroma[pc], index == 0 ? 1.0 : 0.9)  // root weighs most
-        }
-        return chroma
-    }
+    private var engine: AVAudioEngine?
+    private var worker: DrillAudioWorker?
+    private var generation: UInt64 = 0
+    private var tapInstalled = false
+    private var sessionActive = false
+    private var observers: [NSObjectProtocol] = []
 
     func start(chordA: String, chordB: String) async throws {
-        guard await AVAudioApplication.requestRecordPermission() else {
-            throw NSError(domain: "Drill", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Microphone access denied."])
-        }
-        guard let a = Self.template(for: chordA), let b = Self.template(for: chordB) else {
-            throw NSError(domain: "Drill", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: "Unsupported chords for drilling."])
-        }
-        templates = [(chordA, a), (chordB, b)]
+        stop()
+        let token = generation
+        failure = nil
         changes = 0
-        stable = nil
-        candidate = nil
-
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .measurement)
-        try session.setActive(true)
-
-        let input = engine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
-            guard let self else { return }
-            let chroma = Self.chroma(from: buffer)
-            Task { @MainActor in self.classify(chroma) }
+        evidence = .uncertain
+        // Validate before asking for microphone permission.
+        _ = try DrillChordClassifier(chordA: chordA, chordB: chordB)
+        let permitted = await AVAudioApplication.requestRecordPermission()
+        try Task.checkCancellation()
+        guard generation == token else { throw CancellationError() }
+        guard permitted else {
+            throw NSError(domain: "Drill", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Microphone access denied. Enable it in Settings to start a drill."])
         }
-        engine.prepare()
-        try engine.start()
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.record, mode: .measurement)
+            try session.setActive(true)
+            sessionActive = true
+            let engine = AVAudioEngine()
+            self.engine = engine
+            let input = engine.inputNode
+            let format = input.outputFormat(forBus: 0)
+            guard format.channelCount > 0, format.commonFormat == .pcmFormatFloat32,
+                  !format.isInterleaved else { throw DrillConfigurationError.unsupportedSampleRate }
+            let sampleRate = format.sampleRate
+            let worker = try DrillAudioWorker(sampleRate: sampleRate, chordA: chordA, chordB: chordB,
+                onSnapshot: { [weak self] snapshot in
+                    guard let self, self.generation == token else { return }
+                    self.apply(snapshot)
+                }, onFailure: { [weak self] in
+                    self?.interrupt(token: token, message: "The microphone format changed. Start the drill again.")
+                })
+            self.worker = worker
+            input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, time in
+                guard time.isSampleTimeValid, buffer.format.sampleRate == sampleRate,
+                      Int(buffer.frameLength) <= DrillAudioInbox.maximumBufferSize,
+                      let samples = buffer.floatChannelData?[0] else {
+                    worker.invalidateFormat()
+                    return
+                }
+                worker.offer(UnsafeBufferPointer(start: samples, count: Int(buffer.frameLength)),
+                             sampleTime: time.sampleTime)
+            }
+            tapInstalled = true
+            engine.prepare()
+            try engine.start()
+            observeAudioChanges(engine: engine, token: token)
+        } catch {
+            stop()
+            throw error
+        }
     }
 
     func stop() {
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
-        try? AVAudioSession.sharedInstance().setActive(false,
-                                                       options: .notifyOthersOnDeactivation)
+        generation &+= 1
+        worker?.cancel()
+        worker = nil
+        stopCapture()
+        current = nil
+        evidence = .quiet
     }
 
-    // MARK: - Signal
+    /// Normal completion keeps the last queued change; cancellation uses stop().
+    func finish() async throws {
+        let token = generation
+        let finishingWorker = worker
+        stopCapture()
+        let final = await finishingWorker?.finish()
+        try Task.checkCancellation()
+        guard token == generation else { throw CancellationError() }
+        if let final { apply(final) }
+        worker = nil
+        generation &+= 1
+        current = nil
+        evidence = .quiet
+    }
 
-    private func classify(_ chroma: [Float]?) {
-        guard let chroma else {  // silence / too quiet
-            candidate = nil
-            return
-        }
-        let scored = templates.map { ($0.name, Self.cosine(chroma, $0.chroma)) }
-        guard let best = scored.max(by: { $0.1 < $1.1 }), best.1 > 0.6 else {
-            candidate = nil
-            return
-        }
-        if candidate?.name != best.0 {
-            candidate = (best.0, Date())
-            return
-        }
-        // Require a quarter second of stability before accepting the chord.
-        guard let candidate, Date().timeIntervalSince(candidate.since) > 0.25 else { return }
-        if stable != candidate.name {
-            if stable != nil { changes += 1 }
-            stable = candidate.name
-            current = candidate.name
+    private func apply(_ snapshot: DrillSnapshot) {
+        if current != snapshot.current { current = snapshot.current }
+        if changes != snapshot.changes { changes = snapshot.changes }
+        if evidence != snapshot.evidence { evidence = snapshot.evidence }
+    }
+
+    private func stopCapture() {
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers.removeAll()
+        if tapInstalled { engine?.inputNode.removeTap(onBus: 0); tapInstalled = false }
+        engine?.stop()
+        engine = nil
+        if sessionActive {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            sessionActive = false
         }
     }
 
-    /// 12-bin chroma from a mono buffer; nil when the frame is near-silent.
-    nonisolated static func chroma(from buffer: AVAudioPCMBuffer) -> [Float]? {
-        guard let data = buffer.floatChannelData?[0] else { return nil }
-        let n = Int(buffer.frameLength)
-        guard n >= 2048 else { return nil }
-        let sampleRate = Float(buffer.format.sampleRate)
-
-        var rms: Float = 0
-        vDSP_rmsqv(data, 1, &rms, vDSP_Length(n))
-        guard rms > 0.01 else { return nil }
-
-        let log2n = vDSP_Length(floor(log2(Float(n))))
-        let fftN = 1 << Int(log2n)
-        guard let setup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2)) else { return nil }
-        defer { vDSP_destroy_fftsetup(setup) }
-
-        var window = [Float](repeating: 0, count: fftN)
-        vDSP_hann_window(&window, vDSP_Length(fftN), Int32(vDSP_HANN_NORM))
-        var windowed = [Float](repeating: 0, count: fftN)
-        vDSP_vmul(data, 1, window, 1, &windowed, 1, vDSP_Length(fftN))
-
-        var real = [Float](repeating: 0, count: fftN / 2)
-        var imag = [Float](repeating: 0, count: fftN / 2)
-        var magnitudes = [Float](repeating: 0, count: fftN / 2)
-        real.withUnsafeMutableBufferPointer { rp in
-            imag.withUnsafeMutableBufferPointer { ip in
-                var split = DSPSplitComplex(realp: rp.baseAddress!, imagp: ip.baseAddress!)
-                windowed.withUnsafeBufferPointer { wp in
-                    wp.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: fftN / 2) {
-                        vDSP_ctoz($0, 2, &split, 1, vDSP_Length(fftN / 2))
-                    }
-                }
-                vDSP_fft_zrip(setup, &split, 1, log2n, FFTDirection(FFT_FORWARD))
-                vDSP_zvmags(&split, 1, &magnitudes, 1, vDSP_Length(fftN / 2))
-            }
+    private func observeAudioChanges(engine: AVAudioEngine, token: UInt64) {
+        for (name, object, message) in [
+            (AVAudioSession.interruptionNotification, nil as AnyObject?, "The microphone was interrupted. Start the drill again."),
+            (AVAudioSession.routeChangeNotification, nil, "The audio input changed. Start the drill again."),
+            (Notification.Name.AVAudioEngineConfigurationChange, engine, "The microphone configuration changed. Start the drill again.")
+        ] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) {
+                [weak self] _ in
+                Task { @MainActor [weak self] in self?.interrupt(token: token, message: message) }
+            })
         }
-
-        var chroma = [Float](repeating: 0, count: 12)
-        let binHz = sampleRate / Float(fftN)
-        for bin in 1..<(fftN / 2) {
-            let freq = Float(bin) * binHz
-            guard freq > 70, freq < 1100 else { continue }
-            let midi = 69 + 12 * log2(freq / 440)
-            let pc = ((Int(midi.rounded()) % 12) + 12) % 12
-            chroma[pc] += magnitudes[bin]
-        }
-        var total: Float = 0
-        vDSP_sve(chroma, 1, &total, 12)
-        guard total > 0 else { return nil }
-        return chroma.map { $0 / total }
     }
 
-    nonisolated static func cosine(_ a: [Float], _ b: [Float]) -> Float {
-        var dot: Float = 0, na: Float = 0, nb: Float = 0
-        vDSP_dotpr(a, 1, b, 1, &dot, 12)
-        vDSP_svesq(a, 1, &na, 12)
-        vDSP_svesq(b, 1, &nb, 12)
-        guard na > 0, nb > 0 else { return 0 }
-        return dot / (sqrt(na) * sqrt(nb))
+    private func interrupt(token: UInt64, message: String) {
+        guard generation == token else { return }
+        stop()
+        failure = message
+    }
+
+    deinit {
+        worker?.cancel()
+        observers.forEach(NotificationCenter.default.removeObserver)
+        if tapInstalled { engine?.inputNode.removeTap(onBus: 0) }
+        engine?.stop()
+        if sessionActive {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 }

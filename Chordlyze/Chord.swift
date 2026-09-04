@@ -83,7 +83,7 @@ struct Chord: Hashable {
     init?(display: String) {
         guard display != "N.C." else { return nil }
         let parts = display.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
-        guard let (root, suffix) = Self.note(parts[0]) else { return nil }
+        guard let first = parts.first, let (root, suffix) = Self.note(first) else { return nil }
         var bass: Int?
         if parts.count > 1 {
             guard let (pc, trailing) = Self.note(parts[1]), trailing.isEmpty else { return nil }

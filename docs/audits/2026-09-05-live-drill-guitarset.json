@@ -1,0 +1,4452 @@
+{
+  "archive_md5": {
+    "annotation.zip": "b39b78e63d3446f2e54ddb7a54df9b10",
+    "audio_mono-mic.zip": "275966d6610ac34999b58426beb119c3"
+  },
+  "dataset": "https://zenodo.org/records/3371780",
+  "evaluations": {
+    "current": {
+      "dev": {
+        "audio_seconds": 1802.132,
+        "full_timeline": {
+          "accepted_precision": 0.946873,
+          "accepted_seconds": 169.566564,
+          "correct_seconds": 160.557941,
+          "false_accept_non_target_seconds": 5.912133,
+          "incorrect_seconds": 9.008623,
+          "non_target_false_accept_rate": 0.0067,
+          "non_target_seconds": 882.407164,
+          "recognized_segments": 190,
+          "scored_seconds": 1802.132,
+          "target_seconds": 919.724836,
+          "target_segment_recall": 0.641892,
+          "target_segments": 296,
+          "target_time_coverage": 0.174572
+        },
+        "interior": {
+          "accepted_precision": 0.958236,
+          "accepted_seconds": 153.715296,
+          "correct_seconds": 147.2955,
+          "false_accept_non_target_seconds": 4.28356,
+          "incorrect_seconds": 6.419796,
+          "non_target_false_accept_rate": 0.007431,
+          "non_target_seconds": 576.407164,
+          "recognized_segments": 180,
+          "scored_seconds": 1274.132,
+          "target_seconds": 697.724836,
+          "target_segment_recall": 0.608108,
+          "target_segments": 296,
+          "target_time_coverage": 0.211108
+        },
+        "per_track": [
+          {
+            "accepted_precision": 0.069218,
+            "accepted_seconds": 0.848188,
+            "correct_seconds": 0.05871,
+            "false_accept_non_target_seconds": 0.789478,
+            "id": "00_BN1-129-Eb_comp",
+            "incorrect_seconds": 0.789478,
+            "non_target_false_accept_rate": 0.088578,
+            "non_target_seconds": 8.912791,
+            "recognized_segments": 1,
+            "scored_seconds": 17.8244,
+            "target_seconds": 8.911609,
+            "target_segment_recall": 0.333333,
+            "target_segments": 3,
+            "target_time_coverage": 0.006588,
+            "targets": [
+              "D#maj7",
+              "Fm"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.300317,
+            "correct_seconds": 1.300317,
+            "id": "00_BN1-147-Gb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 1.765306,
+            "recognized_segments": 3,
+            "scored_seconds": 15.0856,
+            "target_seconds": 13.320294,
+            "target_segment_recall": 0.75,
+            "target_segments": 4,
+            "target_time_coverage": 0.097619,
+            "targets": [
+              "F#maj7",
+              "F\u00f87"
+            ]
+          },
+          {
+            "accepted_precision": 0.333333,
+            "accepted_seconds": 0.557279,
+            "correct_seconds": 0.18576,
+            "id": "00_BN2-131-B_comp",
+            "incorrect_seconds": 0.371519,
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 10.820611,
+            "recognized_segments": 1,
+            "scored_seconds": 18.8064,
+            "target_seconds": 7.985789,
+            "target_segment_recall": 0.25,
+            "target_segments": 4,
+            "target_time_coverage": 0.023261,
+            "targets": [
+              "Gmaj7",
+              "D6"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "00_BN2-166-Ab_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 9.096867,
+            "recognized_segments": 0,
+            "scored_seconds": 12.63,
+            "target_seconds": 3.533133,
+            "target_segment_recall": 0.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "C#7sus4",
+              "C#m6"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.371519,
+            "correct_seconds": 0.371519,
+            "id": "00_BN3-119-G_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 16.46278,
+            "recognized_segments": 1,
+            "scored_seconds": 20.2632,
+            "target_seconds": 3.80042,
+            "target_segment_recall": 0.333333,
+            "target_segments": 3,
+            "target_time_coverage": 0.097757,
+            "targets": [
+              "D6",
+              "Csus2"
+            ]
+          },
+          {
+            "accepted_precision": 0.753678,
+            "accepted_seconds": 0.377067,
+            "correct_seconds": 0.284187,
+            "false_accept_non_target_seconds": 0.09288,
+            "id": "00_BN3-154-E_comp",
+            "incorrect_seconds": 0.09288,
+            "non_target_false_accept_rate": 0.011493,
+            "non_target_seconds": 8.081351,
+            "recognized_segments": 1,
+            "scored_seconds": 12.932,
+            "target_seconds": 4.850649,
+            "target_segment_recall": 0.166667,
+            "target_segments": 6,
+            "target_time_coverage": 0.058587,
+            "targets": [
+              "Emaj7",
+              "A"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.18576,
+            "correct_seconds": 0.18576,
+            "id": "00_Funk1-114-Ab_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 2.710526,
+            "recognized_segments": 1,
+            "scored_seconds": 20.7584,
+            "target_seconds": 18.047874,
+            "target_segment_recall": 0.25,
+            "target_segments": 4,
+            "target_time_coverage": 0.010293,
+            "targets": [
+              "G#",
+              "C#7"
+            ]
+          },
+          {
+            "accepted_precision": 0.119048,
+            "accepted_seconds": 1.950476,
+            "correct_seconds": 0.2322,
+            "id": "00_Funk1-97-C_comp",
+            "incorrect_seconds": 1.718277,
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 7.646907,
+            "recognized_segments": 2,
+            "scored_seconds": 25.1884,
+            "target_seconds": 17.541493,
+            "target_segment_recall": 0.666667,
+            "target_segments": 3,
+            "target_time_coverage": 0.013237,
+            "targets": [
+              "C7",
+              "C"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.743039,
+            "correct_seconds": 0.743039,
+            "id": "00_Funk2-108-Eb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 18.409511,
+            "recognized_segments": 2,
+            "scored_seconds": 25.0484,
+            "target_seconds": 6.638889,
+            "target_segment_recall": 0.666667,
+            "target_segments": 3,
+            "target_time_coverage": 0.111922,
+            "targets": [
+              "D#m7",
+              "B"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.325079,
+            "correct_seconds": 0.325079,
+            "id": "00_Funk2-119-G_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 15.945973,
+            "recognized_segments": 1,
+            "scored_seconds": 21.7632,
+            "target_seconds": 5.817227,
+            "target_segment_recall": 0.333333,
+            "target_segments": 3,
+            "target_time_coverage": 0.055882,
+            "targets": [
+              "F7",
+              "Gm7"
+            ]
+          },
+          {
+            "accepted_precision": 0.667288,
+            "accepted_seconds": 2.093696,
+            "correct_seconds": 1.397098,
+            "false_accept_non_target_seconds": 0.696599,
+            "id": "00_Funk3-112-C#_comp",
+            "incorrect_seconds": 0.696599,
+            "non_target_false_accept_rate": 0.055575,
+            "non_target_seconds": 12.5344,
+            "recognized_segments": 4,
+            "scored_seconds": 22.2844,
+            "target_seconds": 9.75,
+            "target_segment_recall": 0.571429,
+            "target_segments": 7,
+            "target_time_coverage": 0.143292,
+            "targets": [
+              "F#",
+              "C#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.439637,
+            "correct_seconds": 1.439637,
+            "id": "00_Funk3-98-A_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 15.285943,
+            "recognized_segments": 5,
+            "scored_seconds": 27.1788,
+            "target_seconds": 11.892857,
+            "target_segment_recall": 0.714286,
+            "target_segments": 7,
+            "target_time_coverage": 0.121051,
+            "targets": [
+              "A",
+              "D"
+            ]
+          },
+          {
+            "accepted_precision": 0.930233,
+            "accepted_seconds": 1.996916,
+            "correct_seconds": 1.857596,
+            "false_accept_non_target_seconds": 0.13932,
+            "id": "00_Jazz1-130-D_comp",
+            "incorrect_seconds": 0.13932,
+            "non_target_false_accept_rate": 0.027169,
+            "non_target_seconds": 5.127969,
+            "recognized_segments": 3,
+            "scored_seconds": 17.6472,
+            "target_seconds": 12.519231,
+            "target_segment_recall": 1.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.148379,
+            "targets": [
+              "D7",
+              "G7"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.278639,
+            "correct_seconds": 0.278639,
+            "id": "00_Jazz1-200-B_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 6.15,
+            "recognized_segments": 1,
+            "scored_seconds": 9.9,
+            "target_seconds": 3.75,
+            "target_segment_recall": 0.333333,
+            "target_segments": 3,
+            "target_time_coverage": 0.074304,
+            "targets": [
+              "B",
+              "F#9"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 3.093476,
+            "correct_seconds": 3.093476,
+            "id": "00_Jazz2-110-Bb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 15.75,
+            "recognized_segments": 3,
+            "scored_seconds": 24.4032,
+            "target_seconds": 8.6532,
+            "target_segment_recall": 1.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.357495,
+            "targets": [
+              "C#6",
+              "C#7"
+            ]
+          },
+          {
+            "accepted_precision": 0.95,
+            "accepted_seconds": 0.928798,
+            "correct_seconds": 0.882358,
+            "id": "00_Jazz2-187-F#_comp",
+            "incorrect_seconds": 0.04644,
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 5.334225,
+            "recognized_segments": 2,
+            "scored_seconds": 10.032,
+            "target_seconds": 4.697775,
+            "target_segment_recall": 0.5,
+            "target_segments": 4,
+            "target_time_coverage": 0.187825,
+            "targets": [
+              "F#m",
+              "Dmaj7"
+            ]
+          },
+          {
+            "accepted_precision": 0.627329,
+            "accepted_seconds": 3.613795,
+            "correct_seconds": 2.267038,
+            "false_accept_non_target_seconds": 1.346757,
+            "id": "00_Jazz3-137-Eb_comp",
+            "incorrect_seconds": 1.346757,
+            "non_target_false_accept_rate": 0.134511,
+            "non_target_seconds": 10.012251,
+            "recognized_segments": 5,
+            "scored_seconds": 16.0232,
+            "target_seconds": 6.010949,
+            "target_segment_recall": 0.833333,
+            "target_segments": 6,
+            "target_time_coverage": 0.377151,
+            "targets": [
+              "Gm",
+              "G#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.148753,
+            "correct_seconds": 1.148753,
+            "id": "00_Jazz3-150-C_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 7.65,
+            "recognized_segments": 5,
+            "scored_seconds": 13.6,
+            "target_seconds": 5.95,
+            "target_segment_recall": 0.714286,
+            "target_segments": 7,
+            "target_time_coverage": 0.193068,
+            "targets": [
+              "C6",
+              "Fmaj7"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 5.663096,
+            "correct_seconds": 5.663096,
+            "id": "00_Rock1-130-A_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 2.192308,
+            "recognized_segments": 4,
+            "scored_seconds": 17.6472,
+            "target_seconds": 15.454892,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.366427,
+            "targets": [
+              "A",
+              "D"
+            ]
+          },
+          {
+            "accepted_precision": 0.930438,
+            "accepted_seconds": 4.005624,
+            "correct_seconds": 3.726984,
+            "false_accept_non_target_seconds": 0.278639,
+            "id": "00_Rock1-90-C#_comp",
+            "incorrect_seconds": 0.278639,
+            "non_target_false_accept_rate": 0.042868,
+            "non_target_seconds": 6.5,
+            "recognized_segments": 4,
+            "scored_seconds": 27.5,
+            "target_seconds": 21.0,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.177475,
+            "targets": [
+              "C#",
+              "F#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.3581,
+            "correct_seconds": 1.3581,
+            "id": "00_Rock2-142-D_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 12.781037,
+            "recognized_segments": 3,
+            "scored_seconds": 16.5416,
+            "target_seconds": 3.760563,
+            "target_segment_recall": 0.75,
+            "target_segments": 4,
+            "target_time_coverage": 0.361143,
+            "targets": [
+              "A7",
+              "F"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 5.732826,
+            "correct_seconds": 5.732826,
+            "id": "00_Rock2-85-F_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 20.735294,
+            "recognized_segments": 4,
+            "scored_seconds": 34.6732,
+            "target_seconds": 13.937906,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.411312,
+            "targets": [
+              "Fm",
+              "D#7"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 3.662756,
+            "correct_seconds": 3.662756,
+            "id": "00_Rock3-117-Bb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 10.406144,
+            "recognized_segments": 7,
+            "scored_seconds": 20.8164,
+            "target_seconds": 10.410256,
+            "target_segment_recall": 0.875,
+            "target_segments": 8,
+            "target_time_coverage": 0.351841,
+            "targets": [
+              "A#",
+              "D#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.921243,
+            "correct_seconds": 1.921243,
+            "id": "00_Rock3-148-C_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 6.967827,
+            "recognized_segments": 7,
+            "scored_seconds": 13.9408,
+            "target_seconds": 6.972973,
+            "target_segment_recall": 0.875,
+            "target_segments": 8,
+            "target_time_coverage": 0.275527,
+            "targets": [
+              "C",
+              "F"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 7.688912,
+            "correct_seconds": 7.688912,
+            "id": "00_SS1-100-C#_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 1.65,
+            "recognized_segments": 5,
+            "scored_seconds": 24.3,
+            "target_seconds": 22.65,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.339466,
+            "targets": [
+              "C#",
+              "F#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 12.138928,
+            "correct_seconds": 12.138928,
+            "id": "00_SS1-68-E_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 2.779412,
+            "recognized_segments": 4,
+            "scored_seconds": 37.8464,
+            "target_seconds": 35.066988,
+            "target_segment_recall": 0.8,
+            "target_segments": 5,
+            "target_time_coverage": 0.346164,
+            "targets": [
+              "E",
+              "A"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.237813,
+            "correct_seconds": 1.237813,
+            "id": "00_SS2-107-Ab_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 14.929907,
+            "recognized_segments": 2,
+            "scored_seconds": 25.3864,
+            "target_seconds": 10.456493,
+            "target_segment_recall": 0.5,
+            "target_segments": 4,
+            "target_time_coverage": 0.118377,
+            "targets": [
+              "G#m",
+              "C#m6"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.787794,
+            "correct_seconds": 1.787794,
+            "id": "00_SS2-88-F_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 19.772727,
+            "recognized_segments": 4,
+            "scored_seconds": 33.1292,
+            "target_seconds": 13.356473,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.133852,
+            "targets": [
+              "Fm",
+              "A#m"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.346757,
+            "correct_seconds": 1.346757,
+            "id": "00_SS3-84-Bb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 21.064743,
+            "recognized_segments": 4,
+            "scored_seconds": 33.7076,
+            "target_seconds": 12.642857,
+            "target_segment_recall": 0.666667,
+            "target_segments": 6,
+            "target_time_coverage": 0.106523,
+            "targets": [
+              "D#",
+              "A#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 4.933197,
+            "correct_seconds": 4.933197,
+            "id": "00_SS3-98-C_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 13.586963,
+            "recognized_segments": 8,
+            "scored_seconds": 27.1788,
+            "target_seconds": 13.591837,
+            "target_segment_recall": 1.0,
+            "target_segments": 8,
+            "target_time_coverage": 0.362953,
+            "targets": [
+              "F",
+              "C"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.656691,
+            "correct_seconds": 0.656691,
+            "id": "01_BN1-129-Eb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 1.110465,
+            "recognized_segments": 4,
+            "scored_seconds": 17.8244,
+            "target_seconds": 16.713935,
+            "target_segment_recall": 0.8,
+            "target_segments": 5,
+            "target_time_coverage": 0.03929,
+            "targets": [
+              "D#",
+              "G#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 5.479251,
+            "correct_seconds": 5.479251,
+            "id": "01_BN1-147-Gb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 0.882653,
+            "recognized_segments": 5,
+            "scored_seconds": 15.0856,
+            "target_seconds": 14.202947,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.385783,
+            "targets": [
+              "F#",
+              "B"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.160998,
+            "correct_seconds": 1.160998,
+            "id": "01_BN2-131-B_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 10.820611,
+            "recognized_segments": 3,
+            "scored_seconds": 18.8064,
+            "target_seconds": 7.985789,
+            "target_segment_recall": 0.75,
+            "target_segments": 4,
+            "target_time_coverage": 0.145383,
+            "targets": [
+              "Bm",
+              "D"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.323273,
+            "correct_seconds": 0.323273,
+            "id": "01_BN2-166-Ab_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 6.957831,
+            "recognized_segments": 2,
+            "scored_seconds": 12.63,
+            "target_seconds": 5.672169,
+            "target_segment_recall": 0.5,
+            "target_segments": 4,
+            "target_time_coverage": 0.056993,
+            "targets": [
+              "G#m",
+              "C#m"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.354095,
+            "correct_seconds": 0.354095,
+            "id": "01_BN3-119-G_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 10.128746,
+            "recognized_segments": 2,
+            "scored_seconds": 20.2632,
+            "target_seconds": 10.134454,
+            "target_segment_recall": 0.25,
+            "target_segments": 8,
+            "target_time_coverage": 0.03494,
+            "targets": [
+              "C",
+              "G"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.562826,
+            "correct_seconds": 0.562826,
+            "id": "01_BN3-154-E_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 7.272909,
+            "recognized_segments": 2,
+            "scored_seconds": 12.932,
+            "target_seconds": 5.659091,
+            "target_segment_recall": 0.285714,
+            "target_segments": 7,
+            "target_time_coverage": 0.099455,
+            "targets": [
+              "A",
+              "E"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "01_Funk1-114-Ab_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 6.166295,
+            "recognized_segments": 0,
+            "scored_seconds": 20.7584,
+            "target_seconds": 14.592105,
+            "target_segment_recall": 0.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "G#m",
+              "C#m"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "01_Funk1-97-C_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 1.724227,
+            "recognized_segments": 0,
+            "scored_seconds": 25.1884,
+            "target_seconds": 23.464173,
+            "target_segment_recall": 0.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "C",
+              "F"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "01_Funk2-108-Eb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 19.159511,
+            "recognized_segments": 0,
+            "scored_seconds": 25.0484,
+            "target_seconds": 5.888889,
+            "target_segment_recall": 0.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "A#",
+              "F#"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "01_Funk2-119-G_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 12.668067,
+            "recognized_segments": 0,
+            "scored_seconds": 21.7632,
+            "target_seconds": 9.095133,
+            "target_segment_recall": 0.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "Gm",
+              "A"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.2322,
+            "correct_seconds": 0.2322,
+            "id": "01_Funk3-112-C#_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 11.141543,
+            "recognized_segments": 2,
+            "scored_seconds": 22.2844,
+            "target_seconds": 11.142857,
+            "target_segment_recall": 0.25,
+            "target_segments": 8,
+            "target_time_coverage": 0.020838,
+            "targets": [
+              "C#",
+              "F#"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "01_Funk3-98-A_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 13.586963,
+            "recognized_segments": 0,
+            "scored_seconds": 27.1788,
+            "target_seconds": 13.591837,
+            "target_segment_recall": 0.0,
+            "target_segments": 8,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "D",
+              "A"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.486077,
+            "correct_seconds": 1.486077,
+            "id": "01_Jazz1-130-D_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 2.192308,
+            "recognized_segments": 3,
+            "scored_seconds": 17.6472,
+            "target_seconds": 15.454892,
+            "target_segment_recall": 0.75,
+            "target_segments": 4,
+            "target_time_coverage": 0.096156,
+            "targets": [
+              "D",
+              "G"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.13932,
+            "correct_seconds": 0.13932,
+            "id": "01_Jazz1-200-B_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 0.45,
+            "recognized_segments": 1,
+            "scored_seconds": 9.9,
+            "target_seconds": 9.45,
+            "target_segment_recall": 0.2,
+            "target_segments": 5,
+            "target_time_coverage": 0.014743,
+            "targets": [
+              "B",
+              "E"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.532517,
+            "correct_seconds": 1.532517,
+            "id": "01_Jazz2-110-Bb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 18.675927,
+            "recognized_segments": 4,
+            "scored_seconds": 24.4032,
+            "target_seconds": 5.727273,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.267582,
+            "targets": [
+              "C#",
+              "F7"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "01_Jazz2-187-F#_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 5.334225,
+            "recognized_segments": 0,
+            "scored_seconds": 10.032,
+            "target_seconds": 4.697775,
+            "target_segment_recall": 0.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "F#m",
+              "C#7"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.068118,
+            "correct_seconds": 1.068118,
+            "id": "01_Jazz3-137-Eb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 8.008601,
+            "recognized_segments": 6,
+            "scored_seconds": 16.0232,
+            "target_seconds": 8.014599,
+            "target_segment_recall": 0.75,
+            "target_segments": 8,
+            "target_time_coverage": 0.133272,
+            "targets": [
+              "D#",
+              "G#"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "01_Jazz3-150-C_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 6.8,
+            "recognized_segments": 0,
+            "scored_seconds": 13.6,
+            "target_seconds": 6.8,
+            "target_segment_recall": 0.0,
+            "target_segments": 8,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "G",
+              "C"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.234579,
+            "correct_seconds": 0.234579,
+            "id": "01_Rock1-130-A_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 4.038462,
+            "recognized_segments": 2,
+            "scored_seconds": 17.6472,
+            "target_seconds": 13.608738,
+            "target_segment_recall": 0.5,
+            "target_segments": 4,
+            "target_time_coverage": 0.017237,
+            "targets": [
+              "A",
+              "E"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 11.930454,
+            "correct_seconds": 11.930454,
+            "id": "01_Rock1-90-C#_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 1.916667,
+            "recognized_segments": 5,
+            "scored_seconds": 27.5,
+            "target_seconds": 25.583333,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.466337,
+            "targets": [
+              "C#",
+              "F#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.074555,
+            "correct_seconds": 1.074555,
+            "id": "01_Rock2-142-D_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 9.401408,
+            "recognized_segments": 3,
+            "scored_seconds": 16.5416,
+            "target_seconds": 7.140192,
+            "target_segment_recall": 0.75,
+            "target_segments": 4,
+            "target_time_coverage": 0.150494,
+            "targets": [
+              "Dm",
+              "F"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 6.366804,
+            "correct_seconds": 6.366804,
+            "id": "01_Rock2-85-F_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 20.735294,
+            "recognized_segments": 4,
+            "scored_seconds": 34.6732,
+            "target_seconds": 13.937906,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.456798,
+            "targets": [
+              "Fm",
+              "A#m"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.050628,
+            "correct_seconds": 1.050628,
+            "id": "01_Rock3-117-Bb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 10.406144,
+            "recognized_segments": 6,
+            "scored_seconds": 20.8164,
+            "target_seconds": 10.410256,
+            "target_segment_recall": 0.75,
+            "target_segments": 8,
+            "target_time_coverage": 0.100922,
+            "targets": [
+              "A#",
+              "D#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.393197,
+            "correct_seconds": 1.393197,
+            "id": "01_SS1-100-C#_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 1.65,
+            "recognized_segments": 5,
+            "scored_seconds": 24.3,
+            "target_seconds": 22.65,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.06151,
+            "targets": [
+              "C#",
+              "F#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 24.081635,
+            "correct_seconds": 24.081635,
+            "id": "01_SS1-68-E_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 2.779412,
+            "recognized_segments": 5,
+            "scored_seconds": 37.8464,
+            "target_seconds": 35.066988,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.686732,
+            "targets": [
+              "E",
+              "A"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "01_SS2-107-Ab_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 19.414437,
+            "recognized_segments": 0,
+            "scored_seconds": 25.3864,
+            "target_seconds": 5.971963,
+            "target_segment_recall": 0.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "A#7",
+              "C#m"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 3.575873,
+            "correct_seconds": 3.575873,
+            "id": "01_SS2-88-F_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 19.772727,
+            "recognized_segments": 4,
+            "scored_seconds": 33.1292,
+            "target_seconds": 13.356473,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.267726,
+            "targets": [
+              "Fm",
+              "G#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 10.276648,
+            "correct_seconds": 10.276648,
+            "id": "01_SS3-84-Bb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 16.857143,
+            "recognized_segments": 8,
+            "scored_seconds": 33.7076,
+            "target_seconds": 16.850457,
+            "target_segment_recall": 1.0,
+            "target_segments": 8,
+            "target_time_coverage": 0.609874,
+            "targets": [
+              "D#",
+              "F"
+            ]
+          },
+          {
+            "accepted_precision": 0.882603,
+            "accepted_seconds": 8.006077,
+            "correct_seconds": 7.06619,
+            "false_accept_non_target_seconds": 0.939887,
+            "id": "01_SS3-98-C_comp",
+            "incorrect_seconds": 0.939887,
+            "non_target_false_accept_rate": 0.061467,
+            "non_target_seconds": 15.290816,
+            "recognized_segments": 7,
+            "scored_seconds": 27.1788,
+            "target_seconds": 11.887984,
+            "target_segment_recall": 1.0,
+            "target_segments": 7,
+            "target_time_coverage": 0.594398,
+            "targets": [
+              "F",
+              "G"
+            ]
+          }
+        ],
+        "processing_seconds": 34.58211654133629,
+        "tracks": 59
+      },
+      "holdout": {
+        "audio_seconds": 1662.9779999999998,
+        "full_timeline": {
+          "accepted_precision": 0.947135,
+          "accepted_seconds": 129.144363,
+          "correct_seconds": 122.317203,
+          "false_accept_non_target_seconds": 5.14081,
+          "incorrect_seconds": 6.827159,
+          "non_target_false_accept_rate": 0.005644,
+          "non_target_seconds": 910.793642,
+          "recognized_segments": 161,
+          "scored_seconds": 1658.614364,
+          "target_seconds": 747.820722,
+          "target_segment_recall": 0.633858,
+          "target_segments": 254,
+          "target_time_coverage": 0.163565,
+          "unscored_seconds": 4.363636
+        },
+        "interior": {
+          "accepted_precision": 0.968462,
+          "accepted_seconds": 116.321835,
+          "correct_seconds": 112.653278,
+          "false_accept_non_target_seconds": 3.018398,
+          "incorrect_seconds": 3.668557,
+          "non_target_false_accept_rate": 0.005034,
+          "non_target_seconds": 599.543642,
+          "recognized_segments": 151,
+          "scored_seconds": 1156.864364,
+          "target_seconds": 557.320722,
+          "target_segment_recall": 0.594488,
+          "target_segments": 254,
+          "target_time_coverage": 0.202134,
+          "unscored_seconds": 3.613636
+        },
+        "per_track": [
+          {
+            "accepted_precision": null,
+            "id": "04_BN1-129-Eb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 1.110465,
+            "recognized_segments": 0,
+            "scored_seconds": 17.8244,
+            "target_seconds": 16.713935,
+            "target_segment_recall": 0.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "D#maj7",
+              "G#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.068118,
+            "correct_seconds": 1.068118,
+            "id": "04_BN1-147-Gb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 3.397959,
+            "recognized_segments": 3,
+            "scored_seconds": 15.0856,
+            "target_seconds": 11.687641,
+            "target_segment_recall": 0.75,
+            "target_segments": 4,
+            "target_time_coverage": 0.091389,
+            "targets": [
+              "F#maj7",
+              "C#maj7"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "04_BN2-131-B_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 13.728156,
+            "recognized_segments": 0,
+            "scored_seconds": 18.8064,
+            "target_seconds": 5.078244,
+            "target_segment_recall": 0.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "Gmaj7",
+              "D6"
+            ]
+          },
+          {
+            "accepted_precision": 0.297347,
+            "accepted_seconds": 0.780905,
+            "correct_seconds": 0.2322,
+            "false_accept_non_target_seconds": 0.502266,
+            "id": "04_BN2-166-Ab_comp",
+            "incorrect_seconds": 0.548706,
+            "non_target_false_accept_rate": 0.060156,
+            "non_target_seconds": 8.349398,
+            "recognized_segments": 1,
+            "scored_seconds": 12.63,
+            "target_seconds": 4.280602,
+            "target_segment_recall": 0.5,
+            "target_segments": 2,
+            "target_time_coverage": 0.054245,
+            "targets": [
+              "G#m9",
+              "G#m7"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.464399,
+            "correct_seconds": 0.464399,
+            "id": "04_BN3-119-G_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 13.929166,
+            "recognized_segments": 3,
+            "scored_seconds": 20.2632,
+            "target_seconds": 6.334034,
+            "target_segment_recall": 0.6,
+            "target_segments": 5,
+            "target_time_coverage": 0.073318,
+            "targets": [
+              "Gmaj7",
+              "Cmaj7"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.516386,
+            "correct_seconds": 0.516386,
+            "id": "04_BN3-154-E_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 8.081351,
+            "recognized_segments": 4,
+            "scored_seconds": 12.932,
+            "target_seconds": 4.850649,
+            "target_segment_recall": 0.666667,
+            "target_segments": 6,
+            "target_time_coverage": 0.106457,
+            "targets": [
+              "Emaj7",
+              "G#m7"
+            ]
+          },
+          {
+            "accepted_precision": 0.747508,
+            "accepted_seconds": 0.228241,
+            "correct_seconds": 0.170612,
+            "false_accept_non_target_seconds": 0.057629,
+            "id": "04_Funk2-108-Eb_comp",
+            "incorrect_seconds": 0.057629,
+            "non_target_false_accept_rate": 0.00313,
+            "non_target_seconds": 18.409511,
+            "recognized_segments": 1,
+            "scored_seconds": 25.0484,
+            "target_seconds": 6.638889,
+            "target_segment_recall": 0.333333,
+            "target_segments": 3,
+            "target_time_coverage": 0.025699,
+            "targets": [
+              "F#",
+              "F\u00f87"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.04644,
+            "correct_seconds": 0.04644,
+            "id": "04_Funk2-119-G_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 10.134454,
+            "recognized_segments": 1,
+            "scored_seconds": 21.7632,
+            "target_seconds": 11.628746,
+            "target_segment_recall": 0.166667,
+            "target_segments": 6,
+            "target_time_coverage": 0.003994,
+            "targets": [
+              "A#maj7",
+              "D#maj7"
+            ]
+          },
+          {
+            "accepted_precision": 0.700742,
+            "accepted_seconds": 0.611338,
+            "correct_seconds": 0.42839,
+            "false_accept_non_target_seconds": 0.182948,
+            "id": "04_Funk3-112-C#_comp",
+            "incorrect_seconds": 0.182948,
+            "non_target_false_accept_rate": 0.011942,
+            "non_target_seconds": 15.320114,
+            "recognized_segments": 4,
+            "scored_seconds": 22.2844,
+            "target_seconds": 6.964286,
+            "target_segment_recall": 0.8,
+            "target_segments": 5,
+            "target_time_coverage": 0.061512,
+            "targets": [
+              "F#maj7",
+              "C#maj7"
+            ]
+          },
+          {
+            "accepted_precision": 0.4,
+            "accepted_seconds": 0.2322,
+            "correct_seconds": 0.09288,
+            "false_accept_non_target_seconds": 0.13932,
+            "id": "04_Funk3-98-A_comp",
+            "incorrect_seconds": 0.13932,
+            "non_target_false_accept_rate": 0.006309,
+            "non_target_seconds": 22.081861,
+            "recognized_segments": 1,
+            "scored_seconds": 27.1788,
+            "target_seconds": 5.096939,
+            "target_segment_recall": 0.333333,
+            "target_segments": 3,
+            "target_time_coverage": 0.018223,
+            "targets": [
+              "A7",
+              "Dmaj7"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "04_Jazz1-200-B_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 2.1,
+            "recognized_segments": 0,
+            "scored_seconds": 9.9,
+            "target_seconds": 7.8,
+            "target_segment_recall": 0.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "B7",
+              "C#m7"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.381925,
+            "correct_seconds": 1.381925,
+            "id": "04_Jazz2-110-Bb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 14.318182,
+            "recognized_segments": 3,
+            "scored_seconds": 20.789564,
+            "target_seconds": 6.471382,
+            "target_segment_recall": 1.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.213544,
+            "targets": [
+              "F#maj7",
+              "C#6"
+            ],
+            "unscored_seconds": 3.613636
+          },
+          {
+            "accepted_precision": null,
+            "id": "04_Jazz2-187-F#_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 8.431733,
+            "recognized_segments": 0,
+            "scored_seconds": 10.032,
+            "target_seconds": 1.600267,
+            "target_segment_recall": 0.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "Dmaj7",
+              "D6"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.561741,
+            "correct_seconds": 1.561741,
+            "id": "04_Jazz3-137-Eb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 10.012251,
+            "recognized_segments": 4,
+            "scored_seconds": 16.0232,
+            "target_seconds": 6.010949,
+            "target_segment_recall": 0.666667,
+            "target_segments": 6,
+            "target_time_coverage": 0.259816,
+            "targets": [
+              "G#maj7",
+              "Gm7"
+            ]
+          },
+          {
+            "accepted_precision": 0.875622,
+            "accepted_seconds": 0.746757,
+            "correct_seconds": 0.653878,
+            "false_accept_non_target_seconds": 0.09288,
+            "id": "04_Jazz3-150-C_comp",
+            "incorrect_seconds": 0.09288,
+            "non_target_false_accept_rate": 0.009106,
+            "non_target_seconds": 10.2,
+            "recognized_segments": 3,
+            "scored_seconds": 13.6,
+            "target_seconds": 3.4,
+            "target_segment_recall": 0.75,
+            "target_segments": 4,
+            "target_time_coverage": 0.192317,
+            "targets": [
+              "Cmaj7",
+              "Fmaj7"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 2.757642,
+            "correct_seconds": 2.757642,
+            "id": "04_Rock1-90-C#_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 19.083333,
+            "recognized_segments": 3,
+            "scored_seconds": 27.5,
+            "target_seconds": 8.416667,
+            "target_segment_recall": 1.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.327641,
+            "targets": [
+              "F#",
+              "G#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 3.355168,
+            "correct_seconds": 3.355168,
+            "id": "04_Rock2-142-D_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 9.401408,
+            "recognized_segments": 4,
+            "scored_seconds": 16.5416,
+            "target_seconds": 7.140192,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.469899,
+            "targets": [
+              "Dm",
+              "A7"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 3.715193,
+            "correct_seconds": 3.715193,
+            "id": "04_Rock2-85-F_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 22.808824,
+            "recognized_segments": 3,
+            "scored_seconds": 34.6732,
+            "target_seconds": 11.864376,
+            "target_segment_recall": 1.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.313138,
+            "targets": [
+              "Fm",
+              "G\u00f87"
+            ]
+          },
+          {
+            "accepted_precision": 0.960521,
+            "accepted_seconds": 1.176328,
+            "correct_seconds": 1.129888,
+            "false_accept_non_target_seconds": 0.04644,
+            "id": "04_Rock3-117-Bb_comp",
+            "incorrect_seconds": 0.04644,
+            "non_target_false_accept_rate": 0.003967,
+            "non_target_seconds": 11.707426,
+            "recognized_segments": 4,
+            "scored_seconds": 20.8164,
+            "target_seconds": 9.108974,
+            "target_segment_recall": 0.571429,
+            "target_segments": 7,
+            "target_time_coverage": 0.124041,
+            "targets": [
+              "D#",
+              "A#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.613851,
+            "correct_seconds": 0.613851,
+            "id": "04_Rock3-148-C_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 7.844595,
+            "recognized_segments": 5,
+            "scored_seconds": 13.9408,
+            "target_seconds": 6.096205,
+            "target_segment_recall": 0.714286,
+            "target_segments": 7,
+            "target_time_coverage": 0.100694,
+            "targets": [
+              "G",
+              "F"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 4.922925,
+            "correct_seconds": 4.922925,
+            "id": "04_SS1-100-C#_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 1.65,
+            "recognized_segments": 4,
+            "scored_seconds": 24.3,
+            "target_seconds": 22.65,
+            "target_segment_recall": 0.8,
+            "target_segments": 5,
+            "target_time_coverage": 0.217348,
+            "targets": [
+              "C#",
+              "F#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 20.305674,
+            "correct_seconds": 20.305674,
+            "id": "04_SS1-68-E_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 2.779412,
+            "recognized_segments": 5,
+            "scored_seconds": 37.8464,
+            "target_seconds": 35.066988,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.579054,
+            "targets": [
+              "E",
+              "Esus4"
+            ]
+          },
+          {
+            "accepted_precision": 0.978566,
+            "accepted_seconds": 2.166611,
+            "correct_seconds": 2.120171,
+            "false_accept_non_target_seconds": 0.04644,
+            "id": "04_SS2-107-Ab_comp",
+            "incorrect_seconds": 0.04644,
+            "non_target_false_accept_rate": 0.003111,
+            "non_target_seconds": 14.929907,
+            "recognized_segments": 4,
+            "scored_seconds": 25.3864,
+            "target_seconds": 10.456493,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.202761,
+            "targets": [
+              "G#m",
+              "C#m6"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 5.611418,
+            "correct_seconds": 5.611418,
+            "id": "04_SS2-88-F_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 19.772727,
+            "recognized_segments": 4,
+            "scored_seconds": 33.1292,
+            "target_seconds": 13.356473,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.420127,
+            "targets": [
+              "Fm",
+              "C#maj7"
+            ]
+          },
+          {
+            "accepted_precision": 0.531723,
+            "accepted_seconds": 2.479297,
+            "correct_seconds": 1.318299,
+            "false_accept_non_target_seconds": 1.160998,
+            "id": "04_SS3-84-Bb_comp",
+            "incorrect_seconds": 1.160998,
+            "non_target_false_accept_rate": 0.061242,
+            "non_target_seconds": 18.9576,
+            "recognized_segments": 5,
+            "scored_seconds": 33.7076,
+            "target_seconds": 14.75,
+            "target_segment_recall": 0.714286,
+            "target_segments": 7,
+            "target_time_coverage": 0.089376,
+            "targets": [
+              "A#",
+              "D#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.835918,
+            "correct_seconds": 0.835918,
+            "id": "04_SS3-98-C_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 13.591837,
+            "recognized_segments": 3,
+            "scored_seconds": 27.1788,
+            "target_seconds": 13.586963,
+            "target_segment_recall": 0.375,
+            "target_segments": 8,
+            "target_time_coverage": 0.061524,
+            "targets": [
+              "C",
+              "G"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.835918,
+            "correct_seconds": 0.835918,
+            "id": "05_BN1-129-Eb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 11.883721,
+            "recognized_segments": 1,
+            "scored_seconds": 17.8244,
+            "target_seconds": 5.940679,
+            "target_segment_recall": 0.5,
+            "target_segments": 2,
+            "target_time_coverage": 0.140711,
+            "targets": [
+              "G#7",
+              "D#maj9"
+            ]
+          },
+          {
+            "accepted_precision": 0.504863,
+            "accepted_seconds": 2.438593,
+            "correct_seconds": 1.231156,
+            "false_accept_non_target_seconds": 0.603719,
+            "id": "05_BN1-147-Gb_comp",
+            "incorrect_seconds": 1.207438,
+            "non_target_false_accept_rate": 0.088836,
+            "non_target_seconds": 6.795918,
+            "recognized_segments": 2,
+            "scored_seconds": 15.0856,
+            "target_seconds": 8.289682,
+            "target_segment_recall": 1.0,
+            "target_segments": 2,
+            "target_time_coverage": 0.148517,
+            "targets": [
+              "F\u00b0",
+              "D#m"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "05_BN2-166-Ab_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 9.846867,
+            "recognized_segments": 0,
+            "scored_seconds": 12.63,
+            "target_seconds": 2.783133,
+            "target_segment_recall": 0.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "C#m6",
+              "Bmaj7"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.144826,
+            "correct_seconds": 1.144826,
+            "id": "05_BN3-119-G_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 13.929166,
+            "recognized_segments": 4,
+            "scored_seconds": 20.2632,
+            "target_seconds": 6.334034,
+            "target_segment_recall": 0.8,
+            "target_segments": 5,
+            "target_time_coverage": 0.180742,
+            "targets": [
+              "Em7",
+              "Cmaj7"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.158145,
+            "correct_seconds": 0.158145,
+            "id": "05_BN3-154-E_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 8.081351,
+            "recognized_segments": 3,
+            "scored_seconds": 12.932,
+            "target_seconds": 4.850649,
+            "target_segment_recall": 0.5,
+            "target_segments": 6,
+            "target_time_coverage": 0.032603,
+            "targets": [
+              "C#m9",
+              "A7"
+            ]
+          },
+          {
+            "accepted_precision": 0.818182,
+            "accepted_seconds": 0.510839,
+            "correct_seconds": 0.417959,
+            "false_accept_non_target_seconds": 0.09288,
+            "id": "05_Funk1-114-Ab_comp",
+            "incorrect_seconds": 0.09288,
+            "non_target_false_accept_rate": 0.011229,
+            "non_target_seconds": 8.271558,
+            "recognized_segments": 2,
+            "scored_seconds": 20.7584,
+            "target_seconds": 12.486842,
+            "target_segment_recall": 0.666667,
+            "target_segments": 3,
+            "target_time_coverage": 0.033472,
+            "targets": [
+              "G#",
+              "C#7"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.603719,
+            "correct_seconds": 0.603719,
+            "id": "05_Funk1-97-C_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 3.448454,
+            "recognized_segments": 2,
+            "scored_seconds": 25.1884,
+            "target_seconds": 21.739946,
+            "target_segment_recall": 0.5,
+            "target_segments": 4,
+            "target_time_coverage": 0.02777,
+            "targets": [
+              "C6",
+              "D\u00f87"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.396916,
+            "correct_seconds": 1.396916,
+            "id": "05_Funk2-108-Eb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 11.777778,
+            "recognized_segments": 4,
+            "scored_seconds": 25.0484,
+            "target_seconds": 13.270622,
+            "target_segment_recall": 0.666667,
+            "target_segments": 6,
+            "target_time_coverage": 0.105264,
+            "targets": [
+              "F\u00f87",
+              "D#m7"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.18576,
+            "correct_seconds": 0.18576,
+            "id": "05_Funk2-119-G_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 15.945973,
+            "recognized_segments": 1,
+            "scored_seconds": 21.7632,
+            "target_seconds": 5.817227,
+            "target_segment_recall": 0.333333,
+            "target_segments": 3,
+            "target_time_coverage": 0.031933,
+            "targets": [
+              "C\u00b07",
+              "Gm"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.526644,
+            "correct_seconds": 0.526644,
+            "id": "05_Funk3-112-C#_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 15.320114,
+            "recognized_segments": 1,
+            "scored_seconds": 22.2844,
+            "target_seconds": 6.964286,
+            "target_segment_recall": 0.2,
+            "target_segments": 5,
+            "target_time_coverage": 0.075621,
+            "targets": [
+              "A#m",
+              "Fm7"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.278639,
+            "correct_seconds": 0.278639,
+            "id": "05_Funk3-98-A_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 15.290816,
+            "recognized_segments": 2,
+            "scored_seconds": 27.1788,
+            "target_seconds": 11.887984,
+            "target_segment_recall": 0.285714,
+            "target_segments": 7,
+            "target_time_coverage": 0.023439,
+            "targets": [
+              "C#m7",
+              "D"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "05_Jazz2-110-Bb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 17.925927,
+            "recognized_segments": 0,
+            "scored_seconds": 24.4032,
+            "target_seconds": 6.477273,
+            "target_segment_recall": 0.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "A#7",
+              "C\u00f87"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "05_Jazz2-187-F#_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 7.364888,
+            "recognized_segments": 0,
+            "scored_seconds": 10.032,
+            "target_seconds": 2.667112,
+            "target_segment_recall": 0.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "D6",
+              "G#\u00f87"
+            ]
+          },
+          {
+            "accepted_precision": 0.925926,
+            "accepted_seconds": 1.253878,
+            "correct_seconds": 1.160998,
+            "false_accept_non_target_seconds": 0.09288,
+            "id": "05_Jazz3-137-Eb_comp",
+            "incorrect_seconds": 0.09288,
+            "non_target_false_accept_rate": 0.011598,
+            "non_target_seconds": 8.008601,
+            "recognized_segments": 4,
+            "scored_seconds": 16.0232,
+            "target_seconds": 8.014599,
+            "target_segment_recall": 0.5,
+            "target_segments": 8,
+            "target_time_coverage": 0.14486,
+            "targets": [
+              "D#maj7",
+              "G#maj7"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.2322,
+            "correct_seconds": 0.2322,
+            "id": "05_Jazz3-150-C_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 7.65,
+            "recognized_segments": 2,
+            "scored_seconds": 13.6,
+            "target_seconds": 5.95,
+            "target_segment_recall": 0.285714,
+            "target_segments": 7,
+            "target_time_coverage": 0.039025,
+            "targets": [
+              "Cmaj7",
+              "Fmaj7"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.990884,
+            "correct_seconds": 0.990884,
+            "id": "05_Rock1-130-A_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 6.974123,
+            "recognized_segments": 3,
+            "scored_seconds": 17.6472,
+            "target_seconds": 10.673077,
+            "target_segment_recall": 1.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.09284,
+            "targets": [
+              "A",
+              "E"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 11.091361,
+            "correct_seconds": 11.091361,
+            "id": "05_Rock1-90-C#_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 1.916667,
+            "recognized_segments": 5,
+            "scored_seconds": 27.5,
+            "target_seconds": 25.583333,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.433539,
+            "targets": [
+              "C#",
+              "F#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.09288,
+            "correct_seconds": 0.09288,
+            "id": "05_Rock2-142-D_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 12.781037,
+            "recognized_segments": 1,
+            "scored_seconds": 16.5416,
+            "target_seconds": 3.760563,
+            "target_segment_recall": 0.25,
+            "target_segments": 4,
+            "target_time_coverage": 0.024698,
+            "targets": [
+              "A",
+              "F"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 2.879274,
+            "correct_seconds": 2.879274,
+            "id": "05_Rock2-85-F_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 26.379082,
+            "recognized_segments": 4,
+            "scored_seconds": 34.6732,
+            "target_seconds": 8.294118,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.347147,
+            "targets": [
+              "G\u00f87",
+              "G#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.375186,
+            "correct_seconds": 1.375186,
+            "id": "05_Rock3-117-Bb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 10.406144,
+            "recognized_segments": 5,
+            "scored_seconds": 20.8164,
+            "target_seconds": 10.410256,
+            "target_segment_recall": 0.625,
+            "target_segments": 8,
+            "target_time_coverage": 0.132099,
+            "targets": [
+              "A#",
+              "D#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.13932,
+            "correct_seconds": 0.13932,
+            "id": "05_Rock3-148-C_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 7.839449,
+            "recognized_segments": 2,
+            "scored_seconds": 13.9408,
+            "target_seconds": 6.101351,
+            "target_segment_recall": 0.285714,
+            "target_segments": 7,
+            "target_time_coverage": 0.022834,
+            "targets": [
+              "F",
+              "C"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 10.32551,
+            "correct_seconds": 10.32551,
+            "id": "05_SS1-100-C#_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 1.65,
+            "recognized_segments": 5,
+            "scored_seconds": 24.3,
+            "target_seconds": 22.65,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.455872,
+            "targets": [
+              "C#",
+              "F#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 8.981099,
+            "correct_seconds": 8.981099,
+            "id": "05_SS1-68-E_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 2.779412,
+            "recognized_segments": 5,
+            "scored_seconds": 37.8464,
+            "target_seconds": 35.066988,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.256113,
+            "targets": [
+              "E",
+              "A"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 0.2322,
+            "correct_seconds": 0.2322,
+            "id": "05_SS2-107-Ab_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 14.929907,
+            "recognized_segments": 1,
+            "scored_seconds": 25.3864,
+            "target_seconds": 10.456493,
+            "target_segment_recall": 0.25,
+            "target_segments": 4,
+            "target_time_coverage": 0.022206,
+            "targets": [
+              "G#m",
+              "C#m6"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 2.098955,
+            "correct_seconds": 2.098955,
+            "id": "05_SS2-88-F_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 19.772727,
+            "recognized_segments": 4,
+            "scored_seconds": 33.1292,
+            "target_seconds": 13.356473,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.157149,
+            "targets": [
+              "Fm",
+              "G#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 7.801905,
+            "correct_seconds": 7.801905,
+            "id": "05_SS3-84-Bb_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 16.850457,
+            "recognized_segments": 8,
+            "scored_seconds": 33.7076,
+            "target_seconds": 16.857143,
+            "target_segment_recall": 1.0,
+            "target_segments": 8,
+            "target_time_coverage": 0.462825,
+            "targets": [
+              "D#",
+              "A#"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 5.168709,
+            "correct_seconds": 5.168709,
+            "id": "05_SS3-98-C_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 13.591837,
+            "recognized_segments": 8,
+            "scored_seconds": 27.1788,
+            "target_seconds": 13.586963,
+            "target_segment_recall": 1.0,
+            "target_segments": 8,
+            "target_time_coverage": 0.380417,
+            "targets": [
+              "C",
+              "G"
+            ]
+          }
+        ],
+        "processing_seconds": 34.72255074972054,
+        "tracks": 53
+      }
+    },
+    "legacy": {
+      "dev": {
+        "audio_seconds": 1802.132,
+        "full_timeline": {
+          "accepted_precision": 0.397781,
+          "accepted_seconds": 1462.249954,
+          "correct_seconds": 581.65589,
+          "false_accept_non_target_seconds": 678.907572,
+          "incorrect_seconds": 880.594063,
+          "non_target_false_accept_rate": 0.769381,
+          "non_target_seconds": 882.407164,
+          "recognized_segments": 225,
+          "scored_seconds": 1802.132,
+          "target_seconds": 919.724836,
+          "target_segment_recall": 0.760135,
+          "target_segments": 296,
+          "target_time_coverage": 0.632424
+        },
+        "interior": {
+          "accepted_precision": 0.475138,
+          "accepted_seconds": 1061.1512,
+          "correct_seconds": 504.193407,
+          "false_accept_non_target_seconds": 449.840247,
+          "incorrect_seconds": 556.957794,
+          "non_target_false_accept_rate": 0.780421,
+          "non_target_seconds": 576.407164,
+          "recognized_segments": 223,
+          "scored_seconds": 1274.132,
+          "target_seconds": 697.724836,
+          "target_segment_recall": 0.753378,
+          "target_segments": 296,
+          "target_time_coverage": 0.722625
+        },
+        "per_track": [
+          {
+            "accepted_precision": 0.491035,
+            "accepted_seconds": 17.124083,
+            "correct_seconds": 8.408526,
+            "false_accept_non_target_seconds": 8.212473,
+            "id": "00_BN1-129-Eb_comp",
+            "incorrect_seconds": 8.715556,
+            "non_target_false_accept_rate": 0.921426,
+            "non_target_seconds": 8.912791,
+            "recognized_segments": 3,
+            "scored_seconds": 17.8244,
+            "target_seconds": 8.911609,
+            "target_segment_recall": 1.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.943547,
+            "targets": [
+              "D#maj7",
+              "Fm"
+            ]
+          },
+          {
+            "accepted_precision": 0.721063,
+            "accepted_seconds": 15.0856,
+            "correct_seconds": 10.877663,
+            "false_accept_non_target_seconds": 1.765306,
+            "id": "00_BN1-147-Gb_comp",
+            "incorrect_seconds": 4.207937,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 1.765306,
+            "recognized_segments": 4,
+            "scored_seconds": 15.0856,
+            "target_seconds": 13.320294,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.816623,
+            "targets": [
+              "F#maj7",
+              "F\u00f87"
+            ]
+          },
+          {
+            "accepted_precision": 0.275011,
+            "accepted_seconds": 12.314034,
+            "correct_seconds": 3.386497,
+            "false_accept_non_target_seconds": 5.410305,
+            "id": "00_BN2-131-B_comp",
+            "incorrect_seconds": 8.927537,
+            "non_target_false_accept_rate": 0.5,
+            "non_target_seconds": 10.820611,
+            "recognized_segments": 2,
+            "scored_seconds": 18.8064,
+            "target_seconds": 7.985789,
+            "target_segment_recall": 0.5,
+            "target_segments": 4,
+            "target_time_coverage": 0.424065,
+            "targets": [
+              "Gmaj7",
+              "D6"
+            ]
+          },
+          {
+            "accepted_precision": 0.080041,
+            "accepted_seconds": 6.863061,
+            "correct_seconds": 0.549326,
+            "false_accept_non_target_seconds": 5.617952,
+            "id": "00_BN2-166-Ab_comp",
+            "incorrect_seconds": 6.313735,
+            "non_target_false_accept_rate": 0.61757,
+            "non_target_seconds": 9.096867,
+            "recognized_segments": 1,
+            "scored_seconds": 12.63,
+            "target_seconds": 3.533133,
+            "target_segment_recall": 0.333333,
+            "target_segments": 3,
+            "target_time_coverage": 0.155479,
+            "targets": [
+              "C#7sus4",
+              "C#m6"
+            ]
+          },
+          {
+            "accepted_precision": 0.155367,
+            "accepted_seconds": 19.098483,
+            "correct_seconds": 2.967271,
+            "false_accept_non_target_seconds": 15.298063,
+            "id": "00_BN3-119-G_comp",
+            "incorrect_seconds": 16.131213,
+            "non_target_false_accept_rate": 0.929252,
+            "non_target_seconds": 16.46278,
+            "recognized_segments": 3,
+            "scored_seconds": 20.2632,
+            "target_seconds": 3.80042,
+            "target_segment_recall": 1.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.780774,
+            "targets": [
+              "D6",
+              "Csus2"
+            ]
+          },
+          {
+            "accepted_precision": 0.175338,
+            "accepted_seconds": 9.473134,
+            "correct_seconds": 1.661002,
+            "false_accept_non_target_seconds": 5.656026,
+            "id": "00_BN3-154-E_comp",
+            "incorrect_seconds": 7.812132,
+            "non_target_false_accept_rate": 0.699886,
+            "non_target_seconds": 8.081351,
+            "recognized_segments": 4,
+            "scored_seconds": 12.932,
+            "target_seconds": 4.850649,
+            "target_segment_recall": 0.666667,
+            "target_segments": 6,
+            "target_time_coverage": 0.342429,
+            "targets": [
+              "Emaj7",
+              "A"
+            ]
+          },
+          {
+            "accepted_precision": 0.772862,
+            "accepted_seconds": 19.872323,
+            "correct_seconds": 15.358555,
+            "false_accept_non_target_seconds": 2.710526,
+            "id": "00_Funk1-114-Ab_comp",
+            "incorrect_seconds": 4.513768,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 2.710526,
+            "recognized_segments": 4,
+            "scored_seconds": 20.7584,
+            "target_seconds": 18.047874,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.85099,
+            "targets": [
+              "G#",
+              "C#7"
+            ]
+          },
+          {
+            "accepted_precision": 0.219681,
+            "accepted_seconds": 19.101053,
+            "correct_seconds": 4.196132,
+            "false_accept_non_target_seconds": 7.646907,
+            "id": "00_Funk1-97-C_comp",
+            "incorrect_seconds": 14.904921,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 7.646907,
+            "recognized_segments": 1,
+            "scored_seconds": 25.1884,
+            "target_seconds": 17.541493,
+            "target_segment_recall": 0.333333,
+            "target_segments": 3,
+            "target_time_coverage": 0.239212,
+            "targets": [
+              "C7",
+              "C"
+            ]
+          },
+          {
+            "accepted_precision": 0.060466,
+            "accepted_seconds": 24.348083,
+            "correct_seconds": 1.472222,
+            "false_accept_non_target_seconds": 17.709194,
+            "id": "00_Funk2-108-Eb_comp",
+            "incorrect_seconds": 22.87586,
+            "non_target_false_accept_rate": 0.961959,
+            "non_target_seconds": 18.409511,
+            "recognized_segments": 1,
+            "scored_seconds": 25.0484,
+            "target_seconds": 6.638889,
+            "target_segment_recall": 0.333333,
+            "target_segments": 3,
+            "target_time_coverage": 0.221757,
+            "targets": [
+              "D#m7",
+              "B"
+            ]
+          },
+          {
+            "accepted_precision": 0.233601,
+            "accepted_seconds": 21.620161,
+            "correct_seconds": 5.050494,
+            "false_accept_non_target_seconds": 15.802935,
+            "id": "00_Funk2-119-G_comp",
+            "incorrect_seconds": 16.569668,
+            "non_target_false_accept_rate": 0.99103,
+            "non_target_seconds": 15.945973,
+            "recognized_segments": 3,
+            "scored_seconds": 21.7632,
+            "target_seconds": 5.817227,
+            "target_segment_recall": 1.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.868196,
+            "targets": [
+              "F7",
+              "Gm7"
+            ]
+          },
+          {
+            "accepted_precision": 0.411511,
+            "accepted_seconds": 16.317779,
+            "correct_seconds": 6.714943,
+            "false_accept_non_target_seconds": 8.355829,
+            "id": "00_Funk3-112-C#_comp",
+            "incorrect_seconds": 9.602835,
+            "non_target_false_accept_rate": 0.666632,
+            "non_target_seconds": 12.5344,
+            "recognized_segments": 5,
+            "scored_seconds": 22.2844,
+            "target_seconds": 9.75,
+            "target_segment_recall": 0.714286,
+            "target_segments": 7,
+            "target_time_coverage": 0.688712,
+            "targets": [
+              "F#",
+              "C#"
+            ]
+          },
+          {
+            "accepted_precision": 0.394346,
+            "accepted_seconds": 26.942882,
+            "correct_seconds": 10.62483,
+            "false_accept_non_target_seconds": 15.285943,
+            "id": "00_Funk3-98-A_comp",
+            "incorrect_seconds": 16.318052,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 15.285943,
+            "recognized_segments": 7,
+            "scored_seconds": 27.1788,
+            "target_seconds": 11.892857,
+            "target_segment_recall": 1.0,
+            "target_segments": 7,
+            "target_time_coverage": 0.893379,
+            "targets": [
+              "A",
+              "D"
+            ]
+          },
+          {
+            "accepted_precision": 0.454339,
+            "accepted_seconds": 15.646565,
+            "correct_seconds": 7.10884,
+            "false_accept_non_target_seconds": 5.127969,
+            "id": "00_Jazz1-130-D_comp",
+            "incorrect_seconds": 8.537725,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 5.127969,
+            "recognized_segments": 2,
+            "scored_seconds": 17.6472,
+            "target_seconds": 12.519231,
+            "target_segment_recall": 0.666667,
+            "target_segments": 3,
+            "target_time_coverage": 0.567834,
+            "targets": [
+              "D7",
+              "G7"
+            ]
+          },
+          {
+            "accepted_precision": 0.139464,
+            "accepted_seconds": 2.44034,
+            "correct_seconds": 0.34034,
+            "false_accept_non_target_seconds": 0.45,
+            "id": "00_Jazz1-200-B_comp",
+            "incorrect_seconds": 2.1,
+            "non_target_false_accept_rate": 0.073171,
+            "non_target_seconds": 6.15,
+            "recognized_segments": 1,
+            "scored_seconds": 9.9,
+            "target_seconds": 3.75,
+            "target_segment_recall": 0.333333,
+            "target_segments": 3,
+            "target_time_coverage": 0.090757,
+            "targets": [
+              "B",
+              "F#9"
+            ]
+          },
+          {
+            "accepted_precision": 0.453527,
+            "accepted_seconds": 19.079776,
+            "correct_seconds": 8.6532,
+            "false_accept_non_target_seconds": 10.426576,
+            "id": "00_Jazz2-110-Bb_comp",
+            "incorrect_seconds": 10.426576,
+            "non_target_false_accept_rate": 0.662005,
+            "non_target_seconds": 15.75,
+            "recognized_segments": 3,
+            "scored_seconds": 24.4032,
+            "target_seconds": 8.6532,
+            "target_segment_recall": 1.0,
+            "target_segments": 3,
+            "target_time_coverage": 1.0,
+            "targets": [
+              "C#6",
+              "C#7"
+            ]
+          },
+          {
+            "accepted_precision": 0.430627,
+            "accepted_seconds": 8.431733,
+            "correct_seconds": 3.63093,
+            "false_accept_non_target_seconds": 3.733957,
+            "id": "00_Jazz2-187-F#_comp",
+            "incorrect_seconds": 4.800802,
+            "non_target_false_accept_rate": 0.7,
+            "non_target_seconds": 5.334225,
+            "recognized_segments": 2,
+            "scored_seconds": 10.032,
+            "target_seconds": 4.697775,
+            "target_segment_recall": 0.5,
+            "target_segments": 4,
+            "target_time_coverage": 0.772904,
+            "targets": [
+              "F#m",
+              "Dmaj7"
+            ]
+          },
+          {
+            "accepted_precision": 0.314773,
+            "accepted_seconds": 15.787282,
+            "correct_seconds": 4.969417,
+            "false_accept_non_target_seconds": 10.012251,
+            "id": "00_Jazz3-137-Eb_comp",
+            "incorrect_seconds": 10.817865,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 10.012251,
+            "recognized_segments": 6,
+            "scored_seconds": 16.0232,
+            "target_seconds": 6.010949,
+            "target_segment_recall": 1.0,
+            "target_segments": 6,
+            "target_time_coverage": 0.826728,
+            "targets": [
+              "Gm",
+              "G#"
+            ]
+          },
+          {
+            "accepted_precision": 0.246782,
+            "accepted_seconds": 10.048254,
+            "correct_seconds": 2.479728,
+            "false_accept_non_target_seconds": 5.1,
+            "id": "00_Jazz3-150-C_comp",
+            "incorrect_seconds": 7.568526,
+            "non_target_false_accept_rate": 0.666667,
+            "non_target_seconds": 7.65,
+            "recognized_segments": 4,
+            "scored_seconds": 13.6,
+            "target_seconds": 5.95,
+            "target_segment_recall": 0.571429,
+            "target_segments": 7,
+            "target_time_coverage": 0.416761,
+            "targets": [
+              "C6",
+              "Fmaj7"
+            ]
+          },
+          {
+            "accepted_precision": 0.861181,
+            "accepted_seconds": 17.6472,
+            "correct_seconds": 15.197429,
+            "false_accept_non_target_seconds": 2.192308,
+            "id": "00_Rock1-130-A_comp",
+            "incorrect_seconds": 2.449771,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 2.192308,
+            "recognized_segments": 4,
+            "scored_seconds": 17.6472,
+            "target_seconds": 15.454892,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.983341,
+            "targets": [
+              "A",
+              "D"
+            ]
+          },
+          {
+            "accepted_precision": 0.763158,
+            "accepted_seconds": 27.5,
+            "correct_seconds": 20.986848,
+            "false_accept_non_target_seconds": 6.5,
+            "id": "00_Rock1-90-C#_comp",
+            "incorrect_seconds": 6.513152,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 6.5,
+            "recognized_segments": 4,
+            "scored_seconds": 27.5,
+            "target_seconds": 21.0,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.999374,
+            "targets": [
+              "C#",
+              "F#"
+            ]
+          },
+          {
+            "accepted_precision": 0.23037,
+            "accepted_seconds": 14.661318,
+            "correct_seconds": 3.377529,
+            "false_accept_non_target_seconds": 10.900755,
+            "id": "00_Rock2-142-D_comp",
+            "incorrect_seconds": 11.28379,
+            "non_target_false_accept_rate": 0.852885,
+            "non_target_seconds": 12.781037,
+            "recognized_segments": 4,
+            "scored_seconds": 16.5416,
+            "target_seconds": 3.760563,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.898144,
+            "targets": [
+              "A7",
+              "F"
+            ]
+          },
+          {
+            "accepted_precision": 0.416316,
+            "accepted_seconds": 32.122248,
+            "correct_seconds": 13.373019,
+            "false_accept_non_target_seconds": 18.661765,
+            "id": "00_Rock2-85-F_comp",
+            "incorrect_seconds": 18.749229,
+            "non_target_false_accept_rate": 0.9,
+            "non_target_seconds": 20.735294,
+            "recognized_segments": 4,
+            "scored_seconds": 34.6732,
+            "target_seconds": 13.937906,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.959471,
+            "targets": [
+              "Fm",
+              "D#7"
+            ]
+          },
+          {
+            "accepted_precision": 0.394116,
+            "accepted_seconds": 20.8164,
+            "correct_seconds": 8.204073,
+            "false_accept_non_target_seconds": 10.406144,
+            "id": "00_Rock3-117-Bb_comp",
+            "incorrect_seconds": 12.612327,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 10.406144,
+            "recognized_segments": 7,
+            "scored_seconds": 20.8164,
+            "target_seconds": 10.410256,
+            "target_segment_recall": 0.875,
+            "target_segments": 8,
+            "target_time_coverage": 0.788076,
+            "targets": [
+              "A#",
+              "D#"
+            ]
+          },
+          {
+            "accepted_precision": 0.382484,
+            "accepted_seconds": 13.333362,
+            "correct_seconds": 5.0998,
+            "false_accept_non_target_seconds": 6.967827,
+            "id": "00_Rock3-148-C_comp",
+            "incorrect_seconds": 8.233563,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 6.967827,
+            "recognized_segments": 7,
+            "scored_seconds": 13.9408,
+            "target_seconds": 6.972973,
+            "target_segment_recall": 0.875,
+            "target_segments": 8,
+            "target_time_coverage": 0.731367,
+            "targets": [
+              "C",
+              "F"
+            ]
+          },
+          {
+            "accepted_precision": 0.815833,
+            "accepted_seconds": 19.88449,
+            "correct_seconds": 16.222426,
+            "false_accept_non_target_seconds": 1.65,
+            "id": "00_SS1-100-C#_comp",
+            "incorrect_seconds": 3.662063,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 1.65,
+            "recognized_segments": 5,
+            "scored_seconds": 24.3,
+            "target_seconds": 22.65,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.716222,
+            "targets": [
+              "C#",
+              "F#"
+            ]
+          },
+          {
+            "accepted_precision": 0.834557,
+            "accepted_seconds": 36.495924,
+            "correct_seconds": 30.457939,
+            "false_accept_non_target_seconds": 2.779412,
+            "id": "00_SS1-68-E_comp",
+            "incorrect_seconds": 6.037985,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 2.779412,
+            "recognized_segments": 5,
+            "scored_seconds": 37.8464,
+            "target_seconds": 35.066988,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.868564,
+            "targets": [
+              "E",
+              "A"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 3.228463,
+            "correct_seconds": 3.228463,
+            "id": "00_SS2-107-Ab_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 14.929907,
+            "recognized_segments": 1,
+            "scored_seconds": 25.3864,
+            "target_seconds": 10.456493,
+            "target_segment_recall": 0.25,
+            "target_segments": 4,
+            "target_time_coverage": 0.308752,
+            "targets": [
+              "G#m",
+              "C#m6"
+            ]
+          },
+          {
+            "accepted_precision": 0.349647,
+            "accepted_seconds": 31.778724,
+            "correct_seconds": 11.111344,
+            "false_accept_non_target_seconds": 19.772727,
+            "id": "00_SS2-88-F_comp",
+            "incorrect_seconds": 20.66738,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 19.772727,
+            "recognized_segments": 4,
+            "scored_seconds": 33.1292,
+            "target_seconds": 13.356473,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.831907,
+            "targets": [
+              "Fm",
+              "A#m"
+            ]
+          },
+          {
+            "accepted_precision": 0.158459,
+            "accepted_seconds": 32.542883,
+            "correct_seconds": 5.156712,
+            "false_accept_non_target_seconds": 21.064743,
+            "id": "00_SS3-84-Bb_comp",
+            "incorrect_seconds": 27.386171,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 21.064743,
+            "recognized_segments": 3,
+            "scored_seconds": 33.7076,
+            "target_seconds": 12.642857,
+            "target_segment_recall": 0.5,
+            "target_segments": 6,
+            "target_time_coverage": 0.407876,
+            "targets": [
+              "D#",
+              "A#"
+            ]
+          },
+          {
+            "accepted_precision": 0.487985,
+            "accepted_seconds": 27.1788,
+            "correct_seconds": 13.262857,
+            "false_accept_non_target_seconds": 13.586963,
+            "id": "00_SS3-98-C_comp",
+            "incorrect_seconds": 13.915943,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 13.586963,
+            "recognized_segments": 8,
+            "scored_seconds": 27.1788,
+            "target_seconds": 13.591837,
+            "target_segment_recall": 1.0,
+            "target_segments": 8,
+            "target_time_coverage": 0.975796,
+            "targets": [
+              "F",
+              "C"
+            ]
+          },
+          {
+            "accepted_precision": 0.620687,
+            "accepted_seconds": 13.687529,
+            "correct_seconds": 8.495669,
+            "false_accept_non_target_seconds": 1.110465,
+            "id": "01_BN1-129-Eb_comp",
+            "incorrect_seconds": 5.19186,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 1.110465,
+            "recognized_segments": 3,
+            "scored_seconds": 17.8244,
+            "target_seconds": 16.713935,
+            "target_segment_recall": 0.6,
+            "target_segments": 5,
+            "target_time_coverage": 0.508299,
+            "targets": [
+              "D#",
+              "G#"
+            ]
+          },
+          {
+            "accepted_precision": 0.849019,
+            "accepted_seconds": 14.849682,
+            "correct_seconds": 12.607663,
+            "false_accept_non_target_seconds": 0.882653,
+            "id": "01_BN1-147-Gb_comp",
+            "incorrect_seconds": 2.242018,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 0.882653,
+            "recognized_segments": 5,
+            "scored_seconds": 15.0856,
+            "target_seconds": 14.202947,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.887679,
+            "targets": [
+              "F#",
+              "B"
+            ]
+          },
+          {
+            "accepted_precision": 0.467699,
+            "accepted_seconds": 16.262409,
+            "correct_seconds": 7.605921,
+            "false_accept_non_target_seconds": 8.656489,
+            "id": "01_BN2-131-B_comp",
+            "incorrect_seconds": 8.656489,
+            "non_target_false_accept_rate": 0.8,
+            "non_target_seconds": 10.820611,
+            "recognized_segments": 4,
+            "scored_seconds": 18.8064,
+            "target_seconds": 7.985789,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.952432,
+            "targets": [
+              "Bm",
+              "D"
+            ]
+          },
+          {
+            "accepted_precision": 0.384767,
+            "accepted_seconds": 10.092971,
+            "correct_seconds": 3.883438,
+            "false_accept_non_target_seconds": 5.116585,
+            "id": "01_BN2-166-Ab_comp",
+            "incorrect_seconds": 6.209533,
+            "non_target_false_accept_rate": 0.735371,
+            "non_target_seconds": 6.957831,
+            "recognized_segments": 3,
+            "scored_seconds": 12.63,
+            "target_seconds": 5.672169,
+            "target_segment_recall": 0.75,
+            "target_segments": 4,
+            "target_time_coverage": 0.684648,
+            "targets": [
+              "G#m",
+              "C#m"
+            ]
+          },
+          {
+            "accepted_precision": 0.327614,
+            "accepted_seconds": 14.203699,
+            "correct_seconds": 4.653336,
+            "false_accept_non_target_seconds": 6.328326,
+            "id": "01_BN3-119-G_comp",
+            "incorrect_seconds": 9.550363,
+            "non_target_false_accept_rate": 0.624789,
+            "non_target_seconds": 10.128746,
+            "recognized_segments": 6,
+            "scored_seconds": 20.2632,
+            "target_seconds": 10.134454,
+            "target_segment_recall": 0.75,
+            "target_segments": 8,
+            "target_time_coverage": 0.45916,
+            "targets": [
+              "C",
+              "G"
+            ]
+          },
+          {
+            "accepted_precision": 0.316068,
+            "accepted_seconds": 12.510322,
+            "correct_seconds": 3.954106,
+            "false_accept_non_target_seconds": 7.272909,
+            "id": "01_BN3-154-E_comp",
+            "incorrect_seconds": 8.556216,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 7.272909,
+            "recognized_segments": 7,
+            "scored_seconds": 12.932,
+            "target_seconds": 5.659091,
+            "target_segment_recall": 1.0,
+            "target_segments": 7,
+            "target_time_coverage": 0.698718,
+            "targets": [
+              "A",
+              "E"
+            ]
+          },
+          {
+            "accepted_precision": 0.634873,
+            "accepted_seconds": 19.315044,
+            "correct_seconds": 12.262596,
+            "false_accept_non_target_seconds": 6.166295,
+            "id": "01_Funk1-114-Ab_comp",
+            "incorrect_seconds": 7.052448,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 6.166295,
+            "recognized_segments": 3,
+            "scored_seconds": 20.7584,
+            "target_seconds": 14.592105,
+            "target_segment_recall": 1.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.840358,
+            "targets": [
+              "G#m",
+              "C#m"
+            ]
+          },
+          {
+            "accepted_precision": 0.75559,
+            "accepted_seconds": 22.351847,
+            "correct_seconds": 16.888836,
+            "false_accept_non_target_seconds": 1.724227,
+            "id": "01_Funk1-97-C_comp",
+            "incorrect_seconds": 5.463011,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 1.724227,
+            "recognized_segments": 4,
+            "scored_seconds": 25.1884,
+            "target_seconds": 23.464173,
+            "target_segment_recall": 0.8,
+            "target_segments": 5,
+            "target_time_coverage": 0.719771,
+            "targets": [
+              "C",
+              "F"
+            ]
+          },
+          {
+            "accepted_precision": 0.071357,
+            "accepted_seconds": 20.631733,
+            "correct_seconds": 1.472222,
+            "false_accept_non_target_seconds": 16.215067,
+            "id": "01_Funk2-108-Eb_comp",
+            "incorrect_seconds": 19.159511,
+            "non_target_false_accept_rate": 0.846319,
+            "non_target_seconds": 19.159511,
+            "recognized_segments": 1,
+            "scored_seconds": 25.0484,
+            "target_seconds": 5.888889,
+            "target_segment_recall": 0.25,
+            "target_segments": 4,
+            "target_time_coverage": 0.25,
+            "targets": [
+              "A#",
+              "F#"
+            ]
+          },
+          {
+            "accepted_precision": 0.061871,
+            "accepted_seconds": 16.446737,
+            "correct_seconds": 1.017571,
+            "false_accept_non_target_seconds": 7.60084,
+            "id": "01_Funk2-119-G_comp",
+            "incorrect_seconds": 15.429166,
+            "non_target_false_accept_rate": 0.6,
+            "non_target_seconds": 12.668067,
+            "recognized_segments": 1,
+            "scored_seconds": 21.7632,
+            "target_seconds": 9.095133,
+            "target_segment_recall": 0.25,
+            "target_segments": 4,
+            "target_time_coverage": 0.111881,
+            "targets": [
+              "Gm",
+              "A"
+            ]
+          },
+          {
+            "accepted_precision": 0.101406,
+            "accepted_seconds": 3.098618,
+            "correct_seconds": 0.314218,
+            "false_accept_non_target_seconds": 1.391543,
+            "id": "01_Funk3-112-C#_comp",
+            "incorrect_seconds": 2.7844,
+            "non_target_false_accept_rate": 0.124897,
+            "non_target_seconds": 11.141543,
+            "recognized_segments": 1,
+            "scored_seconds": 22.2844,
+            "target_seconds": 11.142857,
+            "target_segment_recall": 0.125,
+            "target_segments": 8,
+            "target_time_coverage": 0.028199,
+            "targets": [
+              "C#",
+              "F#"
+            ]
+          },
+          {
+            "accepted_precision": 0.202226,
+            "accepted_seconds": 25.549684,
+            "correct_seconds": 5.166803,
+            "false_accept_non_target_seconds": 13.586963,
+            "id": "01_Funk3-98-A_comp",
+            "incorrect_seconds": 20.382882,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 13.586963,
+            "recognized_segments": 4,
+            "scored_seconds": 27.1788,
+            "target_seconds": 13.591837,
+            "target_segment_recall": 0.5,
+            "target_segments": 8,
+            "target_time_coverage": 0.38014,
+            "targets": [
+              "D",
+              "A"
+            ]
+          },
+          {
+            "accepted_precision": 0.846966,
+            "accepted_seconds": 17.411282,
+            "correct_seconds": 14.746767,
+            "false_accept_non_target_seconds": 2.192308,
+            "id": "01_Jazz1-130-D_comp",
+            "incorrect_seconds": 2.664514,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 2.192308,
+            "recognized_segments": 4,
+            "scored_seconds": 17.6472,
+            "target_seconds": 15.454892,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.954181,
+            "targets": [
+              "D",
+              "G"
+            ]
+          },
+          {
+            "accepted_precision": 0.225413,
+            "accepted_seconds": 4.841293,
+            "correct_seconds": 1.091293,
+            "false_accept_non_target_seconds": 0.45,
+            "id": "01_Jazz1-200-B_comp",
+            "incorrect_seconds": 3.75,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 0.45,
+            "recognized_segments": 2,
+            "scored_seconds": 9.9,
+            "target_seconds": 9.45,
+            "target_segment_recall": 0.4,
+            "target_segments": 5,
+            "target_time_coverage": 0.115481,
+            "targets": [
+              "B",
+              "E"
+            ]
+          },
+          {
+            "accepted_precision": 0.143643,
+            "accepted_seconds": 20.837531,
+            "correct_seconds": 2.993156,
+            "false_accept_non_target_seconds": 15.812291,
+            "id": "01_Jazz2-110-Bb_comp",
+            "incorrect_seconds": 17.844375,
+            "non_target_false_accept_rate": 0.846667,
+            "non_target_seconds": 18.675927,
+            "recognized_segments": 4,
+            "scored_seconds": 24.4032,
+            "target_seconds": 5.727273,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.522615,
+            "targets": [
+              "C#",
+              "F7"
+            ]
+          },
+          {
+            "accepted_precision": 1.0,
+            "accepted_seconds": 1.814086,
+            "correct_seconds": 1.814086,
+            "id": "01_Jazz2-187-F#_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 5.334225,
+            "recognized_segments": 1,
+            "scored_seconds": 10.032,
+            "target_seconds": 4.697775,
+            "target_segment_recall": 0.25,
+            "target_segments": 4,
+            "target_time_coverage": 0.386158,
+            "targets": [
+              "F#m",
+              "C#7"
+            ]
+          },
+          {
+            "accepted_precision": 0.2393,
+            "accepted_seconds": 10.527939,
+            "correct_seconds": 2.519338,
+            "false_accept_non_target_seconds": 5.003127,
+            "id": "01_Jazz3-137-Eb_comp",
+            "incorrect_seconds": 8.008601,
+            "non_target_false_accept_rate": 0.624719,
+            "non_target_seconds": 8.008601,
+            "recognized_segments": 3,
+            "scored_seconds": 16.0232,
+            "target_seconds": 8.014599,
+            "target_segment_recall": 0.375,
+            "target_segments": 8,
+            "target_time_coverage": 0.314344,
+            "targets": [
+              "D#",
+              "G#"
+            ]
+          },
+          {
+            "accepted_precision": 0.2,
+            "accepted_seconds": 8.5,
+            "correct_seconds": 1.7,
+            "false_accept_non_target_seconds": 4.25,
+            "id": "01_Jazz3-150-C_comp",
+            "incorrect_seconds": 6.8,
+            "non_target_false_accept_rate": 0.625,
+            "non_target_seconds": 6.8,
+            "recognized_segments": 2,
+            "scored_seconds": 13.6,
+            "target_seconds": 6.8,
+            "target_segment_recall": 0.25,
+            "target_segments": 8,
+            "target_time_coverage": 0.25,
+            "targets": [
+              "G",
+              "C"
+            ]
+          },
+          {
+            "accepted_precision": 0.771156,
+            "accepted_seconds": 17.6472,
+            "correct_seconds": 13.608738,
+            "false_accept_non_target_seconds": 4.038462,
+            "id": "01_Rock1-130-A_comp",
+            "incorrect_seconds": 4.038462,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 4.038462,
+            "recognized_segments": 4,
+            "scored_seconds": 17.6472,
+            "target_seconds": 13.608738,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 1.0,
+            "targets": [
+              "A",
+              "E"
+            ]
+          },
+          {
+            "accepted_precision": 0.928848,
+            "accepted_seconds": 27.5,
+            "correct_seconds": 25.543333,
+            "false_accept_non_target_seconds": 1.916667,
+            "id": "01_Rock1-90-C#_comp",
+            "incorrect_seconds": 1.956667,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 1.916667,
+            "recognized_segments": 5,
+            "scored_seconds": 27.5,
+            "target_seconds": 25.583333,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.998436,
+            "targets": [
+              "C#",
+              "F#"
+            ]
+          },
+          {
+            "accepted_precision": 0.487009,
+            "accepted_seconds": 14.661318,
+            "correct_seconds": 7.140192,
+            "false_accept_non_target_seconds": 7.521127,
+            "id": "01_Rock2-142-D_comp",
+            "incorrect_seconds": 7.521127,
+            "non_target_false_accept_rate": 0.8,
+            "non_target_seconds": 9.401408,
+            "recognized_segments": 4,
+            "scored_seconds": 16.5416,
+            "target_seconds": 7.140192,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 1.0,
+            "targets": [
+              "Dm",
+              "F"
+            ]
+          },
+          {
+            "accepted_precision": 0.401979,
+            "accepted_seconds": 34.6732,
+            "correct_seconds": 13.937906,
+            "false_accept_non_target_seconds": 20.735294,
+            "id": "01_Rock2-85-F_comp",
+            "incorrect_seconds": 20.735294,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 20.735294,
+            "recognized_segments": 4,
+            "scored_seconds": 34.6732,
+            "target_seconds": 13.937906,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 1.0,
+            "targets": [
+              "Fm",
+              "A#m"
+            ]
+          },
+          {
+            "accepted_precision": 0.38268,
+            "accepted_seconds": 20.8164,
+            "correct_seconds": 7.966028,
+            "false_accept_non_target_seconds": 10.406144,
+            "id": "01_Rock3-117-Bb_comp",
+            "incorrect_seconds": 12.850372,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 10.406144,
+            "recognized_segments": 8,
+            "scored_seconds": 20.8164,
+            "target_seconds": 10.410256,
+            "target_segment_recall": 1.0,
+            "target_segments": 8,
+            "target_time_coverage": 0.76521,
+            "targets": [
+              "A#",
+              "D#"
+            ]
+          },
+          {
+            "accepted_precision": 0.861103,
+            "accepted_seconds": 20.441769,
+            "correct_seconds": 17.602472,
+            "false_accept_non_target_seconds": 1.65,
+            "id": "01_SS1-100-C#_comp",
+            "incorrect_seconds": 2.839297,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 1.65,
+            "recognized_segments": 5,
+            "scored_seconds": 24.3,
+            "target_seconds": 22.65,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.777151,
+            "targets": [
+              "C#",
+              "F#"
+            ]
+          },
+          {
+            "accepted_precision": 0.926561,
+            "accepted_seconds": 37.8464,
+            "correct_seconds": 35.066988,
+            "false_accept_non_target_seconds": 2.779412,
+            "id": "01_SS1-68-E_comp",
+            "incorrect_seconds": 2.779412,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 2.779412,
+            "recognized_segments": 5,
+            "scored_seconds": 37.8464,
+            "target_seconds": 35.066988,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 1.0,
+            "targets": [
+              "E",
+              "A"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "01_SS2-107-Ab_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 19.414437,
+            "recognized_segments": 0,
+            "scored_seconds": 25.3864,
+            "target_seconds": 5.971963,
+            "target_segment_recall": 0.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "A#7",
+              "C#m"
+            ]
+          },
+          {
+            "accepted_precision": 0.410553,
+            "accepted_seconds": 20.767794,
+            "correct_seconds": 8.526271,
+            "false_accept_non_target_seconds": 9.886364,
+            "id": "01_SS2-88-F_comp",
+            "incorrect_seconds": 12.241523,
+            "non_target_false_accept_rate": 0.5,
+            "non_target_seconds": 19.772727,
+            "recognized_segments": 3,
+            "scored_seconds": 33.1292,
+            "target_seconds": 13.356473,
+            "target_segment_recall": 0.75,
+            "target_segments": 4,
+            "target_time_coverage": 0.638362,
+            "targets": [
+              "Fm",
+              "G#"
+            ]
+          },
+          {
+            "accepted_precision": 0.493604,
+            "accepted_seconds": 31.600457,
+            "correct_seconds": 15.598122,
+            "false_accept_non_target_seconds": 14.75,
+            "id": "01_SS3-84-Bb_comp",
+            "incorrect_seconds": 16.002336,
+            "non_target_false_accept_rate": 0.875,
+            "non_target_seconds": 16.857143,
+            "recognized_segments": 8,
+            "scored_seconds": 33.7076,
+            "target_seconds": 16.850457,
+            "target_segment_recall": 1.0,
+            "target_segments": 8,
+            "target_time_coverage": 0.925679,
+            "targets": [
+              "D#",
+              "F"
+            ]
+          },
+          {
+            "accepted_precision": 0.466565,
+            "accepted_seconds": 25.47982,
+            "correct_seconds": 11.887984,
+            "false_accept_non_target_seconds": 13.591837,
+            "id": "01_SS3-98-C_comp",
+            "incorrect_seconds": 13.591837,
+            "non_target_false_accept_rate": 0.888889,
+            "non_target_seconds": 15.290816,
+            "recognized_segments": 7,
+            "scored_seconds": 27.1788,
+            "target_seconds": 11.887984,
+            "target_segment_recall": 1.0,
+            "target_segments": 7,
+            "target_time_coverage": 1.0,
+            "targets": [
+              "F",
+              "G"
+            ]
+          }
+        ],
+        "processing_seconds": 2.2691705000470392,
+        "tracks": 59
+      },
+      "holdout": {
+        "audio_seconds": 1662.9779999999998,
+        "full_timeline": {
+          "accepted_precision": 0.337338,
+          "accepted_seconds": 1324.101673,
+          "correct_seconds": 446.669953,
+          "false_accept_non_target_seconds": 694.978576,
+          "incorrect_seconds": 877.43172,
+          "non_target_false_accept_rate": 0.763047,
+          "non_target_seconds": 910.793642,
+          "recognized_segments": 176,
+          "scored_seconds": 1658.614364,
+          "target_seconds": 747.820722,
+          "target_segment_recall": 0.692913,
+          "target_segments": 254,
+          "target_time_coverage": 0.597296,
+          "unscored_seconds": 4.363636
+        },
+        "interior": {
+          "accepted_precision": 0.399768,
+          "accepted_seconds": 947.484995,
+          "correct_seconds": 378.773908,
+          "false_accept_non_target_seconds": 463.614628,
+          "incorrect_seconds": 568.711087,
+          "non_target_false_accept_rate": 0.773279,
+          "non_target_seconds": 599.543642,
+          "recognized_segments": 176,
+          "scored_seconds": 1156.864364,
+          "target_seconds": 557.320722,
+          "target_segment_recall": 0.692913,
+          "target_segments": 254,
+          "target_time_coverage": 0.679634,
+          "unscored_seconds": 3.613636
+        },
+        "per_track": [
+          {
+            "accepted_precision": 0.704815,
+            "accepted_seconds": 17.588482,
+            "correct_seconds": 12.396621,
+            "false_accept_non_target_seconds": 1.110465,
+            "id": "04_BN1-129-Eb_comp",
+            "incorrect_seconds": 5.19186,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 1.110465,
+            "recognized_segments": 3,
+            "scored_seconds": 17.8244,
+            "target_seconds": 16.713935,
+            "target_segment_recall": 0.6,
+            "target_segments": 5,
+            "target_time_coverage": 0.741694,
+            "targets": [
+              "D#maj7",
+              "G#"
+            ]
+          },
+          {
+            "accepted_precision": 0.172045,
+            "accepted_seconds": 4.096507,
+            "correct_seconds": 0.704785,
+            "false_accept_non_target_seconds": 0.882653,
+            "id": "04_BN1-147-Gb_comp",
+            "incorrect_seconds": 3.391722,
+            "non_target_false_accept_rate": 0.25976,
+            "non_target_seconds": 3.397959,
+            "recognized_segments": 1,
+            "scored_seconds": 15.0856,
+            "target_seconds": 11.687641,
+            "target_segment_recall": 0.25,
+            "target_segments": 4,
+            "target_time_coverage": 0.060302,
+            "targets": [
+              "F#maj7",
+              "C#maj7"
+            ]
+          },
+          {
+            "accepted_precision": 0.233226,
+            "accepted_seconds": 16.262409,
+            "correct_seconds": 3.792813,
+            "false_accept_non_target_seconds": 11.184165,
+            "id": "04_BN2-131-B_comp",
+            "incorrect_seconds": 12.469596,
+            "non_target_false_accept_rate": 0.814688,
+            "non_target_seconds": 13.728156,
+            "recognized_segments": 2,
+            "scored_seconds": 18.8064,
+            "target_seconds": 5.078244,
+            "target_segment_recall": 0.666667,
+            "target_segments": 3,
+            "target_time_coverage": 0.746875,
+            "targets": [
+              "Gmaj7",
+              "D6"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "04_BN2-166-Ab_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 8.349398,
+            "recognized_segments": 0,
+            "scored_seconds": 12.63,
+            "target_seconds": 4.280602,
+            "target_segment_recall": 0.0,
+            "target_segments": 2,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "G#m9",
+              "G#m7"
+            ]
+          },
+          {
+            "accepted_precision": 0.181893,
+            "accepted_seconds": 13.929166,
+            "correct_seconds": 2.533613,
+            "false_accept_non_target_seconds": 8.861939,
+            "id": "04_BN3-119-G_comp",
+            "incorrect_seconds": 11.395553,
+            "non_target_false_accept_rate": 0.636215,
+            "non_target_seconds": 13.929166,
+            "recognized_segments": 2,
+            "scored_seconds": 20.2632,
+            "target_seconds": 6.334034,
+            "target_segment_recall": 0.4,
+            "target_segments": 5,
+            "target_time_coverage": 0.4,
+            "targets": [
+              "Gmaj7",
+              "Cmaj7"
+            ]
+          },
+          {
+            "accepted_precision": 0.272821,
+            "accepted_seconds": 8.889792,
+            "correct_seconds": 2.425325,
+            "false_accept_non_target_seconds": 5.656026,
+            "id": "04_BN3-154-E_comp",
+            "incorrect_seconds": 6.464468,
+            "non_target_false_accept_rate": 0.699886,
+            "non_target_seconds": 8.081351,
+            "recognized_segments": 3,
+            "scored_seconds": 12.932,
+            "target_seconds": 4.850649,
+            "target_segment_recall": 0.5,
+            "target_segments": 6,
+            "target_time_coverage": 0.5,
+            "targets": [
+              "Emaj7",
+              "G#m7"
+            ]
+          },
+          {
+            "accepted_precision": 0.220803,
+            "accepted_seconds": 23.576178,
+            "correct_seconds": 5.205692,
+            "false_accept_non_target_seconds": 16.937289,
+            "id": "04_Funk2-108-Eb_comp",
+            "incorrect_seconds": 18.370486,
+            "non_target_false_accept_rate": 0.920029,
+            "non_target_seconds": 18.409511,
+            "recognized_segments": 3,
+            "scored_seconds": 25.0484,
+            "target_seconds": 6.638889,
+            "target_segment_recall": 1.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.784121,
+            "targets": [
+              "F#",
+              "F\u00f87"
+            ]
+          },
+          {
+            "accepted_precision": 0.376647,
+            "accepted_seconds": 20.784243,
+            "correct_seconds": 7.828326,
+            "false_accept_non_target_seconds": 9.155497,
+            "id": "04_Funk2-119-G_comp",
+            "incorrect_seconds": 12.955917,
+            "non_target_false_accept_rate": 0.903403,
+            "non_target_seconds": 10.134454,
+            "recognized_segments": 3,
+            "scored_seconds": 21.7632,
+            "target_seconds": 11.628746,
+            "target_segment_recall": 0.5,
+            "target_segments": 6,
+            "target_time_coverage": 0.673187,
+            "targets": [
+              "A#maj7",
+              "D#maj7"
+            ]
+          },
+          {
+            "accepted_precision": 0.223945,
+            "accepted_seconds": 22.2844,
+            "correct_seconds": 4.990476,
+            "false_accept_non_target_seconds": 15.320114,
+            "id": "04_Funk3-112-C#_comp",
+            "incorrect_seconds": 17.293924,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 15.320114,
+            "recognized_segments": 4,
+            "scored_seconds": 22.2844,
+            "target_seconds": 6.964286,
+            "target_segment_recall": 0.8,
+            "target_segments": 5,
+            "target_time_coverage": 0.716581,
+            "targets": [
+              "F#maj7",
+              "C#maj7"
+            ]
+          },
+          {
+            "accepted_precision": 0.070857,
+            "accepted_seconds": 23.977689,
+            "correct_seconds": 1.69898,
+            "false_accept_non_target_seconds": 20.57973,
+            "id": "04_Funk3-98-A_comp",
+            "incorrect_seconds": 22.278709,
+            "non_target_false_accept_rate": 0.931974,
+            "non_target_seconds": 22.081861,
+            "recognized_segments": 1,
+            "scored_seconds": 27.1788,
+            "target_seconds": 5.096939,
+            "target_segment_recall": 0.333333,
+            "target_segments": 3,
+            "target_time_coverage": 0.333333,
+            "targets": [
+              "A7",
+              "Dmaj7"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "04_Jazz1-200-B_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 2.1,
+            "recognized_segments": 0,
+            "scored_seconds": 9.9,
+            "target_seconds": 7.8,
+            "target_segment_recall": 0.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "B7",
+              "C#m7"
+            ]
+          },
+          {
+            "accepted_precision": 0.297245,
+            "accepted_seconds": 20.789564,
+            "correct_seconds": 6.17959,
+            "false_accept_non_target_seconds": 14.318182,
+            "id": "04_Jazz2-110-Bb_comp",
+            "incorrect_seconds": 14.609973,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 14.318182,
+            "recognized_segments": 3,
+            "scored_seconds": 20.789564,
+            "target_seconds": 6.471382,
+            "target_segment_recall": 1.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.95491,
+            "targets": [
+              "F#maj7",
+              "C#6"
+            ],
+            "unscored_seconds": 3.613636
+          },
+          {
+            "accepted_precision": null,
+            "id": "04_Jazz2-187-F#_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 8.431733,
+            "recognized_segments": 0,
+            "scored_seconds": 10.032,
+            "target_seconds": 1.600267,
+            "target_segment_recall": 0.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "Dmaj7",
+              "D6"
+            ]
+          },
+          {
+            "accepted_precision": 0.193794,
+            "accepted_seconds": 15.508642,
+            "correct_seconds": 3.005474,
+            "false_accept_non_target_seconds": 9.497693,
+            "id": "04_Jazz3-137-Eb_comp",
+            "incorrect_seconds": 12.503168,
+            "non_target_false_accept_rate": 0.948607,
+            "non_target_seconds": 10.012251,
+            "recognized_segments": 3,
+            "scored_seconds": 16.0232,
+            "target_seconds": 6.010949,
+            "target_segment_recall": 0.5,
+            "target_segments": 6,
+            "target_time_coverage": 0.5,
+            "targets": [
+              "G#maj7",
+              "Gm7"
+            ]
+          },
+          {
+            "accepted_precision": 0.154573,
+            "accepted_seconds": 13.6,
+            "correct_seconds": 2.1022,
+            "false_accept_non_target_seconds": 10.2,
+            "id": "04_Jazz3-150-C_comp",
+            "incorrect_seconds": 11.4978,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 10.2,
+            "recognized_segments": 3,
+            "scored_seconds": 13.6,
+            "target_seconds": 3.4,
+            "target_segment_recall": 0.75,
+            "target_segments": 4,
+            "target_time_coverage": 0.618294,
+            "targets": [
+              "Cmaj7",
+              "Fmaj7"
+            ]
+          },
+          {
+            "accepted_precision": 0.350114,
+            "accepted_seconds": 17.054263,
+            "correct_seconds": 5.97093,
+            "false_accept_non_target_seconds": 9.166667,
+            "id": "04_Rock1-90-C#_comp",
+            "incorrect_seconds": 11.083333,
+            "non_target_false_accept_rate": 0.480349,
+            "non_target_seconds": 19.083333,
+            "recognized_segments": 2,
+            "scored_seconds": 27.5,
+            "target_seconds": 8.416667,
+            "target_segment_recall": 0.666667,
+            "target_segments": 3,
+            "target_time_coverage": 0.709417,
+            "targets": [
+              "F#",
+              "G#"
+            ]
+          },
+          {
+            "accepted_precision": 0.457662,
+            "accepted_seconds": 15.601459,
+            "correct_seconds": 7.140192,
+            "false_accept_non_target_seconds": 8.461268,
+            "id": "04_Rock2-142-D_comp",
+            "incorrect_seconds": 8.461268,
+            "non_target_false_accept_rate": 0.9,
+            "non_target_seconds": 9.401408,
+            "recognized_segments": 4,
+            "scored_seconds": 16.5416,
+            "target_seconds": 7.140192,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 1.0,
+            "targets": [
+              "Dm",
+              "A7"
+            ]
+          },
+          {
+            "accepted_precision": 0.383223,
+            "accepted_seconds": 25.548665,
+            "correct_seconds": 9.790847,
+            "false_accept_non_target_seconds": 13.684288,
+            "id": "04_Rock2-85-F_comp",
+            "incorrect_seconds": 15.757818,
+            "non_target_false_accept_rate": 0.599956,
+            "non_target_seconds": 22.808824,
+            "recognized_segments": 2,
+            "scored_seconds": 34.6732,
+            "target_seconds": 11.864376,
+            "target_segment_recall": 0.666667,
+            "target_segments": 3,
+            "target_time_coverage": 0.825231,
+            "targets": [
+              "Fm",
+              "G\u00f87"
+            ]
+          },
+          {
+            "accepted_precision": 0.342158,
+            "accepted_seconds": 20.487602,
+            "correct_seconds": 7.010003,
+            "false_accept_non_target_seconds": 11.707426,
+            "id": "04_Rock3-117-Bb_comp",
+            "incorrect_seconds": 13.477598,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 11.707426,
+            "recognized_segments": 7,
+            "scored_seconds": 20.8164,
+            "target_seconds": 9.108974,
+            "target_segment_recall": 1.0,
+            "target_segments": 7,
+            "target_time_coverage": 0.769571,
+            "targets": [
+              "D#",
+              "A#"
+            ]
+          },
+          {
+            "accepted_precision": 0.410607,
+            "accepted_seconds": 10.454314,
+            "correct_seconds": 4.292615,
+            "false_accept_non_target_seconds": 5.22973,
+            "id": "04_Rock3-148-C_comp",
+            "incorrect_seconds": 6.161698,
+            "non_target_false_accept_rate": 0.666667,
+            "non_target_seconds": 7.844595,
+            "recognized_segments": 5,
+            "scored_seconds": 13.9408,
+            "target_seconds": 6.096205,
+            "target_segment_recall": 0.714286,
+            "target_segments": 7,
+            "target_time_coverage": 0.704145,
+            "targets": [
+              "G",
+              "F"
+            ]
+          },
+          {
+            "accepted_precision": 0.781949,
+            "accepted_seconds": 22.392245,
+            "correct_seconds": 17.509592,
+            "false_accept_non_target_seconds": 1.65,
+            "id": "04_SS1-100-C#_comp",
+            "incorrect_seconds": 4.882653,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 1.65,
+            "recognized_segments": 5,
+            "scored_seconds": 24.3,
+            "target_seconds": 22.65,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.77305,
+            "targets": [
+              "C#",
+              "F#"
+            ]
+          },
+          {
+            "accepted_precision": 0.771366,
+            "accepted_seconds": 37.8464,
+            "correct_seconds": 29.193431,
+            "false_accept_non_target_seconds": 2.779412,
+            "id": "04_SS1-68-E_comp",
+            "incorrect_seconds": 8.652969,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 2.779412,
+            "recognized_segments": 5,
+            "scored_seconds": 37.8464,
+            "target_seconds": 35.066988,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.832505,
+            "targets": [
+              "E",
+              "Esus4"
+            ]
+          },
+          {
+            "accepted_precision": 0.284801,
+            "accepted_seconds": 16.275788,
+            "correct_seconds": 4.635366,
+            "false_accept_non_target_seconds": 7.464953,
+            "id": "04_SS2-107-Ab_comp",
+            "incorrect_seconds": 11.640422,
+            "non_target_false_accept_rate": 0.5,
+            "non_target_seconds": 14.929907,
+            "recognized_segments": 2,
+            "scored_seconds": 25.3864,
+            "target_seconds": 10.456493,
+            "target_segment_recall": 0.5,
+            "target_segments": 4,
+            "target_time_coverage": 0.4433,
+            "targets": [
+              "G#m",
+              "C#m6"
+            ]
+          },
+          {
+            "accepted_precision": 0.43179,
+            "accepted_seconds": 27.062737,
+            "correct_seconds": 11.685411,
+            "false_accept_non_target_seconds": 13.840909,
+            "id": "04_SS2-88-F_comp",
+            "incorrect_seconds": 15.377326,
+            "non_target_false_accept_rate": 0.7,
+            "non_target_seconds": 19.772727,
+            "recognized_segments": 4,
+            "scored_seconds": 33.1292,
+            "target_seconds": 13.356473,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.874888,
+            "targets": [
+              "Fm",
+              "C#maj7"
+            ]
+          },
+          {
+            "accepted_precision": 0.403671,
+            "accepted_seconds": 33.7076,
+            "correct_seconds": 13.60678,
+            "false_accept_non_target_seconds": 18.9576,
+            "id": "04_SS3-84-Bb_comp",
+            "incorrect_seconds": 20.10082,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 18.9576,
+            "recognized_segments": 7,
+            "scored_seconds": 33.7076,
+            "target_seconds": 14.75,
+            "target_segment_recall": 1.0,
+            "target_segments": 7,
+            "target_time_coverage": 0.922494,
+            "targets": [
+              "A#",
+              "D#"
+            ]
+          },
+          {
+            "accepted_precision": 0.430168,
+            "accepted_seconds": 27.1788,
+            "correct_seconds": 11.691453,
+            "false_accept_non_target_seconds": 13.591837,
+            "id": "04_SS3-98-C_comp",
+            "incorrect_seconds": 15.487347,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 13.591837,
+            "recognized_segments": 8,
+            "scored_seconds": 27.1788,
+            "target_seconds": 13.586963,
+            "target_segment_recall": 1.0,
+            "target_segments": 8,
+            "target_time_coverage": 0.860491,
+            "targets": [
+              "C",
+              "G"
+            ]
+          },
+          {
+            "accepted_precision": 0.069569,
+            "accepted_seconds": 8.77186,
+            "correct_seconds": 0.610251,
+            "false_accept_non_target_seconds": 5.19186,
+            "id": "05_BN1-129-Eb_comp",
+            "incorrect_seconds": 8.161609,
+            "non_target_false_accept_rate": 0.436888,
+            "non_target_seconds": 11.883721,
+            "recognized_segments": 1,
+            "scored_seconds": 17.8244,
+            "target_seconds": 5.940679,
+            "target_segment_recall": 0.5,
+            "target_segments": 2,
+            "target_time_coverage": 0.102724,
+            "targets": [
+              "G#7",
+              "D#maj9"
+            ]
+          },
+          {
+            "accepted_precision": 0.212364,
+            "accepted_seconds": 14.849682,
+            "correct_seconds": 3.153537,
+            "false_accept_non_target_seconds": 6.795918,
+            "id": "05_BN1-147-Gb_comp",
+            "incorrect_seconds": 11.696145,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 6.795918,
+            "recognized_segments": 2,
+            "scored_seconds": 15.0856,
+            "target_seconds": 8.289682,
+            "target_segment_recall": 1.0,
+            "target_segments": 2,
+            "target_time_coverage": 0.380417,
+            "targets": [
+              "F\u00b0",
+              "D#m"
+            ]
+          },
+          {
+            "accepted_precision": 0.165484,
+            "accepted_seconds": 11.107687,
+            "correct_seconds": 1.838148,
+            "false_accept_non_target_seconds": 8.455301,
+            "id": "05_BN2-166-Ab_comp",
+            "incorrect_seconds": 9.269539,
+            "non_target_false_accept_rate": 0.858679,
+            "non_target_seconds": 9.846867,
+            "recognized_segments": 3,
+            "scored_seconds": 12.63,
+            "target_seconds": 2.783133,
+            "target_segment_recall": 0.75,
+            "target_segments": 4,
+            "target_time_coverage": 0.66046,
+            "targets": [
+              "C#m6",
+              "Bmaj7"
+            ]
+          },
+          {
+            "accepted_precision": 0.114728,
+            "accepted_seconds": 20.027282,
+            "correct_seconds": 2.297695,
+            "false_accept_non_target_seconds": 13.929166,
+            "id": "05_BN3-119-G_comp",
+            "incorrect_seconds": 17.729587,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 13.929166,
+            "recognized_segments": 2,
+            "scored_seconds": 20.2632,
+            "target_seconds": 6.334034,
+            "target_segment_recall": 0.4,
+            "target_segments": 5,
+            "target_time_coverage": 0.362754,
+            "targets": [
+              "Em7",
+              "Cmaj7"
+            ]
+          },
+          {
+            "accepted_precision": 0.151583,
+            "accepted_seconds": 10.666649,
+            "correct_seconds": 1.616883,
+            "false_accept_non_target_seconds": 6.464468,
+            "id": "05_BN3-154-E_comp",
+            "incorrect_seconds": 9.049765,
+            "non_target_false_accept_rate": 0.799924,
+            "non_target_seconds": 8.081351,
+            "recognized_segments": 2,
+            "scored_seconds": 12.932,
+            "target_seconds": 4.850649,
+            "target_segment_recall": 0.333333,
+            "target_segments": 6,
+            "target_time_coverage": 0.333333,
+            "targets": [
+              "C#m9",
+              "A7"
+            ]
+          },
+          {
+            "accepted_precision": 0.521092,
+            "accepted_seconds": 17.271688,
+            "correct_seconds": 9.00013,
+            "false_accept_non_target_seconds": 8.271558,
+            "id": "05_Funk1-114-Ab_comp",
+            "incorrect_seconds": 8.271558,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 8.271558,
+            "recognized_segments": 3,
+            "scored_seconds": 20.7584,
+            "target_seconds": 12.486842,
+            "target_segment_recall": 1.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.720769,
+            "targets": [
+              "G#",
+              "C#7"
+            ]
+          },
+          {
+            "accepted_precision": 0.687883,
+            "accepted_seconds": 22.351847,
+            "correct_seconds": 15.375448,
+            "false_accept_non_target_seconds": 3.448454,
+            "id": "05_Funk1-97-C_comp",
+            "incorrect_seconds": 6.976399,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 3.448454,
+            "recognized_segments": 4,
+            "scored_seconds": 25.1884,
+            "target_seconds": 21.739946,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.707244,
+            "targets": [
+              "C6",
+              "D\u00f87"
+            ]
+          },
+          {
+            "accepted_precision": 0.306719,
+            "accepted_seconds": 24.440962,
+            "correct_seconds": 7.496518,
+            "false_accept_non_target_seconds": 11.777778,
+            "id": "05_Funk2-108-Eb_comp",
+            "incorrect_seconds": 16.944444,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 11.777778,
+            "recognized_segments": 4,
+            "scored_seconds": 25.0484,
+            "target_seconds": 13.270622,
+            "target_segment_recall": 0.666667,
+            "target_segments": 6,
+            "target_time_coverage": 0.564896,
+            "targets": [
+              "F\u00f87",
+              "D#m7"
+            ]
+          },
+          {
+            "accepted_precision": 0.198996,
+            "accepted_seconds": 13.581386,
+            "correct_seconds": 2.70264,
+            "false_accept_non_target_seconds": 10.878746,
+            "id": "05_Funk2-119-G_comp",
+            "incorrect_seconds": 10.878746,
+            "non_target_false_accept_rate": 0.682225,
+            "non_target_seconds": 15.945973,
+            "recognized_segments": 1,
+            "scored_seconds": 21.7632,
+            "target_seconds": 5.817227,
+            "target_segment_recall": 0.333333,
+            "target_segments": 3,
+            "target_time_coverage": 0.464592,
+            "targets": [
+              "C\u00b07",
+              "Gm"
+            ]
+          },
+          {
+            "accepted_precision": 0.111342,
+            "accepted_seconds": 17.239615,
+            "correct_seconds": 1.919501,
+            "false_accept_non_target_seconds": 12.5344,
+            "id": "05_Funk3-112-C#_comp",
+            "incorrect_seconds": 15.320114,
+            "non_target_false_accept_rate": 0.818166,
+            "non_target_seconds": 15.320114,
+            "recognized_segments": 2,
+            "scored_seconds": 22.2844,
+            "target_seconds": 6.964286,
+            "target_segment_recall": 0.4,
+            "target_segments": 5,
+            "target_time_coverage": 0.275621,
+            "targets": [
+              "A#m",
+              "Fm7"
+            ]
+          },
+          {
+            "accepted_precision": 0.323148,
+            "accepted_seconds": 24.534968,
+            "correct_seconds": 7.928415,
+            "false_accept_non_target_seconds": 13.591837,
+            "id": "05_Funk3-98-A_comp",
+            "incorrect_seconds": 16.606553,
+            "non_target_false_accept_rate": 0.888889,
+            "non_target_seconds": 15.290816,
+            "recognized_segments": 6,
+            "scored_seconds": 27.1788,
+            "target_seconds": 11.887984,
+            "target_segment_recall": 0.857143,
+            "target_segments": 7,
+            "target_time_coverage": 0.666927,
+            "targets": [
+              "C#m7",
+              "D"
+            ]
+          },
+          {
+            "accepted_precision": 0.035527,
+            "accepted_seconds": 17.8793,
+            "correct_seconds": 0.635191,
+            "false_accept_non_target_seconds": 12.198655,
+            "id": "05_Jazz2-110-Bb_comp",
+            "incorrect_seconds": 17.244109,
+            "non_target_false_accept_rate": 0.680503,
+            "non_target_seconds": 17.925927,
+            "recognized_segments": 1,
+            "scored_seconds": 24.4032,
+            "target_seconds": 6.477273,
+            "target_segment_recall": 0.333333,
+            "target_segments": 3,
+            "target_time_coverage": 0.098065,
+            "targets": [
+              "A#7",
+              "C\u00f87"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "05_Jazz2-187-F#_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 7.364888,
+            "recognized_segments": 0,
+            "scored_seconds": 10.032,
+            "target_seconds": 2.667112,
+            "target_segment_recall": 0.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "D6",
+              "G#\u00f87"
+            ]
+          },
+          {
+            "accepted_precision": 0.268168,
+            "accepted_seconds": 11.914175,
+            "correct_seconds": 3.195002,
+            "false_accept_non_target_seconds": 5.003127,
+            "id": "05_Jazz3-137-Eb_comp",
+            "incorrect_seconds": 8.719173,
+            "non_target_false_accept_rate": 0.624719,
+            "non_target_seconds": 8.008601,
+            "recognized_segments": 4,
+            "scored_seconds": 16.0232,
+            "target_seconds": 8.014599,
+            "target_segment_recall": 0.5,
+            "target_segments": 8,
+            "target_time_coverage": 0.398648,
+            "targets": [
+              "D#maj7",
+              "G#maj7"
+            ]
+          },
+          {
+            "accepted_precision": 0.173278,
+            "accepted_seconds": 9.769615,
+            "correct_seconds": 1.692857,
+            "false_accept_non_target_seconds": 5.95,
+            "id": "05_Jazz3-150-C_comp",
+            "incorrect_seconds": 8.076757,
+            "non_target_false_accept_rate": 0.777778,
+            "non_target_seconds": 7.65,
+            "recognized_segments": 3,
+            "scored_seconds": 13.6,
+            "target_seconds": 5.95,
+            "target_segment_recall": 0.428571,
+            "target_segments": 7,
+            "target_time_coverage": 0.284514,
+            "targets": [
+              "Cmaj7",
+              "Fmaj7"
+            ]
+          },
+          {
+            "accepted_precision": 0.59151,
+            "accepted_seconds": 17.6472,
+            "correct_seconds": 10.438498,
+            "false_accept_non_target_seconds": 6.974123,
+            "id": "05_Rock1-130-A_comp",
+            "incorrect_seconds": 7.208702,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 6.974123,
+            "recognized_segments": 3,
+            "scored_seconds": 17.6472,
+            "target_seconds": 10.673077,
+            "target_segment_recall": 1.0,
+            "target_segments": 3,
+            "target_time_coverage": 0.978021,
+            "targets": [
+              "A",
+              "E"
+            ]
+          },
+          {
+            "accepted_precision": 0.927241,
+            "accepted_seconds": 26.892562,
+            "correct_seconds": 24.935896,
+            "false_accept_non_target_seconds": 1.916667,
+            "id": "05_Rock1-90-C#_comp",
+            "incorrect_seconds": 1.956667,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 1.916667,
+            "recognized_segments": 5,
+            "scored_seconds": 27.5,
+            "target_seconds": 25.583333,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.974693,
+            "targets": [
+              "C#",
+              "F#"
+            ]
+          },
+          {
+            "accepted_precision": 0.165156,
+            "accepted_seconds": 14.183369,
+            "correct_seconds": 2.342473,
+            "false_accept_non_target_seconds": 10.900755,
+            "id": "05_Rock2-142-D_comp",
+            "incorrect_seconds": 11.840896,
+            "non_target_false_accept_rate": 0.852885,
+            "non_target_seconds": 12.781037,
+            "recognized_segments": 3,
+            "scored_seconds": 16.5416,
+            "target_seconds": 3.760563,
+            "target_segment_recall": 0.75,
+            "target_segments": 4,
+            "target_time_coverage": 0.622905,
+            "targets": [
+              "A",
+              "F"
+            ]
+          },
+          {
+            "accepted_precision": 0.139205,
+            "accepted_seconds": 25.827304,
+            "correct_seconds": 3.595281,
+            "false_accept_non_target_seconds": 20.158494,
+            "id": "05_Rock2-85-F_comp",
+            "incorrect_seconds": 22.232024,
+            "non_target_false_accept_rate": 0.764185,
+            "non_target_seconds": 26.379082,
+            "recognized_segments": 2,
+            "scored_seconds": 34.6732,
+            "target_seconds": 8.294118,
+            "target_segment_recall": 0.5,
+            "target_segments": 4,
+            "target_time_coverage": 0.433474,
+            "targets": [
+              "G\u00f87",
+              "G#"
+            ]
+          },
+          {
+            "accepted_precision": 0.297705,
+            "accepted_seconds": 20.8164,
+            "correct_seconds": 6.19715,
+            "false_accept_non_target_seconds": 10.406144,
+            "id": "05_Rock3-117-Bb_comp",
+            "incorrect_seconds": 14.61925,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 10.406144,
+            "recognized_segments": 6,
+            "scored_seconds": 20.8164,
+            "target_seconds": 10.410256,
+            "target_segment_recall": 0.75,
+            "target_segments": 8,
+            "target_time_coverage": 0.595293,
+            "targets": [
+              "A#",
+              "D#"
+            ]
+          },
+          {
+            "accepted_precision": 0.437661,
+            "accepted_seconds": 13.9408,
+            "correct_seconds": 6.101351,
+            "false_accept_non_target_seconds": 7.839449,
+            "id": "05_Rock3-148-C_comp",
+            "incorrect_seconds": 7.839449,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 7.839449,
+            "recognized_segments": 7,
+            "scored_seconds": 13.9408,
+            "target_seconds": 6.101351,
+            "target_segment_recall": 1.0,
+            "target_segments": 7,
+            "target_time_coverage": 1.0,
+            "targets": [
+              "F",
+              "C"
+            ]
+          },
+          {
+            "accepted_precision": 0.931697,
+            "accepted_seconds": 24.156961,
+            "correct_seconds": 22.506961,
+            "false_accept_non_target_seconds": 1.65,
+            "id": "05_SS1-100-C#_comp",
+            "incorrect_seconds": 1.65,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 1.65,
+            "recognized_segments": 5,
+            "scored_seconds": 24.3,
+            "target_seconds": 22.65,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.993685,
+            "targets": [
+              "C#",
+              "F#"
+            ]
+          },
+          {
+            "accepted_precision": 0.841385,
+            "accepted_seconds": 36.310164,
+            "correct_seconds": 30.550819,
+            "false_accept_non_target_seconds": 2.779412,
+            "id": "05_SS1-68-E_comp",
+            "incorrect_seconds": 5.759345,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 2.779412,
+            "recognized_segments": 5,
+            "scored_seconds": 37.8464,
+            "target_seconds": 35.066988,
+            "target_segment_recall": 1.0,
+            "target_segments": 5,
+            "target_time_coverage": 0.871213,
+            "targets": [
+              "E",
+              "A"
+            ]
+          },
+          {
+            "accepted_precision": null,
+            "id": "05_SS2-107-Ab_comp",
+            "non_target_false_accept_rate": 0.0,
+            "non_target_seconds": 14.929907,
+            "recognized_segments": 0,
+            "scored_seconds": 25.3864,
+            "target_seconds": 10.456493,
+            "target_segment_recall": 0.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.0,
+            "targets": [
+              "G#m",
+              "C#m6"
+            ]
+          },
+          {
+            "accepted_precision": 0.408659,
+            "accepted_seconds": 27.520175,
+            "correct_seconds": 11.246376,
+            "false_accept_non_target_seconds": 15.818182,
+            "id": "05_SS2-88-F_comp",
+            "incorrect_seconds": 16.273799,
+            "non_target_false_accept_rate": 0.8,
+            "non_target_seconds": 19.772727,
+            "recognized_segments": 4,
+            "scored_seconds": 33.1292,
+            "target_seconds": 13.356473,
+            "target_segment_recall": 1.0,
+            "target_segments": 4,
+            "target_time_coverage": 0.842017,
+            "targets": [
+              "Fm",
+              "G#"
+            ]
+          },
+          {
+            "accepted_precision": 0.4016,
+            "accepted_seconds": 33.7076,
+            "correct_seconds": 13.536961,
+            "false_accept_non_target_seconds": 16.850457,
+            "id": "05_SS3-84-Bb_comp",
+            "incorrect_seconds": 20.170639,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 16.850457,
+            "recognized_segments": 8,
+            "scored_seconds": 33.7076,
+            "target_seconds": 16.857143,
+            "target_segment_recall": 1.0,
+            "target_segments": 8,
+            "target_time_coverage": 0.80304,
+            "targets": [
+              "D#",
+              "A#"
+            ]
+          },
+          {
+            "accepted_precision": 0.458792,
+            "accepted_seconds": 27.1788,
+            "correct_seconds": 12.469412,
+            "false_accept_non_target_seconds": 13.591837,
+            "id": "05_SS3-98-C_comp",
+            "incorrect_seconds": 14.709388,
+            "non_target_false_accept_rate": 1.0,
+            "non_target_seconds": 13.591837,
+            "recognized_segments": 8,
+            "scored_seconds": 27.1788,
+            "target_seconds": 13.586963,
+            "target_segment_recall": 1.0,
+            "target_segments": 8,
+            "target_time_coverage": 0.917748,
+            "targets": [
+              "C",
+              "G"
+            ]
+          }
+        ],
+        "processing_seconds": 2.0241366667323746,
+        "tracks": 53
+      }
+    }
+  },
+  "excluded": [
+    {
+      "id": "01_Rock3-148-C_comp",
+      "reason": "fewer than two distinct supported pitch sets"
+    },
+    {
+      "id": "04_Funk1-114-Ab_comp",
+      "reason": "fewer than two distinct supported pitch sets"
+    },
+    {
+      "id": "04_Funk1-97-C_comp",
+      "reason": "fewer than two distinct supported pitch sets"
+    },
+    {
+      "id": "04_Jazz1-130-D_comp",
+      "reason": "fewer than two distinct supported pitch sets"
+    },
+    {
+      "id": "04_Rock1-130-A_comp",
+      "reason": "fewer than two distinct supported pitch sets"
+    },
+    {
+      "id": "05_BN2-131-B_comp",
+      "reason": "fewer than two distinct supported pitch sets"
+    },
+    {
+      "id": "05_Jazz1-130-D_comp",
+      "reason": "fewer than two distinct supported pitch sets"
+    },
+    {
+      "id": "05_Jazz1-200-B_comp",
+      "reason": "fewer than two distinct supported pitch sets"
+    }
+  ],
+  "input_sha256": "9750bbccef23786bd05de3e10f9c71fc7896c0d757e646cdd4f00594c663004a",
+  "interior_margin_seconds": {
+    "end": 0.15,
+    "start": 0.6
+  },
+  "reference": "performed chord annotations; inversions ignored; added/omitted degrees preserved",
+  "selection": "All comp takes from players 00/01 (dev) and 04/05 (holdout); two most prevalent supported pitch sets per take",
+  "source_sha256": {
+    "Chordlyze/Chord.swift": "823ea109cc351074e3f104ddb726db713dd2134819cf32bceec9cfe8774a37b2",
+    "Chordlyze/ChordDrillDetector.swift": "3904ac67d9cfb94d2911dc4df5fbe6ff33a6451c64ee550bad428eedb61b9ced",
+    "scripts/benchmark_drill.py": "72f52492a5fd816377485465765b44ca1d00fbf86d202eaa1b20bfb0a4fb135a",
+    "tests/DrillDetectorTests.swift": "c6a7913ccd252ae349283b356d7f5e5aaf6a6c5dd2c00b0afec1801e965c52ed",
+    "tests/support/LegacyDrillDetector.swift": "a32810772e200ff1e3cb05d0abc0b9004acc284b490bfe024d39252dd8c11055"
+  },
+  "split": "all",
+  "tracks": 112
+}

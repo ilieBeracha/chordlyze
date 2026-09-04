@@ -220,12 +220,27 @@ enum BackendClient {
             let from: String
             let to: String
             let avgLag: Double?
+            let avgOffset: Double?
+            let avgTimingError: Double?
             let misses: Int
             let count: Int
             var id: String { "\(from)>\(to)" }
+            var timingError: Double? { avgTimingError ?? avgLag }
+            var timingLabel: String? {
+                guard let error = timingError else { return nil }
+                if error < 0.05 { return "on time" }
+                let offset = avgOffset ?? avgLag ?? 0
+                // Opposing early/late changes can cancel in the signed mean.
+                if error - abs(offset) > 0.05 {
+                    return String(format: "%.1fs off", error)
+                }
+                return String(format: offset < 0 ? "%.1fs early" : "%.1fs late", error)
+            }
             enum CodingKeys: String, CodingKey {
                 case from, to, misses, count
                 case avgLag = "avg_lag"
+                case avgOffset = "avg_offset"
+                case avgTimingError = "avg_timing_error"
             }
         }
         struct Section: Decodable {
@@ -236,14 +251,17 @@ enum BackendClient {
         let takeId: String
         let accuracy: Double
         let avgLag: Double?
+        let avgTimingError: Double?
+        let comparison: String?
         let perChord: [ChordScore]
         let transitions: [Transition]
         let sections: [Section]
         var id: String { takeId }
         enum CodingKeys: String, CodingKey {
-            case accuracy, transitions, sections
+            case accuracy, transitions, sections, comparison
             case takeId = "take_id"
             case avgLag = "avg_lag"
+            case avgTimingError = "avg_timing_error"
             case perChord = "per_chord"
         }
     }

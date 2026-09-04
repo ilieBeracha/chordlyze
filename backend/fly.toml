@@ -16,4 +16,5 @@ primary_region = "fra"
 
 [[vm]]
   size = "shared-cpu-2x"
-  memory = "2gb"
+  # Ten-minute rich inference exceeds 2 GB without swap (capacity regression).
+  memory = "4gb"

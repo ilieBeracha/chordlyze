@@ -9,6 +9,15 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir cython numpy && \
     pip install --no-cache-dir -r requirements.txt
 
+COPY requirements-ismir.txt .
+COPY scripts/setup_ismir.sh ./scripts/setup_ismir.sh
+# Only model-loading code invalidates the expensive model installation layer.
+COPY chordlyze_backend/analysis/ismir_worker.py chordlyze_backend/analysis/provenance.py ./chordlyze_backend/analysis/
+
+ENV CHORDLYZE_ISMIR_DIR=/opt/chordlyze/ismir2019 \
+    CHORDLYZE_TORCH_THREADS=2
+RUN PYTHON=python3.11 bash scripts/setup_ismir.sh "$CHORDLYZE_ISMIR_DIR"
+
 COPY chordlyze_backend ./chordlyze_backend
 
 ENV CHORDLYZE_CACHE=/data/analysis_cache
