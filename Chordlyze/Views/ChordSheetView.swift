@@ -131,6 +131,18 @@ struct ChordSheetView: View {
                     .id(row.id)
                     .accessibilityIdentifier("song-row-\(row.start)")
             }
+            if !store.untimedLyrics.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Lyrics, no timing").font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Palette.tertiary)
+                    ForEach(Array(store.untimedLyrics.enumerated()), id: \.offset) { _, line in
+                        Text(line).font(style.wordFont).foregroundStyle(Palette.secondary)
+                            .frame(maxWidth: .infinity, alignment: line.isRTLText ? .trailing : .leading)
+                    }
+                }
+                .padding(.top, 12)
+                .accessibilityIdentifier("untimed-lyrics")
+            }
         }
     }
 }
