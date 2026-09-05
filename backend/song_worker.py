@@ -177,6 +177,14 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
     pulse = threading.Thread(target=heartbeat, daemon=True)
     pulse.start()
     audio = None
+    phases: dict[str, float] = {}
+    mark = time.monotonic()
+
+    def phase(name: str) -> None:
+        nonlocal mark
+        phases[name] = round(time.monotonic() - mark)
+        mark = time.monotonic()
+
     try:
         song = recording_metadata(song)
         if not song.get('duration'):
@@ -186,6 +194,7 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
         audio = fetch_full_track(song['title'], song.get('artist') or '', song['duration'],
                                  source_info=source_info, checkpoint=checkpoint,
                                  save_checkpoint=save_checkpoint, cancelled=cancelled)
+        phase('download')
         if cancelled():
             return 'abandoned'
         if audio is None:
@@ -194,20 +203,25 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
         stage[0] = 'analyzing'
         client.post('/internal/jobs/heartbeat', {**identity, 'stage': stage[0]})
         recognition = recognize_audio(audio, model='ismir2019', max_duration=1200)
+        phase('recognize')
         # Reject an incomplete download or a different edit before publishing.
         if abs(recognition.duration - song['duration']) > max(2, min(3, song['duration'] * .01)):
             client.post('/internal/jobs/finish', {**identity, 'state': 'unavailable'})
             return 'unavailable'
         if cancelled():
             return 'abandoned'
+        tempo = track_beats(audio)
+        phase('beats')
         client.post('/analysis/submit', {
             **identity, **recognition.metadata(), 'title': song['title'],
             'artist': song.get('artist'), 'album': song.get('album'),
             'artwork': song.get('artwork'), 'isrc': song.get('isrc'),
             'song_duration': song['duration'], 'source': 'youtube', 'audio_source': source_info,
             'segments': [segment.to_dict() for segment in recognition.segments],
-            'tempo': track_beats(audio),
+            'tempo': tempo,
         })
+        # Timings only; never track metadata.
+        print('Song phases ' + ' '.join(f'{name}={seconds}s' for name, seconds in phases.items()), flush=True)
         # The chart is published. Lyrics timing is an addition to it and must
         # not hold up the next song.
         if aligner is not None and aligner.submit(song, audio, job['generation']):

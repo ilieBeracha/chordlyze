@@ -145,7 +145,7 @@ def test_full_alignment_queue_drops_lyrics_not_charts(tmp_path):
     assert not first.exists() and not second.exists() and third.exists()
 
 
-def test_published_chart_hands_audio_to_the_aligner(monkeypatch, tmp_path):
+def test_published_chart_hands_audio_to_the_aligner(monkeypatch, tmp_path, capsys):
     import types
     audio = tmp_path / 'song.mp3'; audio.write_bytes(b'x')
     monkeypatch.setattr(song_worker, 'fetch_full_track', lambda *a, **kw: audio)
@@ -161,6 +161,7 @@ def test_published_chart_hands_audio_to_the_aligner(monkeypatch, tmp_path):
     job = {'id': 'job', 'lease': 'lease', 'generation': 'gen', 'song': dict(SONG)}
     assert song_worker.process_job(Publisher(), job, aligner=Aligner()) == 'ready'
     assert handed == [('song', audio, 'gen')] and audio.exists(), 'audio is kept for the aligner'
+    assert 'Song phases download=' in capsys.readouterr().out, 'phase timings are logged, numbers only'
     assert song_worker.process_job(Publisher(), job) == 'ready'
     assert not audio.exists(), 'without an aligner the audio is deleted as before'
 

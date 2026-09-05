@@ -86,7 +86,9 @@ def transcribe_words(audio: Path, language: str | None) -> list[dict]:
         command.append(language)
     env = {**os.environ, 'PYTHONPATH': os.pathsep.join(filter(None, [
         str(Path(__file__).resolve().parents[1]), os.environ.get('PYTHONPATH')]))}
-    completed = subprocess.run(command, capture_output=True, text=True, timeout=1800, env=env)
+    # Lowest priority: chord charts in progress must not wait for a transcript.
+    completed = subprocess.run(command, capture_output=True, text=True, timeout=1800, env=env,
+                               preexec_fn=lambda: os.nice(15))
     if completed.returncode != 0:
         # The transcript process prints no lyrics or track metadata on failure.
         raise AlignmentUnavailable(f'transcription failed: {completed.stderr.strip()[-300:]}')
