@@ -1,9 +1,9 @@
 """Chordlyze backend API.
 
-POST /analyze_track           — chords for a song, no client audio: the saved
-                                analysis, else a fresh one from the 30 s iTunes
-                                preview (later upgraded by the ingest worker).
-POST /analysis/submit         — whole-song chords recognized off-server.
+POST /song/request            — request or retrieve a complete song chart.
+GET  /song/{id}               — song metadata, chart and processing status.
+POST /analyze_track           — compatibility route; queues a full chart.
+POST /analysis/submit         — authenticated, leased worker publication.
 GET  /analysis/track/{id}     — saved analysis for a track (or its ISRC twin).
 GET  /lyrics                  — time-synced lyrics from LRCLIB.
 GET  /library                 — every saved analysis.
@@ -11,7 +11,7 @@ POST /practice_take           — score a practice recording against the chart.
 GET  /health                  — liveness.
 
 Analyses are JSON files under CACHE_DIR: track-<id>.json, isrc-<ISRC>.json,
-lyrics4-<digest>.json.
+lyrics5-<digest>.json and leased job records.
 """
 from __future__ import annotations
 
@@ -53,13 +53,14 @@ async def lifespan(_app):
     await anyio.to_thread.run_sync(close_recognizer)
 
 
-app = FastAPI(title="Chordlyze", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="Chordlyze", version="0.5.0", lifespan=lifespan)
 logger = logging.getLogger(__name__)
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "release": os.environ.get("CHORDLYZE_RELEASE", "development"),
+    return {"status": "ok", "api_version": app.version,
+            "release": os.environ.get("CHORDLYZE_RELEASE", "development"),
             "analysis_version": ANALYSIS_VERSION, "library_generation": generation(CACHE_DIR),
             "song_worker_online": SongJobs(CACHE_DIR).worker_online()}
 

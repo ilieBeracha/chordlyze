@@ -29,7 +29,7 @@ cd backend
 launchctl print gui/$(id -u)/com.chordlyze.song-worker
 ```
 
-The LaunchAgent is `~/Library/LaunchAgents/com.chordlyze.song-worker.plist`. Logs are under ignored `backend/worker-logs/`. `GET /health` reports `release`, `analysis_version`, `library_generation`, and `worker_online`; no credentials are returned. The legacy batch ingestion utility is for development only: production requires a current on-demand lease.
+The LaunchAgent is `~/Library/LaunchAgents/com.chordlyze.song-worker.plist`. Logs are under ignored `backend/worker-logs/`. `GET /health` reports `api_version`, `release`, `analysis_version`, `library_generation`, and `song_worker_online`; no credentials are returned. The legacy batch ingestion utility is for development only: production requires a current on-demand lease.
 
 ## Explicit fresh start
 
