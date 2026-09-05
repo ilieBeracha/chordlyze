@@ -14,7 +14,7 @@ import urllib.request
 from dotenv import load_dotenv
 from chordlyze_backend.analysis.beats import track_beats
 from chordlyze_backend.analysis.engine import recognize_audio
-from chordlyze_backend.analysis.ismir import close, ismir_available
+from chordlyze_backend.analysis.ismir import close, ismir_available, warm
 from chordlyze_backend.fulltrack import fetch_full_track
 from chordlyze_backend.audio_apify import ApifyAudio, AudioProviderError, DownloadCancelled
 
@@ -158,6 +158,7 @@ def main():
         raise SystemExit('Configure the worker token and install the pinned recognizer before starting.')
     if os.environ.get('CHORDLYZE_AUDIO_PROVIDER') == 'apify':
         ApifyAudio()  # Validate credentials and limits before claiming any jobs.
+    warm()  # The first song should not wait a minute for the recognizer to load.
     client = WorkerClient(os.environ.get('CHORDLYZE_API_URL', 'https://chordlyze-api.fly.dev'), token)
     stopping = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stopping.set())
