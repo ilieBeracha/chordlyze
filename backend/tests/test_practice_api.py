@@ -100,3 +100,14 @@ def test_unrepresentable_quality_is_not_reported_as_bad_playing(cache, monkeypat
         call()
     assert exc.value.status_code == 422
     assert "unsupported" in exc.value.detail
+
+
+def test_practice_endpoint_applies_key_and_pace(cache, monkeypatch):
+    reference(cache)
+    monkeypatch.setattr(main, "recognize_audio", lambda *a, **k:
+                        Recognition([ChordSegment(0, 4, "D:maj7")], 4, "a" * 64, "ismir2019"))
+    out = asyncio.run(main.practice_take(file=UploadFile(io.BytesIO(b"recording"), filename="take.wav"),
+        track_id="song", offset=2, transpose=2, playback_rate=0.5))
+    assert out["accuracy"] == 1
+    assert (out["covered_start"], out["covered_end"]) == (2, 4)
+    assert (out["transpose"], out["playback_rate"]) == (2, 0.5)

@@ -2,6 +2,10 @@
 
 SwiftUI iOS app for song chord charts, playback and instrument practice.
 
+## Practice and navigation
+
+Home, Search, Practice and Library tabs make song sheets, saved recordings and chord-change drills easy to reach. Search and practice work without Spotify login. Practice a selected passage at 50%, 75% or 100% pace, choose a sounding key and capo shapes, and retry scoring without losing recordings. See the [practice workflow guide](docs/practice-workflow.md) for recovery, timing contracts, release requirements and tests.
+
 ## Recognition and scoring
 
 - **Full-song charts and recorded practice:** one shared ISMIR2019 five-model ensemble and HMM decoder, supporting sevenths, suspended, diminished and augmented chords, selected extensions, and triad inversions.
@@ -54,6 +58,7 @@ swiftc Chordlyze/Chord.swift Chordlyze/BackendClient.swift \
 
 bash scripts/test_drill.sh
 bash scripts/test_song_sheet.sh
+bash scripts/test_practice.sh
 ```
 
 The repository is connected to Xcode Cloud's `Default` workflow. After merging into `main`, verify its iOS build and archive checks, then check the processed build in App Store Connect → TestFlight. Availability depends on the workflow's distribution settings and Apple's processing. Local distribution is also possible by archiving and distributing from Xcode with the configured Apple Developer team. The backend must remain reachable.

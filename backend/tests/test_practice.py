@@ -158,3 +158,44 @@ def test_invalid_recording_span_is_rejected(duration, offset):
 def test_overlapping_detection_is_rejected_instead_of_double_counted():
     with pytest.raises(ValueError):
         score_take(REF, [_seg(0, 4, "G:maj"), _seg(2, 8, "G:maj")], take_duration=8)
+
+
+@pytest.mark.parametrize("shift,label", [(2, "D:maj7"), (-2, "A#:maj7"), (12, "C:maj7")])
+def test_transposed_performance_scores_in_sounding_key(shift, label):
+    reference = [_seg(0, 8, "C:maj7/3")]
+    out = score_take(reference, [_seg(0, 4, label)], offset=2, take_duration=4, transpose=shift)
+    assert out["accuracy"] == 1
+    assert out["transpose"] == shift
+    assert reference[0]["label"] == "C:maj7/3", "never mutate the cached chart"
+    if shift % 12:
+        assert score_take(reference, [_seg(0, 4, label)], take_duration=4)["accuracy"] == 0
+
+
+def test_half_speed_section_uses_song_offsets_and_real_timing_error():
+    reference = [_seg(0, 8, "C:maj"), _seg(8, 12, "G:7")]
+    # Start at song second 4; the change at song second 8 happens 8 real
+    # seconds later at half speed. A late change is still 0.4 real seconds.
+    detected = [_seg(0, 8.4, "D:maj"), _seg(8.4, 16, "A:7")]
+    out = score_take(reference, detected, offset=4, take_duration=16,
+                     transpose=2, playback_rate=0.5)
+    assert out["avg_timing_error"] == 0.4
+    assert out["covered_start"] == 4 and out["covered_end"] == 12
+    assert out["scored_duration"] == 16
+    assert out["sections"][0]["start"] == 4 and out["sections"][-1]["end"] == 12
+    assert out["accuracy"] == 0.975
+    assert out["transitions"][0]["from"] == "D" and out["transitions"][0]["to"] == "A7"
+
+
+def test_slow_practice_silence_and_partial_recording_remain_in_denominator():
+    out = score_take([_seg(10, 20, "C:maj")], [_seg(0, 2, "C:maj"), _seg(2, 4, "N")],
+                     offset=10, take_duration=4, playback_rate=0.5)
+    assert out["accuracy"] == 0.5
+    assert (out["covered_start"], out["covered_end"]) == (10, 12)
+
+
+@pytest.mark.parametrize("kwargs", [dict(transpose=13), dict(transpose=-13), dict(transpose=0.5),
+    dict(transpose=True), dict(playback_rate=0), dict(playback_rate=1.1),
+    dict(playback_rate=float("nan")), dict(playback_rate=float("inf"))])
+def test_invalid_practice_settings_rejected(kwargs):
+    with pytest.raises(ValueError):
+        score_take(REF, REF, **kwargs)

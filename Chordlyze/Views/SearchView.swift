@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Search any song (iTunes catalog) and analyze its chords — no Spotify needed.
 struct SearchView: View {
+    var isRoot = false
     @State private var query = ""
     @State private var results: [ITunesSong] = []
     @State private var searching = false
@@ -22,7 +23,7 @@ struct SearchView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack { BackCircle(); Spacer() }
+            HStack { if !isRoot { BackCircle() }; Spacer() }
                 .padding(.horizontal, 20)
 
             Text("Search")

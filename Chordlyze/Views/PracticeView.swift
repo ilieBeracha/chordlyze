@@ -1,354 +1,286 @@
 import SwiftUI
 
-/// Practice mode: song in headphones, instrument at the mic. When Spotify is
-/// playing this track the take locks to Spotify's clock (position captured at
-/// record start, teleprompter follows the poller); otherwise a local clock
-/// from 0:00. The take is then uploaded for scoring against the song's chart.
+/// Practice in song time; capture and scoring retain the exact key, range and
+/// pace chosen at record start. Completed and interrupted audio stays on disk.
 struct PracticeView: View {
     let analysis: ChordAnalysis
     let title: String
     let artist: String
-    /// Album name, when known: keeps the teleprompter's lyrics on the same
-    /// version the sheet and live view show.
     var album: String? = nil
     let trackID: String
     @ObservedObject var songStore: SongSheetStore
+    var initialRange: ClosedRange<Double>? = nil
 
-    private enum Phase: Equatable {
-        case intro
-        case countdown(Int)
-        case recording
-        case uploading
-        case failed(String)
-    }
-
+    private enum Phase: Equatable { case intro, countdown(Int), recording, uploading, saved, failed(String) }
+    @State private var phase: Phase = .intro
     @State private var recorder = TakeRecorder()
     @State private var metronome = Metronome()
     @ObservedObject private var nowPlaying = SpotifyNowPlaying.shared
-    @State private var phase: Phase = .intro
-    /// Count-in in flight; cancelled when the screen goes away so no take
-    /// starts recording behind a screen that is no longer there.
+    @ObservedObject private var takes = PracticeTakeStore.shared
     @State private var countIn: Task<Void, Never>?
     @State private var startedAt: ContinuousClock.Instant?
-    /// Song second that take second 0 corresponds to.
-    @State private var songOffset: Double = 0
-    /// Take clock is Spotify's playback position rather than a local timer.
+    @State private var activeTake: PracticeTake?
     @State private var synced = false
-    /// Full song length at record start (Spotify's), for the progress rail.
-    @State private var takeDuration: Double?
-    /// Metronome is clicking the song's beat grid (local clock only).
-    @State private var clicking = false
     @State private var report: BackendClient.PracticeReport?
-    /// Spotify position vs. expected drift beyond this = user seeked mid-take.
-    private static let seekTolerance: Double = 2.5
-    /// Shorter takes are dropped on interruption instead of scored.
-    private static let minScorableTake: Double = 10
-    private static let maxTake: Double = 600
+    @State private var sectionOnly = false
+    @State private var sectionStart = 0.0
+    @State private var sectionEnd = 30.0
+    @State private var rate = 1.0
+    @State private var useSpotify = false
+    @State private var initialized = false
+    @State private var saveError: String?
 
-    /// Spotify playback of this track, when that's what the account is playing.
+    private var songEnd: Double { max(1, analysis.coverageEnd) }
     private var spotifyThisTrack: SpotifyNowPlaying.Playing? {
-        guard let p = nowPlaying.playing, p.track.id == trackID else { return nil }
-        return p
+        guard let playing = nowPlaying.playing, playing.track.id == trackID else { return nil }
+        return playing
+    }
+    private var canSync: Bool { !sectionOnly && rate == 1 && songStore.manualShift == 0 }
+    private var savedTake: PracticeTake? {
+        activeTake.flatMap { active in takes.takes.first { $0.id == active.id } ?? active }
     }
 
     var body: some View {
-        ZStack {
+        Group {
             switch phase {
-            case .intro:
-                intro
+            case .intro: intro
             case .countdown(let n):
-                countdown(n)
-            case .recording:
-                recordingView
+                VStack(spacing: 30) {
+                    Text("\(n)").font(.system(size: 110, weight: .heavy, design: .rounded))
+                        .foregroundStyle(Color.spotifyGreen)
+                    Button("Cancel") { abandon(); phase = .intro }.frame(minHeight: 44)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .recording: recordingView
             case .uploading:
-                statusView("Scoring your take…", spinning: true)
+                VStack(spacing: 18) {
+                    ProgressView("Scoring your take…")
+                    Text("Your recording is saved on this device.").font(.subheadline).foregroundStyle(Palette.secondary)
+                    BackCircle()
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .saved:
+                ScrollView {
+                    VStack(spacing: 20) {
+                        if let savedTake { SavedTakeView(take: savedTake) }
+                        if let saveError { Text(saveError).foregroundStyle(Palette.warning) }
+                        Button(sectionOnly ? "Practice this section again" : "Record another take") {
+                            activeTake = nil; saveError = nil; phase = .intro
+                        }.buttonStyle(.borderedProminent).tint(.spotifyGreen)
+                    }.padding(.bottom, 24)
+                }
             case .failed(let message):
-                failedView(message)
+                VStack(spacing: 18) {
+                    Text(message).multilineTextAlignment(.center)
+                    Button("Back to setup") { phase = .intro }.frame(minHeight: 44)
+                    BackCircle()
+                }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .toolbar(phase == .recording || isCounting ? .hidden : .visible, for: .tabBar)
         .observes(songStore)
+        .onAppear {
+            guard !initialized else { return }
+            initialized = true
+            sectionStart = min(initialRange?.lowerBound ?? 0, max(0, songEnd - 1))
+            sectionEnd = min(songEnd, max(sectionStart + 1, initialRange?.upperBound ?? 30))
+            sectionOnly = initialRange != nil
+            useSpotify = !sectionOnly && canSync && spotifyThisTrack?.isPlaying == true
+        }
+        .onChange(of: canSync) { _, allowed in if !allowed { useSpotify = false } }
         .onChange(of: songStore.analysis) { _, current in
-            if current != analysis {
+            guard current != analysis else { return }
+            if phase == .recording { finish(note: "The song chart changed. This take was saved without automatic scoring.", score: false) }
+            else if phase == .intro || isCounting {
                 abandon()
-                phase = .failed("This song’s analysis changed or was cleared. Reopen its sheet before starting another take.")
+                phase = .failed("This song’s chart changed. Reopen its sheet before starting another take.")
             }
         }
         .task(id: phase == .recording) {
             while phase == .recording && !Task.isCancelled {
                 tick()
-                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
             }
         }
         .onDisappear { abandon() }
-        .navigationDestination(isPresented: Binding(
-            get: { report != nil },
-            set: { if !$0 { report = nil; phase = .intro } })) {
-            if let report {
-                ReportCardView(report: report, title: title, artist: artist)
-            }
+        .navigationDestination(isPresented: Binding(get: { report != nil }, set: { if !$0 { report = nil } })) {
+            if let report { ReportCardView(report: report, title: title, artist: artist) }
         }
     }
 
-    // MARK: - Phases
+    private var isCounting: Bool { if case .countdown = phase { return true }; return false }
 
     private var intro: some View {
-        VStack(spacing: 0) {
-            HStack { BackCircle(size: 38); Spacer() }
-            Spacer()
-            VStack(spacing: 18) {
-                Image(systemName: "headphones")
-                    .font(.system(size: 44))
-                    .foregroundStyle(Color.spotifyGreen)
-                Text("Practice \(title)")
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-                Text("Put the song in your headphones — the mic should hear only your instrument. Stop whenever you like.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Palette.secondary)
-                    .multilineTextAlignment(.center)
-                syncStatus
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                BackCircle()
+                Text("Practice \(title)").font(.largeTitle.bold())
+                Text("Use headphones so the microphone hears your instrument clearly.")
+                    .font(.body).foregroundStyle(Palette.secondary)
+                Toggle("Practice a section", isOn: $sectionOnly)
+                if sectionOnly {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Start · \(mmss(sectionStart))").monospacedDigit()
+                        Slider(value: $sectionStart, in: 0...max(0.1, songEnd - 1), step: 1)
+                            .accessibilityLabel("Section start")
+                            .onChange(of: sectionStart) { _, start in
+                                sectionEnd = min(songEnd, max(start + 1, sectionEnd))
+                            }
+                        Text("End · \(mmss(sectionEnd))").monospacedDigit()
+                        Slider(value: $sectionEnd, in: min(songEnd - 0.1, sectionStart + 1)...songEnd)
+                            .accessibilityLabel("Section end")
+                        Text("The recording stops at the end of this passage.")
+                            .font(.footnote).foregroundStyle(Palette.secondary)
+                    }
+                }
+                if let first = analysis.chords.first(where: {
+                    $0.start <= (sectionOnly ? sectionStart : 0) && $0.end > (sectionOnly ? sectionStart : 0)
+                }), first.label != "N", !useSpotify {
+                    Text("Start on \(ChordMath.transpose(first.displayName, by: songStore.shift))")
+                        .font(.title2.bold()).foregroundStyle(Color.spotifyGreen)
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Practice pace").font(.headline)
+                    Picker("Practice pace", selection: $rate) {
+                        Text("50%").tag(0.5); Text("75%").tag(0.75); Text("100%").tag(1.0)
+                    }.pickerStyle(.segmented)
+                    Text("Slower practice changes the metronome and chord timing. Spotify audio stays at its original speed.")
+                        .font(.footnote).foregroundStyle(Palette.secondary)
+                }
+                if canSync {
+                    Toggle("Follow Spotify playback", isOn: $useSpotify)
+                }
+                Text(setupNote).font(.subheadline).foregroundStyle(Palette.secondary)
+                    .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Palette.card, in: RoundedRectangle(cornerRadius: 14))
+                if songStore.manualShift != 0 || songStore.capoMode {
+                    Text("Sounding key shift: \(songStore.manualShift > 0 ? "+" : "")\(songStore.manualShift) semitones. \(songStore.capoMode ? "Use capo fret \(songStore.capo) with the displayed shapes." : "No capo.")")
+                        .font(.subheadline)
+                }
                 Button {
                     guard countIn == nil else { return }
                     countIn = Task { await begin() }
                 } label: {
-                    Text("Start")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(.black)
-                        .padding(.vertical, 13)
-                        .padding(.horizontal, 44)
-                        .background(Capsule().fill(Color.spotifyGreen))
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 10)
-            }
-            .padding(.horizontal, 30)
-            Spacer()
+                    Text(sectionOnly ? "Start section" : "Start recording").font(.headline)
+                        .foregroundStyle(.black).frame(maxWidth: .infinity, minHeight: 52)
+                        .background(Color.spotifyGreen, in: Capsule())
+                }.buttonStyle(.plain)
+                Text("Up to 10 minutes per take. Recordings stay on this device until you delete them; scoring uploads the selected take.")
+                    .font(.footnote).foregroundStyle(Palette.secondary)
+            }.padding(24)
         }
-        .padding(.horizontal, 24)
-        .padding(.bottom, 34)
     }
 
-    private var syncStatus: some View {
-        let solo = analysis.tempo.map { "with a metronome at \(Int($0.bpm.rounded())) BPM" }
-            ?? "on a local clock"
-        let (icon, tint, text): (String, Color, String) = {
-            if let p = spotifyThisTrack, p.isPlaying, let pos = nowPlaying.livePosition() {
-                return ("waveform", Color.spotifyGreen,
-                        "Synced to Spotify · playing at \(mmss(pos)). Start locks the take to Spotify's position.")
-            }
-            if spotifyThisTrack != nil {
-                return ("pause.circle", Palette.secondary,
-                        "Spotify has this song paused. Press play there to sync, or Start to play from the top \(solo).")
-            }
-            return (analysis.tempo == nil ? "clock" : "metronome", Palette.secondary,
-                    "Spotify isn't playing this song. Play it there to sync, or Start to play from the top \(solo).")
-        }()
-        return HStack(alignment: .top, spacing: 8) {
-            Image(systemName: icon).font(.system(size: 12, weight: .semibold))
-            Text(text).font(.system(size: 12)).multilineTextAlignment(.leading)
+    private var setupNote: String {
+        if useSpotify {
+            return "Start Spotify on this song first. Recording follows its current position after a three-second count-in. Pausing or seeking ends and saves the take."
         }
-        .foregroundStyle(tint)
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.06)))
-    }
-
-    private func countdown(_ n: Int) -> some View {
-        Text("\(n)")
-            .font(.system(size: 110, weight: .heavy, design: .rounded))
-            .foregroundStyle(Color.spotifyGreen)
-            .contentTransition(.numericText(countsDown: true))
+        let bpm = analysis.tempo.map { " at \(Int(($0.bpm * rate).rounded())) BPM" } ?? ""
+        return "Pause Spotify before starting. After the count-in, play from \(mmss(sectionOnly ? sectionStart : 0))\(bpm).\(analysis.tempo == nil ? " This chart has no beat grid, so the count-in is visual." : "")"
     }
 
     private var recordingView: some View {
-        ZStack(alignment: .bottom) {
-            LiveNowView(store: songStore) {
-                takePosition()
+        LiveNowView(store: songStore) { position() }
+            .safeAreaInset(edge: .bottom) {
+                HStack {
+                    Label(synced ? "Recording · Spotify" : "Recording · \(Int(rate * 100))%", systemImage: "record.circle")
+                        .font(.subheadline).foregroundStyle(Palette.destructive)
+                    Spacer()
+                    Button("Finish take") { finish() }.buttonStyle(.borderedProminent).tint(.spotifyGreen)
+                }.padding().background(Palette.card)
             }
-            HStack(spacing: 10) {
-                Circle().fill(Palette.destructive).frame(width: 8, height: 8)
-                Text(synced ? "REC · SPOTIFY" : "REC · LOCAL")
-                    .font(.system(size: 12, weight: .bold))
-                    .tracking(1.2)
-                    .foregroundStyle(Palette.destructive)
-                if clicking, let bpm = analysis.tempo?.bpm {
-                    Text("♩ \(Int(bpm.rounded()))")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Palette.secondary)
-                }
-                Spacer()
-                Button {
-                    finish()
-                } label: {
-                    Text("Finish take")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.black)
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, 22)
-                        .background(Capsule().fill(Color.spotifyGreen))
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 64)
-        }
     }
-
-    private func statusView(_ message: String, spinning: Bool) -> some View {
-        VStack(spacing: 14) {
-            if spinning { ProgressView() }
-            Text(message)
-                .font(.system(size: 14))
-                .foregroundStyle(Palette.secondary)
-        }
-    }
-
-    private func failedView(_ message: String) -> some View {
-        VStack(spacing: 16) {
-            Text(message)
-                .font(.system(size: 13))
-                .foregroundStyle(Palette.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 30)
-            Button {
-                phase = .intro
-            } label: {
-                Text("Try again")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.black)
-                    .padding(.vertical, 11)
-                    .padding(.horizontal, 26)
-                    .background(Capsule().fill(Color.spotifyGreen))
-            }
-            .buttonStyle(.plain)
-            BackCircle(size: 38)
-        }
-    }
-
-    // MARK: - Flow
 
     private func begin() async {
         defer { countIn = nil }
         guard songStore.canPractice, songStore.analysis == analysis else {
-            phase = .failed("The song sheet is updating. Reopen it before starting this take.")
-            return
+            phase = .failed("The song sheet is updating. Reopen it before starting a take."); return
+        }
+        guard useSpotify ? (canSync && spotifyThisTrack?.isPlaying == true) : nowPlaying.playing?.isPlaying != true else {
+            phase = .failed(useSpotify ? "Play this song in Spotify before starting." : "Pause Spotify before practicing with the metronome."); return
         }
         guard await recorder.requestPermission() else {
-            phase = .failed("Microphone access denied — enable it in Settings.")
-            return
+            phase = .failed("Enable microphone access for Chordlyze in Settings to record."); return
         }
         guard !Task.isCancelled else { return }
-        let followSpotify = spotifyThisTrack?.isPlaying == true
         do {
-            if !followSpotify, let tempo = analysis.tempo {
-                // Solo: four-beat count-in at the song's tempo, clicks through the take.
-                let period = 60 / tempo.bpm
-                let recordAt = try metronome.start(countIn: 4, period: period, beats: tempo.beats)
+            let start = sectionOnly ? sectionStart : 0
+            let end = sectionOnly ? sectionEnd : songEnd
+            let setup = try PracticePlan(start: start, end: end, rate: rate,
+                transpose: songStore.manualShift, capo: songStore.capoMode ? songStore.capo : 0)
+            if !useSpotify, let tempo = analysis.tempo, tempo.bpm > 0 {
+                let period = 60 / (tempo.bpm * rate)
+                let recordAt = try metronome.start(countIn: 4, period: period, beats: setup.beats(tempo.beats))
                 for n in [4, 3, 2, 1] {
-                    withAnimation { phase = .countdown(n) }
+                    phase = .countdown(n)
                     try await Task.sleep(until: recordAt - .seconds(Double(n - 1) * period), clock: .continuous)
                 }
-                clicking = true
             } else {
-                for n in [3, 2, 1] {
-                    withAnimation { phase = .countdown(n) }
-                    try await Task.sleep(for: .seconds(1))
-                }
-                clicking = false
+                for n in [3, 2, 1] { phase = .countdown(n); try await Task.sleep(for: .seconds(1)) }
             }
-            try recorder.start(maxDuration: Self.maxTake)
+            try Task.checkCancellation()
+            let plan: PracticePlan
+            if useSpotify {
+                guard canSync, spotifyThisTrack?.isPlaying == true, let live = nowPlaying.livePosition(), live < songEnd else {
+                    throw NSError(domain: "Practice", code: 1, userInfo: [NSLocalizedDescriptionKey: "Spotify playback changed during the count-in. Start again."])
+                }
+                plan = try PracticePlan(start: live, end: songEnd, capo: setup.capo)
+            } else { plan = setup }
+            let take = try takes.prepare(song: songStore.song, plan: plan)
+            activeTake = take
+            try recorder.start(maxDuration: plan.recordingDuration, at: takes.audioURL(take))
+            startedAt = .now
+            synced = useSpotify
+            phase = .recording
         } catch is CancellationError {
-            // Screen went away during the count-in; nothing started.
             metronome.stop()
-            return
+            _ = recorder.stop()
         } catch {
             metronome.stop()
+            _ = recorder.stop()
             phase = .failed("Could not start: \(error.localizedDescription)")
-            return
         }
-        startedAt = .now
-        if followSpotify, let pos = nowPlaying.livePosition() {
-            songOffset = pos
-            synced = true
-        } else {
-            songOffset = 0
-            synced = false
-        }
-        takeDuration = spotifyThisTrack?.track.durationMs.map { Double($0) / 1000 }
-        phase = .recording
     }
 
-    /// Song position of the take right now.
-    private func takePosition() -> TimeInterval? {
-        guard let startedAt else { return nil }
-        if synced, let live = nowPlaying.livePosition() { return live }
-        return songOffset + startedAt.duration(to: .now).seconds
+    private func position() -> Double? {
+        guard let startedAt, let activeTake else { return nil }
+        // The captured clock remains continuous even when a playback poll jumps.
+        return activeTake.plan.position(elapsed: startedAt.duration(to: .now).seconds)
     }
 
-    /// Once a second while recording: the take hit its cap, or Spotify
-    /// paused, seeked, or changed song mid-take. Either way the rest can't
-    /// be scored, so end it here (score what was played if long enough).
     private func tick() {
-        guard phase == .recording, let startedAt else { return }
+        guard phase == .recording, let startedAt, let activeTake else { return }
         let elapsed = startedAt.duration(to: .now).seconds
-        if !recorder.isRecording {
-            finish()
-            return
-        }
+        if !recorder.isRecording || elapsed >= activeTake.plan.recordingDuration { finish(); return }
         guard synced else { return }
-        let expected = songOffset + elapsed
         let reason: String
-        if let p = spotifyThisTrack, p.isPlaying {
-            guard let live = nowPlaying.livePosition(),
-                  abs(live - expected) > Self.seekTolerance else { return }
-            reason = "Spotify was seeked mid-take"
-        } else if spotifyThisTrack != nil {
-            reason = "Spotify was paused mid-take"
+        if let playing = spotifyThisTrack, playing.isPlaying {
+            guard let live = nowPlaying.livePosition(), abs(live - (activeTake.plan.start + elapsed)) > 2.5 else { return }
+            reason = "Spotify moved to another position. The partial take was saved."
         } else {
-            reason = "Spotify changed song mid-take"
+            reason = "Spotify paused or changed songs. The partial take was saved."
         }
-        if elapsed >= Self.minScorableTake {
-            finish()
-        } else {
-            discard()
-            phase = .failed("\(reason). Keep it playing for a continuous take.")
-        }
+        finish(note: reason, score: false)
     }
 
-    private func finish() {
+    private func finish(note: String? = nil, score: Bool = true) {
+        guard phase == .recording, let take = activeTake else { return }
         metronome.stop()
-        guard let url = recorder.stop() else {
-            phase = .failed("Nothing was recorded.")
-            return
-        }
-        phase = .uploading
+        _ = recorder.stop()
+        do { try takes.finish(take, note: note) }
+        catch { saveError = "The audio is saved, but its details could not be updated: \(error.localizedDescription)" }
+        phase = score ? .uploading : .saved
+        guard score else { return }
         Task {
-            do {
-                report = try await BackendClient.submitPracticeTake(fileURL: url, trackID: trackID,
-                                                                    offset: songOffset)
-            } catch {
-                phase = .failed(error.localizedDescription)
-            }
-            try? FileManager.default.removeItem(at: url)
+            do { report = try await takes.score(savedTake ?? take) }
+            catch { saveError = "Scoring failed. Your recording is saved; retry below. \(error.localizedDescription)" }
+            phase = .saved
         }
     }
 
-    /// Stop everything and throw the audio away.
-    private func discard() {
-        metronome.stop()
-        if let url = recorder.stop() { try? FileManager.default.removeItem(at: url) }
-    }
-
-    /// Leaving the screen: cancel a count-in, drop an unfinished take.
     private func abandon() {
-        countIn?.cancel()
-        countIn = nil
-        if phase == .recording {
-            discard()
-            phase = .intro
-        }
+        countIn?.cancel(); countIn = nil
+        if isCounting { metronome.stop(); _ = recorder.stop(); phase = .intro }
+        if phase == .recording { finish(note: "You left during recording. The partial take was saved.", score: false) }
     }
 }

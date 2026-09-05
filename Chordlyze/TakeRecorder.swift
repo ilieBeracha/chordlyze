@@ -14,7 +14,7 @@ final class TakeRecorder {
         await AVAudioApplication.requestRecordPermission()
     }
 
-    func start(maxDuration: TimeInterval) throws {
+    func start(maxDuration: TimeInterval, at url: URL) throws {
         let session = AVAudioSession.sharedInstance()
         // playAndRecord (not record) so a running metronome keeps clicking;
         // mixWithOthers so activating the session doesn't pause Spotify.
@@ -22,8 +22,6 @@ final class TakeRecorder {
                                 options: [.defaultToSpeaker, .allowBluetoothA2DP, .mixWithOthers])
         try session.setActive(true)
 
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("take-\(UUID().uuidString).m4a")
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: 44100.0,
@@ -31,7 +29,10 @@ final class TakeRecorder {
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
         ]
         let recorder = try AVAudioRecorder(url: url, settings: settings)
-        recorder.record(forDuration: maxDuration)
+        guard recorder.record(forDuration: maxDuration) else {
+            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            throw CocoaError(.fileWriteUnknown)
+        }
         self.recorder = recorder
         fileURL = url
     }

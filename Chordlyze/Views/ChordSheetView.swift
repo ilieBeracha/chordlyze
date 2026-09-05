@@ -6,6 +6,8 @@ import SwiftUI
 struct AnalysisTabsView: View {
     @StateObject private var store: SongSheetStore
     @State private var selectedChord: SelectedChord?
+    @State private var showSettings = false
+    @State private var practiceRange: ClosedRange<Double>?
 
     init(song: SongDescriptor, store: SongSheetStore? = nil) {
         _store = StateObject(wrappedValue: store ?? SongSheetStore.shared(for: song))
@@ -19,7 +21,10 @@ struct AnalysisTabsView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     if store.analysis != nil { toolbox }
                     SongSheetStatus(store: store)
-                    ChordSheetView(store: store, onChordTap: { selectedChord = SelectedChord(name: $0) })
+                    ChordSheetView(store: store, onChordTap: { selectedChord = SelectedChord(name: $0) },
+                        onPracticeRow: store.canPractice ? { row in
+                            practiceRange = row.start...min(row.end, store.analysis?.coverageEnd ?? row.end)
+                        } : nil)
                 }
                 .padding(20)
             }
@@ -28,40 +33,47 @@ struct AnalysisTabsView: View {
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .chordDiagram($selectedChord)
+        .sheet(isPresented: $showSettings) { SongPlayingSettings(store: store) }
+        .navigationDestination(isPresented: Binding(get: { practiceRange != nil },
+            set: { if !$0 { practiceRange = nil } })) {
+            if let range = practiceRange, let chart = store.analysis {
+                PracticeView(analysis: chart, title: store.song.title, artist: store.song.artist,
+                    album: store.song.album, trackID: store.song.id, songStore: store, initialRange: range)
+            }
+        }
         .observes(store)
     }
 
     private var toolbox: some View {
-        HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             if let chart = store.analysis, store.canPractice {
-                NavigationLink {
-                    PracticeView(analysis: chart, title: store.song.title, artist: store.song.artist,
-                                 album: store.song.album, trackID: store.song.id, songStore: store)
-                } label: {
-                    Label("Practice", systemImage: "mic.fill")
-                        .font(.system(size: 13, weight: .bold)).foregroundStyle(Color.spotifyGreen)
+                HStack(spacing: 16) {
+                    NavigationLink {
+                        PracticeView(analysis: chart, title: store.song.title, artist: store.song.artist,
+                                     album: store.song.album, trackID: store.song.id, songStore: store)
+                    } label: {
+                        Label("Practice", systemImage: "mic.fill").font(.headline)
+                            .frame(minHeight: 44)
+                    }.buttonStyle(.plain)
+                    Spacer(minLength: 0)
+                    Button("Choose section") { practiceRange = 0...min(30, chart.coverageEnd) }
+                        .font(.subheadline).frame(minHeight: 44)
                 }
-                .buttonStyle(.plain)
+                Divider()
             }
-            Spacer(minLength: 0)
-            HStack(spacing: 6) {
-                Button { store.manualShift = max(-6, store.manualShift - 1) } label: { Image(systemName: "minus") }
-                    .accessibilityLabel("Transpose down")
-                Text(store.manualShift == 0 ? "±0" : String(format: "%+d", store.manualShift))
-                    .font(.system(size: 13, weight: .bold, design: .monospaced)).frame(width: 30)
-                Button { store.manualShift = min(6, store.manualShift + 1) } label: { Image(systemName: "plus") }
-                    .accessibilityLabel("Transpose up")
-            }
-            .buttonStyle(.plain).foregroundStyle(.white)
-            Button { store.capoMode.toggle() } label: {
-                Text(store.capoMode ? "Capo \(store.capo)" : "Original")
-                    .font(.system(size: 12, weight: .bold)).foregroundStyle(Color.spotifyGreen)
-            }
-            .buttonStyle(.plain)
+            Button { showSettings = true } label: {
+                HStack {
+                    Label("Key & capo", systemImage: "slider.horizontal.3")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                }.font(.subheadline).frame(minHeight: 44)
+            }.buttonStyle(.plain)
         }
-        .padding(14)
+        .foregroundStyle(Color.spotifyGreen)
+        .padding(.horizontal, 14).padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 14).fill(Palette.card))
     }
+
 }
 
 /// Title, artist, key and the current capo/transpose, over every song surface.
@@ -131,6 +143,7 @@ struct ChordSheetView: View {
     var style: ChordRowView.Style = .sheet
     var onChordTap: ((String) -> Void)? = nil
     var onRowTap: ((SheetModel.Row) -> Void)? = nil
+    var onPracticeRow: ((SheetModel.Row) -> Void)? = nil
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: style == .live ? 30 : 20) {
@@ -140,7 +153,47 @@ struct ChordSheetView: View {
                     .padding(.vertical, 8)
                     .id(row.id)
                     .accessibilityIdentifier("song-row-\(row.start)")
+                    .contextMenu {
+                        if let onPracticeRow, row.start < (store.analysis?.coverageEnd ?? 0) {
+                            Button("Practice this passage", systemImage: "mic.fill") { onPracticeRow(row) }
+                        }
+                    }
             }
+        }
+    }
+}
+
+struct SongPlayingSettings: View {
+    @ObservedObject var store: SongSheetStore
+    @Environment(\.dismiss) private var dismiss
+    private var soundingKey: String {
+        guard let key = store.analysis?.key else { return "Not available" }
+        let parts = key.split(separator: " ", maxSplits: 1)
+        guard let root = parts.first else { return key }
+        return ([ChordMath.transpose(String(root), by: store.manualShift)] + parts.dropFirst().map(String.init)).joined(separator: " ")
+    }
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Sounding key") {
+                    LabeledContent("Play in", value: soundingKey)
+                    Stepper("Transpose: \(store.manualShift > 0 ? "+" : "")\(store.manualShift) semitones",
+                        value: $store.manualShift, in: -6...6)
+                    Text("Changes the displayed chords and the key used to score your playing. Spotify audio remains in its original key.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                Section("Guitar chord shapes") {
+                    Toggle("Use suggested capo shapes", isOn: $store.capoMode)
+                    if store.capoMode {
+                        LabeledContent("Place capo at", value: store.capo == 0 ? "No capo needed" : "Fret \(store.capo)")
+                    }
+                    Text("With the capo at this fret, the displayed shapes produce the sounding key above. Capo shapes do not change the scoring key.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                Button("Reset to original") { store.manualShift = 0; store.capoMode = false }
+            }
+            .navigationTitle("Key & capo").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
     }
 }

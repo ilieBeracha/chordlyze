@@ -38,6 +38,32 @@ struct PracticeReportContract {
             precondition(rich.transitions[0].timingLabel == expected)
             precondition(rich.transitions[0].timingError == error)
         }
-        print("Practice report contract: legacy decoding and 4 timing cases passed")
+        _ = try BackendClient.practiceReport(legacy, transpose: 0, playbackRate: 1)
+        for (shift, rate) in [(2, 1.0), (0, 0.5)] {
+            do {
+                _ = try BackendClient.practiceReport(legacy, transpose: shift, playbackRate: rate)
+                fatalError("An old server must not silently score modified practice settings")
+            } catch {}
+        }
+        let accepted = Data("""
+        {"take_id":"new","accuracy":1,"per_chord":[],"transitions":[],"sections":[],
+         "transpose":2,"playback_rate":0.5}
+        """.utf8)
+        _ = try BackendClient.practiceReport(accepted, transpose: 2, playbackRate: 0.5)
+        do {
+            _ = try BackendClient.practiceReport(accepted, transpose: 0, playbackRate: 1)
+            fatalError("Mismatched server settings must fail")
+        } catch {}
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data("test audio".utf8).write(to: file)
+        let request = try BackendClient.practiceTakeRequest(fileURL: file, trackID: "song", offset: 12,
+            transpose: -2, playbackRate: 0.75)
+        let body = String(data: request.httpBody!, encoding: .utf8)!
+        precondition(body.contains("name=\"transpose\"\r\n\r\n-2\r\n"))
+        precondition(body.contains("name=\"playback_rate\"\r\n\r\n0.75\r\n"))
+        precondition(body.contains("name=\"offset\"\r\n\r\n12.0\r\n"))
+        precondition(body.contains("test audio") && !body.contains("capo"))
+        print("Practice report contract: legacy decoding, timing, request fields and server compatibility passed")
     }
 }

@@ -67,10 +67,10 @@ def post_json(url, payload):
         return json.load(response)
 
 
-def upload(url, wav, *, track="rich", offset="2"):
+def upload(url, wav, *, track="rich", offset="2", transpose="0", playback_rate="1"):
     boundary = "chordlyze-regression"
     body = bytearray()
-    for name, value in (("track_id", track), ("offset", offset)):
+    for name, value in (("track_id", track), ("offset", offset), ("transpose", transpose), ("playback_rate", playback_rate)):
         body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode())
     body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="take.wav"\r\n'
                 'Content-Type: audio/wav\r\n\r\n'.encode())
@@ -110,3 +110,29 @@ def test_nonfinite_sync_offset_rejected_at_http_boundary(server, offset):
     with pytest.raises(urllib.error.HTTPError) as exc:
         upload(url, wav, offset=offset)
     assert exc.value.code == 422
+
+
+@pytest.mark.parametrize("settings", [dict(transpose="13"), dict(transpose="1.5"),
+    dict(playback_rate="0"), dict(playback_rate="1.1"), dict(playback_rate="nan")])
+def test_invalid_practice_settings_rejected_at_http_boundary(server, settings):
+    url, temp = server
+    wav = temp / "invalid-settings.wav"
+    wav.write_bytes(b"unused")
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        upload(url, wav, **settings)
+    assert exc.value.code == 422
+
+
+def test_real_transposed_slow_section_upload(server):
+    url, temp = server
+    post_json(url + "/analysis/submit", {
+        "track_id": "transpose-test", **model_metadata("ismir2019"), "audio_duration": 8,
+        "audio_sha256": "b" * 64, "segments": [{"start": 0, "end": 8, "label": "C:maj7"}],
+    })
+    wav = temp / "transposed.wav"
+    synth_progression(["D:maj7"], 4, str(wav))
+    report = upload(url, wav, track="transpose-test", offset="2", transpose="2", playback_rate="0.5")
+    assert report["accuracy"] > .9
+    assert report["per_chord"][0]["name"] == "Dmaj7"
+    assert (report["covered_start"], report["covered_end"]) == (2, 4)
+    assert report["transpose"] == 2 and report["playback_rate"] == 0.5

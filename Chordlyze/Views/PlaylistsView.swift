@@ -1,151 +1,284 @@
 import SwiftUI
 
-enum TrackSource: Hashable {
-    case liked
-    case top
-    case playlist(id: String, name: String)
-
-    var title: String {
-        switch self {
-        case .liked: return "Liked Songs"
-        case .top: return "Top Tracks"
-        case .playlist(_, let name): return name
-        }
-    }
-}
-
-/// Home screen, "cover-led" (design 4d): the now-playing song is the anchor,
-/// its artwork color bleeds behind the header; library counts and the playlist
-/// grid sit below.
-struct PlaylistsView: View {
+/// Home tab: what the account has been playing, cross-referenced with the
+/// analyzed library, and the songs analyzed most recently. Spotify playback
+/// shows as a mini-player above the tab bar; the page itself does not change
+/// between playing and idle.
+struct HomeView: View {
     @EnvironmentObject var auth: SpotifyAuth
     @ObservedObject private var nowPlaying = SpotifyNowPlaying.shared
-    @ObservedObject private var artColor = ArtworkColor.shared
-    @State private var playlists: [Playlist] = []
-    @State private var analyzedCount: Int?
+    @State private var library: [BackendClient.LibraryItem] = []
+    @State private var plays: [RecentPlays.Song] = []
+    @State private var playCount = 0
+    /// The token predates the recently-played scope; a reconnect grants it.
+    @State private var playsNeedReconnect = false
     @State private var likedCount: Int?
     @State private var topCount: Int?
+    @State private var loaded = false
     @State private var error: String?
 
-    private let grid2 = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
-
-    private var currentTrack: Track? { nowPlaying.playing?.track }
-    private var washColor: Color? {
-        currentTrack.flatMap { artColor.color(for: $0.id) }
+    private var analyzedByTrack: [String: BackendClient.LibraryItem] {
+        Dictionary(library.map { ($0.trackId, $0) }, uniquingKeysWith: { a, _ in a })
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 22) {
                     header
-                    if nowPlaying.needsReauth {
-                        reauthBanner
-                            .padding(.top, 22)
-                    }
-                    if let track = currentTrack {
-                        nowPlayingBlock(track)
-                            .padding(.top, 22)
-                        actionRow
-                            .padding(.top, 18)
-                    }
                     statTiles
-                        .padding(.top, 24)
-                    Text("PLAYLISTS")
-                        .font(.system(size: 12, weight: .bold))
-                        .tracking(1.2)
-                        .foregroundStyle(Palette.secondary)
-                        .padding(.top, 26)
-                        .padding(.bottom, 10)
-                    playlistGrid
+                    playedRecently
+                    lastAnalyzed
+                    if nowPlaying.needsReauth {
+                        reconnectRow("Spotify stopped answering. Reconnect to see what's playing.")
+                    } else if nowPlaying.playing == nil {
+                        spotifyPrompt
+                    }
                     if let error {
-                        Text(error).font(.footnote).foregroundStyle(Palette.destructive).padding(.top, 16)
+                        Text(error).font(.footnote).foregroundStyle(Palette.destructive)
                     }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 62)
                 .padding(.bottom, 32)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(alignment: .top) { wash }
             }
             .ignoresSafeArea(edges: .top)
             .background(Color.black.ignoresSafeArea())
+            .safeAreaInset(edge: .bottom, spacing: 0) { miniPlayer }
             .navigationDestination(for: TrackSource.self) { source in
                 TracksView(api: SpotifyAPI(auth: auth), source: source)
             }
             .toolbar(.hidden, for: .navigationBar)
-            .refreshable { await reload() }
-            .task { await reload() }
+            .refreshable {
+                nowPlaying.resume()
+                await reload()
+            }
             // Every token grant (launch refresh, reconnect) restarts the
-            // poller; a no-op while it is already running.
+            // poller and reloads; a no-op for the poller while it runs.
             .task(id: auth.grants) {
                 nowPlaying.start(api: SpotifyAPI(auth: auth))
-            }
-            .task(id: currentTrack?.id) {
-                if let track = currentTrack {
-                    await artColor.load(trackID: track.id, url: track.album.artworkURL)
-                }
+                await reload()
             }
         }
     }
 
-    // MARK: - Artwork color wash
-
-    private var wash: some View {
-        let top = washColor ?? Palette.elevated
-        let mid = washColor.map { $0.opacity(0.55) } ?? Palette.elevated.opacity(0.5)
-        return VStack(spacing: 0) {
-            // Headroom so the rubber-band overscroll shows color, not black.
-            top.frame(height: 600)
-            LinearGradient(stops: [.init(color: top, location: 0),
-                                   .init(color: mid, location: 0.55),
-                                   .init(color: .black, location: 1)],
-                           startPoint: UnitPoint(x: 0.58, y: 0),
-                           endPoint: UnitPoint(x: 0.42, y: 1))
-                .frame(height: 380)
+    private func reload() async {
+        let api = SpotifyAPI(auth: auth)
+        async let saved = try? BackendClient.library()
+        async let liked = try? api.savedTracksTotal()
+        async let top = try? api.topTracksTotal()
+        do {
+            let recent = try await api.recentlyPlayed()
+            plays = RecentPlays.songs(recent)
+            playCount = recent.count
+            playsNeedReconnect = false
+            error = nil
+        } catch {
+            let code = (error as NSError).code
+            if code == 401 || code == 403 {
+                playsNeedReconnect = true
+            } else {
+                self.error = "Could not load recent plays: \(error.localizedDescription)"
+            }
         }
-        .offset(y: -600)
-        .animation(.easeInOut(duration: 0.4), value: washColor)
+        library = (await saved) ?? []
+        likedCount = await liked
+        topCount = await top
+        loaded = true
     }
 
     // MARK: - Header
 
     private var header: some View {
         HStack(spacing: 0) {
-            Text("Your Music")
+            Text("Home")
                 .font(.system(size: 30, weight: .bold))
                 .tracking(-0.4)
                 .foregroundStyle(.white)
             Spacer()
             NavigationLink {
-                SearchView()
-            } label: {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-            }
-            .buttonStyle(.plain)
-            NavigationLink {
                 ProfileView()
             } label: {
-                Image(systemName: "person.crop.circle")
+                Image(systemName: "gearshape")
                     .font(.system(size: 22))
                     .foregroundStyle(.white)
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
-            .padding(.trailing, -10)
+            .padding(.trailing, -11)
         }
     }
 
-    /// The poller stopped on a 401/403: the token lacks a scope this build
-    /// needs, or Spotify revoked it. Said here instead of a silent blank.
-    private var reauthBanner: some View {
+    // MARK: - Stats
+
+    private var statTiles: some View {
+        HStack(spacing: 8) {
+            NavigationLink { LibraryView() } label: {
+                statTile(count: loaded ? library.count : nil, label: "Analyzed")
+            }.buttonStyle(.plain)
+            NavigationLink(value: TrackSource.liked) {
+                statTile(count: likedCount, label: "Liked")
+            }.buttonStyle(.plain)
+            NavigationLink(value: TrackSource.top) {
+                statTile(count: topCount, label: "Top")
+            }.buttonStyle(.plain)
+        }
+    }
+
+    private func statTile(count: Int?, label: String) -> some View {
+        VStack(spacing: 2) {
+            Text(count.map(String.init) ?? "—")
+                .font(.system(size: 22, weight: .heavy, design: .rounded))
+                .foregroundStyle(.white)
+            Text(label.uppercased())
+                .font(.system(size: 10, weight: .bold))
+                .tracking(1)
+                .foregroundStyle(Palette.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Palette.homeCard))
+    }
+
+    // MARK: - Played recently
+
+    private var playedRecently: some View {
+        let analyzed = plays.filter { analyzedByTrack[$0.track.id] != nil }.count
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                sectionLabel("PLAYED RECENTLY")
+                Spacer()
+                if !plays.isEmpty {
+                    (Text("\(playCount)").foregroundStyle(.white).fontWeight(.bold)
+                        + Text(playCount == 1 ? " play · " : " plays · ")
+                        + Text("\(analyzed)").foregroundStyle(.white).fontWeight(.bold)
+                        + Text(" analyzed"))
+                        .font(.system(size: 13))
+                        .foregroundStyle(Palette.secondaryAlt)
+                }
+            }
+            if playsNeedReconnect {
+                reconnectRow("Reconnect Spotify to see what you played.")
+            } else if plays.isEmpty {
+                emptyRow(loaded ? "Nothing played yet." : "Loading your plays…")
+            } else {
+                VStack(spacing: 14) {
+                    ForEach(plays.prefix(5)) { song in
+                        NavigationLink {
+                            ChordView(track: song.track)
+                        } label: {
+                            songRow(artwork: song.track.album.artworkURL, title: song.track.name,
+                                    meta: [song.track.artistNames, RecentPlays.relativeTime(song.lastPlayed),
+                                           song.count > 1 ? "×\(song.count)" : nil].compactMap { $0 }.joined(separator: " · "),
+                                    saved: analyzedByTrack[song.track.id])
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Last analyzed
+
+    private var lastAnalyzed: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                sectionLabel("LAST ANALYZED")
+                Spacer()
+                NavigationLink {
+                    LibraryView()
+                } label: {
+                    Text("All songs")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.spotifyGreen)
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+            }
+            if library.isEmpty {
+                emptyRow(loaded ? "Analyze a song from Search or a playlist to see it here." : "Loading your library…")
+            } else {
+                VStack(spacing: 14) {
+                    ForEach(library.prefix(3)) { item in
+                        NavigationLink {
+                            SavedAnalysisView(item: item)
+                        } label: {
+                            songRow(artwork: item.artworkURL, title: item.title ?? "Unknown song",
+                                    meta: item.artist ?? "", saved: item)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Rows
+
+    private func songRow(artwork url: URL?, title: String, meta: String,
+                         saved: BackendClient.LibraryItem?) -> some View {
+        HStack(spacing: 13) {
+            artwork(url, size: 50, radius: 10)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text(meta)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            if let key = saved?.key {
+                KeyBadge(key: key, difficulty: saved?.difficulty?.level)
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.faint)
+            }
+        }
+        .frame(minHeight: 50)
+    }
+
+    private func emptyRow(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 13))
+            .foregroundStyle(Palette.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 14)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.homeCard))
+    }
+
+    // MARK: - Spotify
+
+    private var spotifyPrompt: some View {
+        HStack(spacing: 10) {
+            Circle().fill(Palette.faint).frame(width: 6, height: 6)
+            Text("Play something on Spotify to follow chords live")
+                .font(.system(size: 13))
+                .foregroundStyle(Palette.secondary)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                .foregroundStyle(Palette.gray5)
+        )
+    }
+
+    /// A token without a scope this build needs, or one Spotify revoked.
+    private func reconnectRow(_ text: String) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(Palette.warning)
-            Text("Spotify stopped answering. Reconnect to see what's playing.")
+            Text(text)
                 .font(.system(size: 13))
                 .foregroundStyle(.white)
             Spacer()
@@ -161,173 +294,125 @@ struct PlaylistsView: View {
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.08)))
     }
 
-    // MARK: - Now playing
-
-    private func nowPlayingBlock(_ track: Track) -> some View {
-        let paused = nowPlaying.playing?.isPlaying == false
-        return NavigationLink {
-            chordSheetDestination(track)
-        } label: {
-            HStack(alignment: .bottom, spacing: 14) {
-                AsyncImage(url: track.album.artworkURL) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Palette.elevated
-                }
-                .frame(width: 104, height: 104)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .shadow(color: .black.opacity(0.5), radius: 17, y: 14)
-
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 6) {
-                        Circle().fill(paused ? Palette.secondary : Color.spotifyGreen).frame(width: 6, height: 6)
-                        Text(paused ? "PAUSED" : "NOW PLAYING")
-                            .font(.system(size: 10, weight: .bold))
-                            .tracking(1.2)
-                            .foregroundStyle(paused ? Palette.secondary : Color.spotifyGreen)
-                    }
-                    Text(track.name)
-                        .font(.system(size: 24, weight: .heavy, design: .rounded))
-                        .tracking(-0.5)
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .padding(.top, 4)
-                    Text(track.artistNames)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .lineLimit(1)
-                    Group {
-                        if let key = nowPlaying.analysis?.key {
-                            Text(key.uppercased())
-                                .font(.system(size: 12, weight: .heavy, design: .rounded))
-                                .foregroundStyle(Color.spotifyGreen)
-                                .padding(.vertical, 4)
-                                .padding(.horizontal, 10)
-                                .background(Capsule().fill(Color.black.opacity(0.35)))
-                        } else if nowPlaying.analysisFailed {
-                            Text("NO CHORDS")
-                                .font(.system(size: 10, weight: .bold))
-                                .tracking(1.0)
-                                .foregroundStyle(.white.opacity(0.5))
-                        } else {
-                            ProgressView().controlSize(.small)
-                        }
-                    }
-                    .padding(.top, 8)
-                }
-                .padding(.bottom, 2)
-                Spacer(minLength: 0)
-            }
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func chordSheetDestination(_ track: Track) -> some View {
-        ChordView(track: track)
-    }
-
-    private var actionRow: some View {
-        HStack(spacing: 8) {
-            NavigationLink {
-                SpotifyLiveView()
-            } label: {
-                Text("Follow live")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.black)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
-                    .background(Capsule().fill(Color.spotifyGreen))
-            }
-            .buttonStyle(.plain)
-            NavigationLink {
-                if let track = currentTrack { chordSheetDestination(track) }
-            } label: {
-                Text("Chord sheet")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
-                    .background(Capsule().fill(Color.white.opacity(0.14)))
-            }
-            .buttonStyle(.plain)
-            }
-    }
-
-    // MARK: - Stats
-
-    private var statTiles: some View {
-        HStack(spacing: 8) {
-            NavigationLink { LibraryView() } label: {
-                statTile(count: analyzedCount, label: "Analyzed")
-            }.buttonStyle(.plain)
-            NavigationLink(value: TrackSource.liked) {
-                statTile(count: likedCount, label: "Liked")
-            }.buttonStyle(.plain)
-            NavigationLink(value: TrackSource.top) {
-                statTile(count: topCount, label: "Top")
-            }.buttonStyle(.plain)
-        }
-    }
-
-    private func statTile(count: Int?, label: String) -> some View {
+    /// Above the tab bar while Spotify plays; the page above does not move.
+    private var miniPlayer: some View {
         VStack(spacing: 0) {
-            Text(count.map(String.init) ?? "—")
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(.white)
-            Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(Palette.secondaryAlt)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .background(RoundedRectangle(cornerRadius: 13, style: .continuous)
-            .fill(Color.white.opacity(0.07)))
-    }
-
-    // MARK: - Playlists
-
-    private var playlistGrid: some View {
-        LazyVGrid(columns: grid2, spacing: 12) {
-            ForEach(playlists) { playlist in
-                NavigationLink(value: TrackSource.playlist(id: playlist.id, name: playlist.name)) {
-                    VStack(alignment: .leading, spacing: 7) {
-                        AsyncImage(url: (playlist.images?.first?.url).flatMap(URL.init)) { image in
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        } placeholder: {
-                            Palette.elevated
-                        }
-                        .aspectRatio(1, contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        Text(playlist.name)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                    }
-                }
-                .buttonStyle(.plain)
+            if let playing = nowPlaying.playing {
+                MiniPlayer(playing: playing, nowPlaying: nowPlaying,
+                           store: SongSheetStore.shared(for: SongDescriptor(track: playing.track)))
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .animation(.easeOut(duration: 0.3), value: nowPlaying.playing == nil)
     }
 
-    private func reload() async {
-        let api = SpotifyAPI(auth: auth)
-        async let lib = try? BackendClient.library()
-        async let liked = try? api.savedTracksTotal()
-        async let top = try? api.topTracksTotal()
-        do {
-            playlists = try await api.myPlaylists()
-            error = nil
-        } catch {
-            self.error = "Could not load playlists: \(error.localizedDescription)"
-        }
-        analyzedCount = (await lib)?.count
-        likedCount = await liked
-        topCount = await top
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 12, weight: .bold))
+            .tracking(1.2)
+            .foregroundStyle(Palette.secondary)
     }
 }
 
+/// Song artwork with the app's dark-gradient fallback.
+private func artwork(_ url: URL?, size: CGFloat, radius: CGFloat) -> some View {
+    AsyncImage(url: url) { image in
+        image.resizable().aspectRatio(contentMode: .fill)
+    } placeholder: {
+        LinearGradient(colors: [Palette.gray5, Palette.elevated],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+    .frame(width: size, height: size)
+    .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+}
+
+/// Now-playing strip: artwork, title, "artist · key", Follow live, and a
+/// 2pt progress line driven by the poller's clock.
+private struct MiniPlayer: View {
+    let playing: SpotifyNowPlaying.Playing
+    @ObservedObject var nowPlaying: SpotifyNowPlaying
+    @ObservedObject var store: SongSheetStore
+
+    private var subtitle: String {
+        let artist = playing.track.artistNames
+        if let key = store.analysis?.key, store.canPractice { return "\(artist) · \(key)" }
+        if store.busy { return "\(artist) · analyzing…" }
+        return artist
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                NavigationLink {
+                    ChordView(track: playing.track)
+                } label: {
+                    HStack(spacing: 12) {
+                        artwork(playing.track.album.artworkURL, size: 42, radius: 6)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(playing.track.name)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(playing.isPlaying ? Color.spotifyGreen : Palette.secondary)
+                                    .frame(width: 6, height: 6)
+                                Text(subtitle)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Palette.secondaryAlt)
+                                    .lineLimit(1)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+                .buttonStyle(.plain)
+                NavigationLink {
+                    SpotifyLiveView()
+                } label: {
+                    Text("Follow live")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.black)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 14)
+                        .background(Capsule().fill(Color.spotifyGreen))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 10))
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                let duration = playing.track.durationMs.map { Double($0) / 1000 } ?? 0
+                let fraction = duration > 0 ? max(0, min(1, (nowPlaying.livePosition() ?? 0) / duration)) : 0
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Palette.gray5
+                        Color.spotifyGreen.frame(width: geo.size.width * fraction)
+                    }
+                }
+                .frame(height: 2)
+            }
+        }
+        .background(Palette.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+    }
+}
+
+enum TrackSource: Hashable {
+    case liked
+    case top
+    case playlist(id: String, name: String)
+
+    var title: String {
+        switch self {
+        case .liked: return "Liked Songs"
+        case .top: return "Top Tracks"
+        case .playlist(_, let name): return name
+        }
+    }
+}
 /// One source's tracks (liked, top, or a playlist), each with its saved key
 /// when the library has it.
 struct TracksView: View {
