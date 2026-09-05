@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import queue
 import signal
 import tempfile
 import threading
@@ -102,15 +103,50 @@ def attach_lyrics(client: WorkerClient, song: dict, audio: Path, generation: str
         raise
     if found.get('synced') or found.get('instrumental'):
         return 'synced'
-    timed = align(audio, [line.get('text') or '' for line in found.get('lines', [])])
+    stats: dict = {}
+    timed = align(audio, [line.get('text') or '' for line in found.get('lines', [])], stats=stats)
     if timed is None:
-        return 'unaligned'
+        return 'unaligned ' + ' '.join(f'{key}={value}' for key, value in stats.items())
     client.post('/internal/jobs/lyrics', {'track_id': song['track_id'], 'library_generation': generation,
                                           'lines': timed, 'aligner': ALIGNER})
     return 'aligned'
 
 
-def process_job(client: WorkerClient, job: dict, stopping: threading.Event | None = None) -> str:
+class LyricsAligner:
+    """Times plain lyrics on a background thread, so the worker keeps claiming
+    songs and heartbeating while a transcript runs. Audio stays on disk until
+    its alignment finishes; a full queue drops the alignment, not the chart."""
+
+    def __init__(self, client: WorkerClient, stopping: threading.Event | None = None, *,
+                 align=align_lyrics, limit: int = 4):
+        self.client, self.stopping, self.align = client, stopping, align
+        self.pending: queue.Queue = queue.Queue(maxsize=limit)
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def submit(self, song: dict, audio: Path, generation: str) -> bool:
+        try:
+            self.pending.put_nowait((song, audio, generation))
+            return True
+        except queue.Full:
+            print('Lyrics skipped: alignment queue is full', flush=True)
+            return False
+
+    def _run(self) -> None:
+        while True:
+            song, audio, generation = self.pending.get()
+            try:
+                print('Lyrics ' + attach_lyrics(self.client, song, audio, generation, self.stopping,
+                                                align=self.align), flush=True)
+            except Exception as error:
+                print(f'Lyrics alignment failed: {type(error).__name__}: {str(error)[:200]}', flush=True)
+            finally:
+                audio.unlink(missing_ok=True)
+                self.pending.task_done()
+
+
+def process_job(client: WorkerClient, job: dict, stopping: threading.Event | None = None,
+                aligner: LyricsAligner | None = None) -> str:
     song = job['song']
     identity = {'track_id': song['track_id'], 'job_id': job['id'], 'lease': job['lease'],
                 'library_generation': job['generation']}
@@ -172,13 +208,10 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
             'segments': [segment.to_dict() for segment in recognition.segments],
             'tempo': track_beats(audio),
         })
-        # The chart is published and the lease released; the heartbeat would
-        # now be refused. Lyrics timing is an addition to the finished chart.
-        finished.set()
-        try:
-            print('Lyrics ' + attach_lyrics(client, song, audio, job['generation'], stopping), flush=True)
-        except Exception as error:
-            print(f'Lyrics alignment failed: {type(error).__name__}: {str(error)[:200]}', flush=True)
+        # The chart is published. Lyrics timing is an addition to it and must
+        # not hold up the next song.
+        if aligner is not None and aligner.submit(song, audio, job['generation']):
+            audio = None  # The aligner deletes it when done.
         return 'ready'
     except DownloadCancelled:
         return 'abandoned'
@@ -220,16 +253,17 @@ def main():
     stopping = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stopping.set())
     signal.signal(signal.SIGINT, lambda *_: stopping.set())
+    aligner = LyricsAligner(client, stopping)
     try:
         while not stopping.is_set():
             try:
                 job = client.post('/internal/jobs/claim').get('job')
                 if job:
-                    print('Song request ' + process_job(client, job, stopping), flush=True)
+                    print('Song request ' + process_job(client, job, stopping, aligner), flush=True)
                 elif not args.once:
                     stopping.wait(3)
-            except Exception:
-                print('Analysis service unavailable; reconnecting.', flush=True)
+            except Exception as error:
+                print(f'Analysis service unavailable ({type(error).__name__}); reconnecting.', flush=True)
                 stopping.wait(15)
             if args.once:
                 break
