@@ -22,7 +22,7 @@ from chordlyze_backend.analysis.engine import recognize_audio
 from chordlyze_backend.analysis.ismir import close, ismir_available, warm
 from chordlyze_backend.fulltrack import fetch_full_track
 from chordlyze_backend.audio_apify import ApifyAudio, AudioProviderError, DownloadCancelled
-from chordlyze_backend.lyrics_align import ALIGNER, align_lyrics
+from chordlyze_backend.lyrics_align import ALIGNER, align_lyrics, transcribe_lyrics
 
 
 class WorkerClient:
@@ -89,18 +89,25 @@ def recording_metadata(song: dict) -> dict:
 
 
 def attach_lyrics(client: WorkerClient, song: dict, audio: Path, generation: str,
-                  stopping: threading.Event | None = None, align=align_lyrics) -> str:
+                  stopping: threading.Event | None = None, align=align_lyrics,
+                  transcribe=transcribe_lyrics) -> str:
     """After a chart is published: when the catalog has only untimed lyrics,
-    time them from the recording and attach them to the chart."""
+    time them from the recording; when it has none, keep the transcript as
+    the lyrics, labeled as transcribed."""
     if stopping and stopping.is_set():
         return 'skipped'
     try:
         found = client.get('/lyrics', {'title': song['title'], 'artist': song.get('artist') or '',
                                        'duration': song.get('duration'), 'album': song.get('album')})
     except urllib.error.HTTPError as error:
-        if error.code == 404:
+        if error.code != 404:
+            raise
+        lines = transcribe(audio)
+        if lines is None:
             return 'none'
-        raise
+        client.post('/internal/jobs/lyrics', {'track_id': song['track_id'], 'library_generation': generation,
+                                              'lines': lines, 'aligner': ALIGNER, 'source': 'transcribed'})
+        return 'transcribed'
     if found.get('synced') or found.get('instrumental'):
         return 'synced'
     stats: dict = {}

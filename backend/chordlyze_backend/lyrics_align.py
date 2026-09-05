@@ -21,6 +21,9 @@ WHISPER_MODEL = os.environ.get('CHORDLYZE_WHISPER_MODEL', 'small')
 ALIGNER = f'faster-whisper-{WHISPER_MODEL}+text-match-v1'
 MIN_MATCHED_WORDS = 0.5   # share of lyric words found in the transcript
 MIN_PLACED_LINES = 0.6    # share of lyric lines that received a time
+MIN_TRANSCRIBED_WORDS = 12       # a transcript kept as the lyrics needs this many words
+MIN_TRANSCRIBED_CONFIDENCE = 0.5  # and this mean word probability
+MAX_TRANSCRIBED_LINE = 9          # words per line when a segment runs long
 
 
 class AlignmentUnavailable(RuntimeError):
@@ -114,3 +117,37 @@ def align_lyrics(audio: Path, lines: list[str], transcribe=transcribe_words,
     if total == 0 or matched < MIN_MATCHED_WORDS * total or len(timed) < MIN_PLACED_LINES * len(lines):
         return None
     return timed
+
+
+def transcribed_lines(words: list[dict]) -> list[dict] | None:
+    """Lines made from the transcript itself, for songs no catalog has. One
+    line per transcript segment, long segments split. None when the
+    transcript is too short or too unsure to show as lyrics."""
+    words = [word for word in words if word.get('text')]
+    if len(words) < MIN_TRANSCRIBED_WORDS:
+        return None
+    confidences = [float(word['p']) for word in words if 'p' in word]
+    if confidences and sum(confidences) / len(confidences) < MIN_TRANSCRIBED_CONFIDENCE:
+        return None
+    lines: list[dict] = []
+    group: list[dict] = []
+    current = None
+
+    def flush() -> None:
+        if group:
+            lines.append({'time': group[0]['time'], 'text': ' '.join(w['text'] for w in group), 'words': list(group)})
+            group.clear()
+
+    for word in words:
+        segment = word.get('segment')
+        if group and (segment != current or len(group) >= MAX_TRANSCRIBED_LINE):
+            flush()
+        current = segment
+        group.append({'time': round(float(word['start']), 2), 'text': word['text']})
+    flush()
+    return lines
+
+
+def transcribe_lyrics(audio: Path, transcribe=transcribe_words) -> list[dict] | None:
+    """Lyrics for a song without any catalog text: the transcript, or None."""
+    return transcribed_lines(transcribe(audio, None))

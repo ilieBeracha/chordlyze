@@ -78,6 +78,9 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(SheetModel.build(analysis: changed, lines: timed, duration: 20).first { $0.start == 2 }?.chords.last?.wordIndex == 1, "Enhanced LRC uses timestamped token groups")
         let rtl = [LyricLine(time: 2, text: "שלום עולם", words: nil)]
         check(SheetModel.build(analysis: changed, lines: rtl, duration: 20).first { $0.start == 2 }?.text == "שלום עולם", "RTL words are preserved")
+        let tail = SheetModel.build(analysis: changed, lines: lines, duration: 20.4)
+        check(!tail.contains { $0.kind == .uncovered }, "A sub-second gap after the analyzed audio is not a pending row")
+        check(SheetModel.build(analysis: changed, lines: [], duration: 30).contains { $0.kind == .uncovered }, "A real unanalyzed tail still shows as pending")
         let untimed = SheetModel.build(analysis: changed, lines: [], duration: 20, untimedLyrics: true)
         check(!untimed.isEmpty && untimed.allSatisfy { $0.text.isEmpty && $0.kind == .chords }, "Untimed lyrics never become timed rows")
         check(SheetModel.activeRow(untimed, at: 6)?.chords.contains { $0.event.contains(6) } == true, "Chord rows still follow the recording")

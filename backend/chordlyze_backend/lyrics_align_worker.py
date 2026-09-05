@@ -17,8 +17,9 @@ def main() -> None:
                          download_root=os.environ.get('CHORDLYZE_WHISPER_DIR') or None)
     segments, _ = model.transcribe(audio, language=language, word_timestamps=True, vad_filter=False,
                                    beam_size=1, condition_on_previous_text=False)
-    words = [{'start': round(word.start, 2), 'end': round(word.end, 2), 'text': word.word.strip()}
-             for segment in segments for word in segment.words or []]
+    words = [{'start': round(word.start, 2), 'end': round(word.end, 2), 'text': word.word.strip(),
+              'p': round(word.probability, 2), 'segment': index}
+             for index, segment in enumerate(segments) for word in segment.words or []]
     json.dump(words, sys.stdout)
 
 

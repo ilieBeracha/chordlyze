@@ -144,7 +144,7 @@ final class SongSheetStore: ObservableObject {
             untimedLyrics = []
             lyricsLoading = false
             lyricsFailed = false
-            lyricsNote = "Lyrics timed from the recording"
+            lyricsNote = aligned.matched == "transcribed" ? "Transcribed from the recording" : "Lyrics timed from the recording"
         }
         state = status.job.state
         // Three states the user sees: not analyzed, analyzing, ready.
