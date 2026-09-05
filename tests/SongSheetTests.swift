@@ -260,5 +260,68 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(delays.first == 37, "Retry-After is respected instead of hammering Spotify")
         check(limited.connectionMessage == nil, "A recovered Spotify request clears the error in place")
         limited.reset()
+        try await liveFlowTests()
+    }
+
+    /// Production Live: the Spotify poller and the Live screen share one document
+    /// through a cache, the poller republishes every 2 s, and the app goes to the
+    /// background and back while the chart is still being made.
+    @MainActor static func liveFlowTests() async throws {
+        var documents: [String: SongSheetStore] = [:]
+        var polls = 0
+        var readyAfter = 3
+        let provider: (Track) -> SongSheetStore = { track in
+            if let existing = documents[track.id] { return existing }
+            let store = SongSheetStore(song: SongDescriptor(track: track), service: .init(
+                request: { _, _ in status("processing") },
+                status: { _ in polls += 1; return status(polls < readyAfter ? "processing" : "ready", ready: polls >= readyAfter) },
+                lyrics: { _ in lyrics() }, sleep: { _ in try await Task.sleep(for: .milliseconds(25)) }))
+            documents[track.id] = store
+            return store
+        }
+        var blip = false
+        let player = SpotifyNowPlaying(service: .init(current: { blip ? nil : playback() }, seek: { _ in },
+                                                      sleep: { _ in try await Task.sleep(for: .milliseconds(30)) }),
+                                       sheetProvider: provider)
+        player.resume()
+        try await waitFor { player.playing != nil && documents["one"] != nil }
+        let store = documents["one"]!
+        var live = Task { await store.observe() }
+        try await waitFor { store.canPractice }
+        check(store.rows.contains { !$0.chords.isEmpty }, "Chart arriving while Live is open fills the shared document")
+
+        // Background and foreground while a new chart is pending.
+        documents.removeAll(); polls = 0; readyAfter = 6
+        player.stop(); live.cancel(); await live.value
+        player.resume()
+        try await waitFor { documents["one"] != nil }
+        let second = documents["one"]!
+        live = Task { await second.observe() }
+        try await waitFor { second.state == "processing" }
+        player.stop(); live.cancel(); await live.value            // app backgrounded mid-analysis
+        try await Task.sleep(for: .milliseconds(60))
+        player.resume()                                          // foreground: poller restarts first
+        live = Task { await second.observe() }                    // then the Live screen re-observes
+        try await waitFor { second.canPractice }
+        check(second.rows.contains { !$0.chords.isEmpty }, "A background/foreground cycle mid-analysis still delivers the chart")
+
+        // Spotify briefly reports nothing playing while the chart is pending.
+        documents.removeAll(); polls = 0; readyAfter = 6
+        player.stop(); live.cancel(); await live.value
+        player.resume()
+        try await waitFor { documents["one"] != nil }
+        let third = documents["one"]!
+        live = Task { await third.observe() }
+        try await waitFor { third.state == "processing" }
+        blip = true
+        try await waitFor { player.playing == nil }
+        live.cancel(); await live.value                            // Live screen replaced by "Nothing playing"
+        blip = false
+        try await waitFor { player.playing != nil }
+        live = Task { await third.observe() }
+        try await waitFor { third.canPractice }
+        check(third.rows.contains { !$0.chords.isEmpty }, "A momentary empty playback response does not strand the pending chart")
+        live.cancel(); await live.value
+        player.reset()
     }
 }
