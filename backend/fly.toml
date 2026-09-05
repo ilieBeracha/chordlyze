@@ -1,13 +1,29 @@
 app = "chordlyze-api"
 primary_region = "fra"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[processes]
+  app = "uvicorn chordlyze_backend.main:app --host 0.0.0.0 --port 8080"
+  worker = "python -u song_worker.py"
+
+[env]
+  CHORDLYZE_AUDIO_PROVIDER = "apify"
+  CHORDLYZE_API_URL = "https://chordlyze-api.fly.dev"
+  CHORDLYZE_APIFY_MAX_CHARGE_USD = "1"
+  CHORDLYZE_APIFY_TIMEOUT = "300"
+  CHORDLYZE_AUDIO_MAX_MB = "100"
+  NUMBA_CACHE_DIR = "/tmp/chordlyze-numba"
 
 [build]
 
 [mounts]
   source = "chordlyze_cache"
   destination = "/data"
+  processes = ["app"]
 
 [http_service]
+  processes = ["app"]
   internal_port = 8080
   force_https = true
   auto_stop_machines = "stop"
@@ -15,6 +31,11 @@ primary_region = "fra"
   min_machines_running = 0
 
 [[vm]]
+  processes = ["app", "worker"]
   size = "shared-cpu-2x"
   # Ten-minute rich inference exceeds 2 GB without swap (capacity regression).
   memory = "4gb"
+
+[[restart]]
+  policy = "always"
+  processes = ["worker"]

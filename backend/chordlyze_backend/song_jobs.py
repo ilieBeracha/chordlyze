@@ -101,7 +101,7 @@ class SongJobs:
             return path.exists() and time.time() - json.loads(path.read_text())['at'] < 60
 
     def heartbeat(self, job_id: str | None = None, lease: str | None = None,
-                  stage: str | None = None) -> bool:
+                  stage: str | None = None, download_checkpoint: dict | None = None) -> bool:
         with library_lock(self.directory):
             write_json(self.directory / 'worker-heartbeat.json', {'at': time.time()})
             if not job_id:
@@ -114,6 +114,8 @@ class SongJobs:
                     job['lease_until'] = time.time() + LEASE_SECONDS
                     if stage in ('downloading', 'analyzing'):
                         job['stage'] = stage
+                    if download_checkpoint is not None:
+                        job['download_checkpoint'] = download_checkpoint
                     write_json(path, job)
                     return True
             return False

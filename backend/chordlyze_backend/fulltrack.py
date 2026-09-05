@@ -75,9 +75,37 @@ def pick_candidate(entries: list[dict], title: str, artist: str, duration: float
     return max(good, key=score)
 
 
-def fetch_full_track(title: str, artist: str, duration: float, *, source_info: dict | None = None) -> Path | None:
+def fetch_full_track(title: str, artist: str, duration: float, *, source_info: dict | None = None,
+                     checkpoint: dict | None = None, save_checkpoint=None,
+                     cancelled=lambda: False) -> Path | None:
     """Download the matching upload's audio to a temp file; None when no
-    result matches. Raises yt_dlp.utils.DownloadError when YouTube refuses."""
+    result matches. Provider failures raise a sanitized AudioProviderError in
+    cloud mode or yt_dlp.utils.DownloadError in local development."""
+    from .audio_apify import ApifyAudio, AudioProviderError, DownloadCancelled
+
+    if cancelled():
+        raise DownloadCancelled()
+    provider = os.environ.get('CHORDLYZE_AUDIO_PROVIDER', 'yt_dlp')
+    if provider == 'apify':
+        client = ApifyAudio()
+        previous = (checkpoint or {}).get('candidate')
+        chosen = pick_candidate([previous], title, artist, duration) if isinstance(previous, dict) else None
+        if chosen is None:
+            entries = client.search(title, artist, checkpoint=checkpoint,
+                                    save_checkpoint=save_checkpoint, cancelled=cancelled)
+            chosen = pick_candidate(entries, title, artist, duration)
+        if chosen is None:
+            return None
+        path = client.download(chosen, duration, checkpoint=checkpoint,
+                               save_checkpoint=save_checkpoint, cancelled=cancelled, source_info=source_info)
+        if source_info is not None:
+            source_info.update(video_id=chosen['id'], url=f"https://www.youtube.com/watch?v={chosen['id']}",
+                               title=chosen['title'], channel=chosen.get('channel'),
+                               duration=chosen['duration'], matching='title_artist_duration')
+        return path
+    if provider != 'yt_dlp':
+        raise AudioProviderError('provider_configuration')
+
     import yt_dlp
 
     search = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist",

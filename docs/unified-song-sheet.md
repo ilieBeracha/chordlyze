@@ -16,11 +16,19 @@ Spotify polling starts immediately, runs separately from analysis, and honors ra
 
 ## Full-song worker
 
-The Fly API stores a durable request queue on its existing volume. A managed worker on the development Mac downloads a matching full recording and runs the pinned five-model recognizer. Fly's datacenter network cannot reliably fetch those recordings, so this deployment still requires the Mac to be online and logged in. LaunchAgent restart handles worker process exits; it cannot make an offline or sleeping Mac available. The app shows that condition and resumes when the worker reconnects.
+The Fly API stores a durable request queue on its existing volume. A separate Fly `worker` process searches and downloads a matching full recording through Apify, then runs the pinned five-model recognizer. The worker has no HTTP service and does not participate in Fly proxy autostop. It restarts after exits and operates independently of the development Mac and Codex. The volume is mounted only by the API process; the worker claims jobs over the authenticated API.
+
+Apify's maintained `streamers/youtube-scraper` searches up to eight videos. Existing title, artist, edition and duration checks select a matching recording. `streamers/youtube-video-downloader` produces an MP3 in Apify storage; the worker downloads the completed file, never the temporary YouTube stream URLs. Both reported duration and decoded audio duration must match the requested recording. Lyrics still come from the backend's timed lyric lookup, using the same recording metadata.
+
+Provider run IDs are saved with the job lease before polling. After a worker restart, another worker can reuse the search/download run instead of paying to start it again. GET failures retry with bounded backoff; an ambiguous POST response is not automatically repeated. Each search is capped at $0.05, each download defaults to a $1 charge cap, each Actor is limited to five minutes, and downloaded audio is capped at 100 MiB. A cost cap limits billed events; it is not a promise that every source is available. Limits are configurable with validated environment settings. Provider failures, usage limits and missing recordings are reported as retryable song states; existing charts continue to load.
+
+Run output audio in this downloader's Apify-owned storage expires after approximately three days. Local worker audio is deleted after inference or failure. Only chart data and source/run provenance are submitted to the API. The provider token is sent in Authorization headers to the fixed Apify API origin and is never forwarded to audio URLs, stored in song documents or included in logs.
 
 The worker only processes requested jobs. It does not sweep or repopulate the old library. It sends heartbeats, renews a three-minute lease while working, cleans downloaded audio, and publishes with a worker token, lease and library generation. Expired jobs can be reclaimed up to three times. Failed/unavailable jobs expose Retry. Requests are limited to 20-minute recordings; source availability and processing time mean a first analysis is not instant. Already analyzed songs load directly.
 
-Store these values in `backend/.env.worker` with mode 600: `CHORDLYZE_API_URL`, `CHORDLYZE_WORKER_TOKEN`, `CHORDLYZE_ISMIR_DIR`, `CHORDLYZE_TORCH_THREADS=2`, and an optional writable `NUMBA_CACHE_DIR`. Configure the same token as a Fly secret. Tokens are excluded from Git, Docker and worker status messages.
+Production uses Fly secrets `CHORDLYZE_WORKER_TOKEN` and `APIFY_TOKEN`. Configure a dedicated scoped token with Read, Run, List runs and Manage runs on the two named Actors, restricted Actor access, and default-run-storage access. The search Actor also requires the account-level storage **Create** permission to create and manage its own request queue; default-run-storage access alone does not cover that creation. It does not need account-level storage Read or Write permissions. `backend/fly.toml` configures the provider, limits and process groups. The Docker image contains both the API and worker and installs the pinned model. Secrets are excluded from Git and Docker.
+
+For optional local development, use `backend/.env.worker` with mode 600: `CHORDLYZE_API_URL`, `CHORDLYZE_WORKER_TOKEN`, `CHORDLYZE_ISMIR_DIR`, `CHORDLYZE_TORCH_THREADS=2`, and an optional writable `NUMBA_CACHE_DIR`. Set `CHORDLYZE_AUDIO_PROVIDER=apify` and `APIFY_TOKEN` to test the cloud path. The default `yt_dlp` provider is retained for explicit local development. Do not run a local production worker after cloud cutover.
 
 ```bash
 cd backend
@@ -29,7 +37,7 @@ cd backend
 launchctl print gui/$(id -u)/com.chordlyze.song-worker
 ```
 
-The LaunchAgent is `~/Library/LaunchAgents/com.chordlyze.song-worker.plist`. Logs are under ignored `backend/worker-logs/`. `GET /health` reports `api_version`, `release`, `analysis_version`, `library_generation`, and `song_worker_online`; no credentials are returned. The legacy batch ingestion utility is for development only: production requires a current on-demand lease.
+The optional LaunchAgent is `~/Library/LaunchAgents/com.chordlyze.song-worker.plist`; it should be unloaded and disabled after cloud verification. Logs are under ignored `backend/worker-logs/`. `GET /health` reports `api_version`, `release`, `analysis_version`, `library_generation`, and `song_worker_online`; no credentials are returned. The legacy batch ingestion utility is for development only: production requires a current on-demand lease.
 
 ## Explicit fresh start
 
