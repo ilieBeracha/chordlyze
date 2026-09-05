@@ -16,6 +16,8 @@ enum Palette {
     static let nearWhite = Color(hex: 0xE5E5EA)
     static let secondary = Color(hex: 0x8E8E93)
     static let secondaryAlt = Color(hex: 0x98989F)
+    /// Lyric lines that are not the one being sung, in Live.
+    static let lyricDim = Color(hex: 0xAEAEB2)
     static let tertiary = Color(hex: 0x636366)
     static let faint = Color(hex: 0x48484A)
     static let barGray = Color(hex: 0x232325)

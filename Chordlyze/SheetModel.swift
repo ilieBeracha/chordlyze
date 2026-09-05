@@ -19,7 +19,8 @@ enum SheetModel {
         let wordIndex: Int?
         var id: Double { event.start }
     }
-    enum Kind: Equatable { case lyric, instrumental, uncovered }
+    /// `chords`: the song has lyrics, but without timing; rows carry chords only.
+    enum Kind: Equatable { case lyric, instrumental, uncovered, chords }
     struct Row: Identifiable {
         let start: Double
         let end: Double
@@ -50,8 +51,12 @@ enum SheetModel {
         rows.first { $0.contains(time) }
     }
 
-    static func build(analysis: ChordAnalysis?, lines: [LyricLine], duration: Double?) -> [Row] {
+    /// `untimedLyrics`: lyrics exist but carry no timing, so no lyric rows are
+    /// built and blank rows are plain chord rows rather than instrumentals.
+    static func build(analysis: ChordAnalysis?, lines: [LyricLine], duration: Double?,
+                      untimedLyrics: Bool = false) -> [Row] {
         let events = events(analysis)
+        let blank: Kind = untimedLyrics ? .chords : .instrumental
         let coverage = analysis?.isPreview == false ? analysis?.coverageEnd ?? 0 : 0
         var unique: [Double: LyricLine] = [:]
         for line in lines where line.time.isFinite && line.time >= 0 {
@@ -65,7 +70,7 @@ enum SheetModel {
 
         func append(start: Double, end: Double, text: String = "", words: [WordStamp]? = nil) {
             guard end > start else { return }
-            let kind: Kind = start >= coverage ? .uncovered : (text.isEmpty ? .instrumental : .lyric)
+            let kind: Kind = start >= coverage ? .uncovered : (text.isEmpty ? blank : .lyric)
             // A lyric line stays intact. Eight-second splits previously lost words.
             if !text.isEmpty || kind == .uncovered {
                 rows.append(place(events, start: start, end: end, kind: kind, text: text, words: words))
@@ -75,7 +80,7 @@ enum SheetModel {
                     let next = min(end, cursor + rowLength, cursor < coverage ? coverage : end)
                     guard next > cursor else { break }
                     rows.append(place(events, start: cursor, end: next,
-                                      kind: cursor >= coverage ? .uncovered : .instrumental, text: "", words: nil))
+                                      kind: cursor >= coverage ? .uncovered : blank, text: "", words: nil))
                     cursor = next
                 }
             }

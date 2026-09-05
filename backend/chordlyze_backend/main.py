@@ -317,6 +317,7 @@ def _song_status(track_id: str, isrc: str | None = None) -> dict:
                 "album": chart.get("album"), "duration": chart.get("song_duration") or chart.get("audio_duration"),
                 "isrc": chart.get("isrc"), "artwork": chart.get("artwork")}
     return {"song": song, "analysis": chart if ready else None,
+            "lyrics": chart.get("lyrics") if ready else None,
             "job": {"state": "ready", "worker_online": jobs.worker_online()} if ready else jobs.public(job),
             "library_generation": generation(CACHE_DIR)}
 
@@ -402,6 +403,55 @@ def finish_song(body: WorkerUpdate, authorization: str | None = Header(default=N
                                     body.library_generation or "", body.state, message):
         raise HTTPException(409, "job lease is no longer active")
     return {"ok": True}
+
+
+class AlignedWord(BaseModel):
+    time: float = Field(ge=0, allow_inf_nan=False)
+    text: str = Field(min_length=1, max_length=200)
+
+
+class AlignedLine(BaseModel):
+    time: float = Field(ge=0, allow_inf_nan=False)
+    text: str = Field(max_length=1000)
+    words: list[AlignedWord] | None = Field(default=None, max_length=200)
+
+
+class AlignedLyrics(BaseModel):
+    track_id: str = Field(min_length=1, max_length=200)
+    library_generation: str
+    lines: list[AlignedLine] = Field(min_length=1, max_length=2000)
+    aligner: str = Field(min_length=1, max_length=200)
+
+
+@app.post("/internal/jobs/lyrics")
+def attach_lyrics(body: AlignedLyrics, authorization: str | None = Header(default=None)) -> dict:
+    """Word-timed lyrics the worker aligned to the analyzed recording. They
+    belong to that chart: a reset or a replaced chart discards them."""
+    _worker_authorized(authorization)
+    times = [line.time for line in body.lines]
+    if times != sorted(times):
+        raise HTTPException(422, "lyric lines must be in time order")
+    if not any(line.text for line in body.lines):
+        raise HTTPException(422, "no lyric text")
+    lines = [line.model_dump(exclude_none=True) for line in body.lines]
+    with library_lock(CACHE_DIR):
+        if body.library_generation != generation(CACHE_DIR):
+            raise HTTPException(409, "library was reset")
+        path = _track_cache_path(body.track_id)
+        if not path.exists():
+            raise HTTPException(404, "no chart for this track")
+        entry = json.loads(path.read_text())
+        if entry.get("source") == "itunes_preview" or not is_current(entry, model="ismir2019"):
+            raise HTTPException(409, "lyrics can only be attached to a complete current chart")
+        entry["lyrics"] = {"lines": lines, "synced": True, "matched": "aligned",
+                           "instrumental": False, "aligner": body.aligner}
+        _write_analysis(path, entry)
+        isrc = entry.get("isrc")
+        if isrc:
+            alias = _isrc_cache_path(isrc)
+            if alias.exists() and json.loads(alias.read_text()).get("audio_sha256") == entry.get("audio_sha256"):
+                _write_analysis(alias, entry)
+    return {"ok": True, "lines": len(lines)}
 
 
 # MARK: - Lyrics

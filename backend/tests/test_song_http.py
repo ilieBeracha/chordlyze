@@ -60,6 +60,13 @@ def test_song_request_to_ready_and_reset_over_http(tmp_path):
             assert SongJobs(tmp_path / 'cache').get('synthetic')['download_checkpoint'] == checkpoint
             with urllib.request.urlopen(url + '/song/synthetic') as response:
                 assert 'download_checkpoint' not in json.load(response)['job']
+            lyrics = {'track_id': 'synthetic', 'library_generation': job['generation'], 'aligner': 'test',
+                      'lines': [{'time': 1, 'text': 'Hello there',
+                                 'words': [{'time': 1, 'text': 'Hello'}, {'time': 1.6, 'text': 'there'}]},
+                                {'time': 5, 'text': 'Goodbye'}]}
+            with pytest.raises(urllib.error.HTTPError) as early:
+                worker.post('/internal/jobs/lyrics', lyrics)
+            assert early.value.code == 404
             submission = {**identity, **model_metadata('ismir2019'), 'title': 'Synthetic test',
                           'audio_duration': 8, 'song_duration': 8, 'audio_sha256': 'a' * 64,
                           'source': 'youtube', 'segments': [{'start': 0, 'end': 8, 'label': 'C:maj7'}]}
@@ -68,8 +75,23 @@ def test_song_request_to_ready_and_reset_over_http(tmp_path):
                 ready = json.load(response)
             assert ready['job']['state'] == 'ready'
             assert ready['analysis']['chords'][0]['label'] == 'C:maj7'
+            assert ready['lyrics'] is None
             assert public.post('/song/request', request)['job']['state'] == 'ready'
+            with pytest.raises(urllib.error.HTTPError) as anonymous:
+                public.post('/internal/jobs/lyrics', lyrics)
+            assert anonymous.value.code == 401
+            with pytest.raises(urllib.error.HTTPError) as unordered:
+                worker.post('/internal/jobs/lyrics', {**lyrics, 'lines': lyrics['lines'][::-1]})
+            assert unordered.value.code == 422
+            assert worker.post('/internal/jobs/lyrics', lyrics)['lines'] == 2
+            with urllib.request.urlopen(url + '/song/synthetic') as response:
+                timed = json.load(response)['lyrics']
+            assert timed['synced'] and timed['matched'] == 'aligned'
+            assert timed['lines'][0]['words'][1]['text'] == 'there' and 'words' not in timed['lines'][1]
             reset_library(tmp_path / 'cache', apply=True)
+            with pytest.raises(urllib.error.HTTPError) as after_reset:
+                worker.post('/internal/jobs/lyrics', lyrics)
+            assert after_reset.value.code == 409
             with pytest.raises(urllib.error.HTTPError) as stale:
                 worker.post('/analysis/submit', submission)
             assert stale.value.code == 409

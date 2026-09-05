@@ -89,26 +89,37 @@ struct AnalysisTabsView: View {
 
 struct SongSheetStatus: View {
     @ObservedObject var store: SongSheetStore
+    /// Live shows each note as a capsule with an icon.
+    var pill = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !store.message.isEmpty {
-                HStack(alignment: .top, spacing: 9) {
-                    if store.busy { ProgressView().controlSize(.small) }
-                    Text(store.message).font(.system(size: 12)).foregroundStyle(Palette.secondary)
-                    if !store.busy { Button("Retry") { store.retry() }.font(.system(size: 12, weight: .bold)) }
-                }
+                note(store.message, icon: "exclamationmark.circle", spinning: store.busy, retry: !store.busy)
             }
             if store.lyricsLoading {
-                Text("Loading lyrics…").font(.system(size: 12)).foregroundStyle(Palette.secondary)
-            } else if let note = store.lyricsNote {
-                HStack {
-                    Text(note).font(.system(size: 11)).foregroundStyle(Palette.secondary)
-                    if store.lyricsFailed { Button("Retry") { store.retry() }.font(.system(size: 12, weight: .bold)) }
-                }
+                note("Loading lyrics…", icon: nil, spinning: true)
+            } else if let text = store.lyricsNote {
+                note(text, icon: "clock", retry: store.lyricsFailed)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("song-sheet-status")
+    }
+
+    private func note(_ text: String, icon: String?, spinning: Bool = false, retry: Bool = false) -> some View {
+        HStack(spacing: 8) {
+            if spinning {
+                ProgressView().controlSize(.small)
+            } else if pill, let icon {
+                Image(systemName: icon).font(.system(size: 12, weight: .semibold))
+            }
+            Text(text).font(.system(size: pill ? 13 : 12))
+            if retry { Button("Retry") { store.retry() }.font(.system(size: 12, weight: .bold)) }
+        }
+        .foregroundStyle(Palette.secondary)
+        .padding(.vertical, pill ? 8 : 0).padding(.horizontal, pill ? 14 : 0)
+        .background { if pill { Capsule().fill(Color.white.opacity(0.08)) } }
     }
 }
 
@@ -122,14 +133,25 @@ struct ChordSheetView: View {
     var onRowTap: ((SheetModel.Row) -> Void)? = nil
 
     var body: some View {
-        LazyVStack(alignment: .leading, spacing: 20) {
+        LazyVStack(alignment: .leading, spacing: style == .live ? 30 : 20) {
             ForEach(store.rows) { row in
                 ChordRowView(row: row, transposeBy: transposeBy, playhead: playhead,
                              style: style, onChordTap: onChordTap, onLyricTap: { onRowTap?(row) })
                     .padding(.vertical, 8)
-                    .opacity(playhead == nil || row.contains(playhead!) ? 1 : 0.55)
                     .id(row.id)
                     .accessibilityIdentifier("song-row-\(row.start)")
+            }
+            if !store.untimedLyrics.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Lyrics, no timing").font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Palette.tertiary)
+                    ForEach(Array(store.untimedLyrics.enumerated()), id: \.offset) { _, line in
+                        Text(line).font(style.wordFont).foregroundStyle(Palette.secondary)
+                            .frame(maxWidth: .infinity, alignment: line.isRTLText ? .trailing : .leading)
+                    }
+                }
+                .padding(.top, 12)
+                .accessibilityIdentifier("untimed-lyrics")
             }
         }
     }

@@ -51,3 +51,11 @@ watchfiles==1.2.0
 websockets==17.1
 madmom @ git+https://github.com/CPJKU/madmom.git@27f032e8947204902c675e5e341a3faf5dc86dae
 yt-dlp==2026.8.19
+# Lyrics timing from the recording (song worker): transcript with word timestamps.
+faster-whisper==1.2.1
+ctranslate2==4.8.2
+av==18.1.0
+tokenizers==0.23.2
+onnxruntime==1.29.0
+huggingface_hub==1.30.0
+tqdm==4.70.0

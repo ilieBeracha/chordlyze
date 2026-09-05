@@ -5,7 +5,7 @@ import SwiftUI
 /// Uses authored sample words; never requests or publishes a real song.
 struct SongSheetPreview: View {
     @StateObject private var store = makeStore()
-    @State private var mode = "Sheet"
+    @State private var mode = ProcessInfo.processInfo.arguments.contains("--song-sheet-preview-live") ? "Live" : "Sheet"
     @State private var paused = false
     @State private var anchor = ContinuousClock.now
     @State private var offset = 0.0
@@ -68,8 +68,20 @@ struct SongSheetPreview: View {
                 ["time": 30, "text": "The final line keeps its harmony"]
             ]
         ])
-        return SongSheetStore(song: .init(trackID: "offline-preview", title: "Song sheet preview",
-                                         artist: "Offline regression fixture", duration: 40), analysis: chart,
+        let song = SongDescriptor(trackID: "offline-preview", title: "Song sheet preview",
+                                  artist: "Offline regression fixture", duration: 40)
+        if ProcessInfo.processInfo.arguments.contains("--song-sheet-preview-delayed") {
+            // Chart arrives after three polls, as it does for a fresh song.
+            let processing: SongStatus = decode([
+                "job": ["state": "processing", "stage": "downloading", "worker_online": true],
+                "library_generation": "preview"])
+            var polls = 0
+            return SongSheetStore(song: song, service: .init(
+                request: { _, _ in processing },
+                status: { _ in polls += 1; return polls < 3 ? processing : status },
+                lyrics: { _ in words }))
+        }
+        return SongSheetStore(song: song, analysis: chart,
                               service: .init(request: { _, _ in status }, status: { _ in status }, lyrics: { _ in words }))
     }
 }

@@ -30,6 +30,8 @@ final class SongSheetStore: ObservableObject {
     @Published private(set) var state = "loading"
     @Published private(set) var message = "Preparing this song…"
     @Published private(set) var lyricsNote: String?
+    /// Lyric lines without timing: shown as text, never as timed rows.
+    @Published private(set) var untimedLyrics: [String] = []
     @Published private(set) var lyricsLoading = true
     @Published private(set) var lyricsFailed = false
     private(set) var lyricsResult: BackendClient.LyricsResult?
@@ -119,6 +121,7 @@ final class SongSheetStore: ObservableObject {
         let reset = libraryGeneration != nil && libraryGeneration != status.libraryGeneration
         if let previous = libraryGeneration, previous != status.libraryGeneration {
             lines = []
+            untimedLyrics = []
             lyricsResult = nil
             lyricKey = nil
         }
@@ -131,6 +134,18 @@ final class SongSheetStore: ObservableObject {
         }
         let changed = analysis != status.analysis
         analysis = status.analysis
+        if let aligned = status.lyrics, aligned.synced, aligned != lyricsResult {
+            // Lyrics timed to the analyzed recording beat any catalog lookup.
+            lyricRevision += 1
+            lyricTask?.cancel(); lyricTask = nil
+            lyricKey = lyricLookupKey
+            lyricsResult = aligned
+            lines = aligned.lines
+            untimedLyrics = []
+            lyricsLoading = false
+            lyricsFailed = false
+            lyricsNote = "Lyrics timed from the recording"
+        }
         state = status.job.state
         switch state {
         case "ready": message = ""
@@ -139,13 +154,16 @@ final class SongSheetStore: ObservableObject {
         case "missing": message = "This analysis was cleared. Tap Retry to analyze the song again."
         default: message = status.job.message ?? "Analysis unavailable. Tap Retry to try again."
         }
-        if changed || reset || oldSong != song || rows.isEmpty { rebuild() }
+        if changed || reset || oldSong != song || rows.isEmpty || status.lyrics != nil { rebuild() }
         loadLyrics(force: lyricsFailed && (nextLyricRetry.map { ContinuousClock.now >= $0 } ?? true))
     }
 
+    private var lyricLookupKey: String { "\(song.title)|\(song.artist)|\(song.album ?? "")|\(song.duration ?? 0)" }
+    private var hasAlignedLyrics: Bool { lyricsResult?.matched == "aligned" }
+
     private func loadLyrics(force: Bool = false) {
-        let key = "\(song.title)|\(song.artist)|\(song.album ?? "")|\(song.duration ?? 0)"
-        guard force || key != lyricKey else { return }
+        let key = lyricLookupKey
+        guard !hasAlignedLyrics, force || key != lyricKey else { return }
         lyricKey = key
         lyricRevision += 1
         let token = lyricRevision
@@ -160,11 +178,19 @@ final class SongSheetStore: ObservableObject {
                 try Task.checkCancellation()
                 guard token == lyricRevision else { return }
                 lyricsResult = result
-                lines = result?.lines ?? []
-                lyricsNote = result?.instrumental == true ? "Instrumental recording" : result?.betaNote
-                if result == nil { lyricsNote = "Lyrics are not available for this recording." }
-                if result?.synced == true, result?.lines.contains(where: { !$0.text.isEmpty && $0.words == nil }) == true {
-                    lyricsNote = "Chords follow lyric lines; word placement is approximate."
+                if let result, !result.synced {
+                    // Guessed line times must never drive the runner or place chords.
+                    lines = []
+                    untimedLyrics = result.lines.map(\.text).filter { !$0.isEmpty }
+                    lyricsNote = "Lyrics have no timing; words listed below"
+                } else {
+                    lines = result?.lines ?? []
+                    untimedLyrics = []
+                    lyricsNote = result?.instrumental == true ? "Instrumental recording" : result?.betaNote
+                    if result == nil { lyricsNote = "No lyrics for this recording" }
+                    if result?.synced == true, result?.lines.contains(where: { !$0.text.isEmpty && $0.words == nil }) == true {
+                        lyricsNote = "Approximate lyric timing"
+                    }
                 }
                 lyricsLoading = false
                 rebuild()
@@ -181,7 +207,8 @@ final class SongSheetStore: ObservableObject {
 
     private func rebuild() {
         rows = SheetModel.build(analysis: analysis, lines: lines,
-                                duration: song.duration ?? analysis?.songDuration)
+                                duration: song.duration ?? analysis?.songDuration,
+                                untimedLyrics: !untimedLyrics.isEmpty)
     }
 }
 

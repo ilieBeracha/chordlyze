@@ -21,6 +21,7 @@ from chordlyze_backend.analysis.engine import recognize_audio
 from chordlyze_backend.analysis.ismir import close, ismir_available, warm
 from chordlyze_backend.fulltrack import fetch_full_track
 from chordlyze_backend.audio_apify import ApifyAudio, AudioProviderError, DownloadCancelled
+from chordlyze_backend.lyrics_align import ALIGNER, align_lyrics
 
 
 class WorkerClient:
@@ -32,6 +33,11 @@ class WorkerClient:
                                          headers={'Content-Type': 'application/json',
                                                   'Authorization': 'Bearer ' + self.token})
         with urllib.request.urlopen(request, timeout=30) as response:
+            return json.load(response)
+
+    def get(self, path: str, params: dict) -> dict:
+        query = urllib.parse.urlencode({key: value for key, value in params.items() if value is not None})
+        with urllib.request.urlopen(self.base + path + '?' + query, timeout=60) as response:
             return json.load(response)
 
 
@@ -79,6 +85,29 @@ def recording_metadata(song: dict) -> dict:
             'artist': song.get('artist') or match.get('artistName', ''),
             'album': song.get('album') or match.get('collectionName'),
             'artwork': song.get('artwork') or match.get('artworkUrl100')}
+
+
+def attach_lyrics(client: WorkerClient, song: dict, audio: Path, generation: str,
+                  stopping: threading.Event | None = None, align=align_lyrics) -> str:
+    """After a chart is published: when the catalog has only untimed lyrics,
+    time them from the recording and attach them to the chart."""
+    if stopping and stopping.is_set():
+        return 'skipped'
+    try:
+        found = client.get('/lyrics', {'title': song['title'], 'artist': song.get('artist') or '',
+                                       'duration': song.get('duration'), 'album': song.get('album')})
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return 'none'
+        raise
+    if found.get('synced') or found.get('instrumental'):
+        return 'synced'
+    timed = align(audio, [line.get('text') or '' for line in found.get('lines', [])])
+    if timed is None:
+        return 'unaligned'
+    client.post('/internal/jobs/lyrics', {'track_id': song['track_id'], 'library_generation': generation,
+                                          'lines': timed, 'aligner': ALIGNER})
+    return 'aligned'
 
 
 def process_job(client: WorkerClient, job: dict, stopping: threading.Event | None = None) -> str:
@@ -143,6 +172,13 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
             'segments': [segment.to_dict() for segment in recognition.segments],
             'tempo': track_beats(audio),
         })
+        # The chart is published and the lease released; the heartbeat would
+        # now be refused. Lyrics timing is an addition to the finished chart.
+        finished.set()
+        try:
+            print('Lyrics ' + attach_lyrics(client, song, audio, job['generation'], stopping), flush=True)
+        except Exception as error:
+            print(f'Lyrics alignment failed: {type(error).__name__}: {str(error)[:200]}', flush=True)
         return 'ready'
     except DownloadCancelled:
         return 'abandoned'

@@ -34,10 +34,12 @@ struct SongStatus: Decodable {
     }
     let song: Metadata?
     let analysis: ChordAnalysis?
+    /// Word-timed lyrics aligned to the analyzed recording, when the worker made them.
+    let lyrics: BackendClient.LyricsResult?
     let job: Job
     let libraryGeneration: String
     enum CodingKeys: String, CodingKey {
-        case song, analysis, job, libraryGeneration = "library_generation"
+        case song, analysis, lyrics, job, libraryGeneration = "library_generation"
     }
 }
 

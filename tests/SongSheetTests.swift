@@ -78,6 +78,10 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(SheetModel.build(analysis: changed, lines: timed, duration: 20).first { $0.start == 2 }?.chords.last?.wordIndex == 1, "Enhanced LRC uses timestamped token groups")
         let rtl = [LyricLine(time: 2, text: "שלום עולם", words: nil)]
         check(SheetModel.build(analysis: changed, lines: rtl, duration: 20).first { $0.start == 2 }?.text == "שלום עולם", "RTL words are preserved")
+        let untimed = SheetModel.build(analysis: changed, lines: [], duration: 20, untimedLyrics: true)
+        check(!untimed.isEmpty && untimed.allSatisfy { $0.text.isEmpty && $0.kind == .chords }, "Untimed lyrics never become timed rows")
+        check(SheetModel.activeRow(untimed, at: 6)?.chords.contains { $0.event.contains(6) } == true, "Chord rows still follow the recording")
+        check(SheetModel.build(analysis: changed, lines: [], duration: 20).allSatisfy { $0.isInstrumental }, "Without any lyrics, blank rows stay instrumental")
     }
 
     @MainActor static func documentTests() async throws {
@@ -109,6 +113,40 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         try await waitFor { requests == 2 }
         check(requests == 2, "Reentry performs a fresh request instead of remaining stuck")
         resumed.cancel(); await resumed.value
+
+        let plain = SongSheetStore(song: song, service: .init(request: { _, _ in status("ready", ready: true) },
+            status: { _ in status("ready", ready: true) },
+            lyrics: { _ in decode(["lines": [["time": 1, "text": "Guessed one"], ["time": 18.6, "text": "Guessed two"]], "synced": false]) },
+            sleep: { _ in try await Task.sleep(for: .milliseconds(25)) }))
+        let plainTask = Task { await plain.observe() }
+        try await waitFor { plain.canPractice && !plain.lyricsLoading }
+        check(plain.rows.allSatisfy { $0.text.isEmpty } && plain.rows.contains { $0.kind == .chords }, "Guessed lyric times never drive the runner")
+        check(plain.untimedLyrics == ["Guessed one", "Guessed two"], "Untimed lyrics stay readable")
+        check(SheetModel.activeRow(plain.rows, at: 5)?.chords.first?.event.chord?.display == "C", "Chords still follow the recording without timed lyrics")
+        plainTask.cancel(); await plainTask.value
+
+        var lookups = 0
+        let alignedStatus: SongStatus = decode([
+            "job": ["state": "ready", "worker_online": true], "library_generation": "fresh",
+            "analysis": ["chords": [["start": 0, "end": 20, "label": "C:maj"]], "source": "youtube", "audio_duration": 20],
+            "lyrics": ["synced": true, "matched": "aligned", "lines": [
+                ["time": 3, "text": "Timed one", "words": [["time": 3, "text": "Timed"], ["time": 3.5, "text": "one"]]],
+                ["time": 12, "text": "Timed two"]]]])
+        let aligned = SongSheetStore(song: song, service: .init(request: { _, _ in alignedStatus },
+            status: { _ in alignedStatus },
+            lyrics: { _ in
+                lookups += 1
+                try await Task.sleep(for: .milliseconds(60))
+                return decode(["lines": [["time": 1, "text": "Guessed one"]], "synced": false])
+            },
+            sleep: { _ in try await Task.sleep(for: .milliseconds(25)) }))
+        let alignedTask = Task { await aligned.observe() }
+        try await waitFor { aligned.canPractice && aligned.rows.contains { $0.text == "Timed one" } }
+        try await Task.sleep(for: .milliseconds(120))
+        check(aligned.rows.map(\.text).filter { !$0.isEmpty } == ["Timed one", "Timed two"], "Recording-timed lyrics replace the catalog lookup")
+        check(aligned.rows.first { $0.text == "Timed one" }?.chords.first?.wordIndex == 0, "Word times from the recording place chords")
+        check(aligned.untimedLyrics.isEmpty && !aligned.lyricsLoading, "A late catalog result cannot overwrite recording-timed lyrics")
+        alignedTask.cancel(); await alignedTask.value
 
         var resetPolls = 0
         let resetting = SongSheetStore(song: song, service: .init(request: { _, _ in status("ready", ready: true) },
