@@ -71,6 +71,8 @@ enum SheetModel {
         func append(start: Double, end: Double, text: String = "", words: [WordStamp]? = nil) {
             guard end > start else { return }
             let kind: Kind = start >= coverage ? .uncovered : (text.isEmpty ? blank : .lyric)
+            // A catalog duration a fraction longer than the analyzed audio is not a pending part.
+            if kind == .uncovered, end - start < 1 { return }
             // A lyric line stays intact. Eight-second splits previously lost words.
             if !text.isEmpty || kind == .uncovered {
                 rows.append(place(events, start: start, end: end, kind: kind, text: text, words: words))

@@ -364,6 +364,8 @@ class AlignedLyrics(BaseModel):
     library_generation: str
     lines: list[AlignedLine] = Field(min_length=1, max_length=2000)
     aligner: str = Field(min_length=1, max_length=200)
+    # catalog_aligned: catalog text timed to the recording; transcribed: the transcript itself.
+    source: str = Field(default="catalog_aligned", pattern=r"^(catalog_aligned|transcribed)$")
 
 
 @app.post("/internal/jobs/lyrics")
@@ -386,7 +388,8 @@ def attach_lyrics(body: AlignedLyrics, authorization: str | None = Header(defaul
         entry = json.loads(path.read_text())
         if entry.get("source") == "itunes_preview" or not is_current(entry, model="ismir2019"):
             raise HTTPException(409, "lyrics can only be attached to a complete current chart")
-        entry["lyrics"] = {"lines": lines, "synced": True, "matched": "aligned",
+        entry["lyrics"] = {"lines": lines, "synced": True,
+                           "matched": "transcribed" if body.source == "transcribed" else "aligned",
                            "instrumental": False, "aligner": body.aligner}
         _write_analysis(path, entry)
         isrc = entry.get("isrc")

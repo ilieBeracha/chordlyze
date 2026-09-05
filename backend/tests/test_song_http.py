@@ -88,6 +88,12 @@ def test_song_request_to_ready_and_reset_over_http(tmp_path):
                 timed = json.load(response)['lyrics']
             assert timed['synced'] and timed['matched'] == 'aligned'
             assert timed['lines'][0]['words'][1]['text'] == 'there' and 'words' not in timed['lines'][1]
+            assert worker.post('/internal/jobs/lyrics', {**lyrics, 'source': 'transcribed'})['lines'] == 2
+            with urllib.request.urlopen(url + '/song/synthetic') as response:
+                assert json.load(response)['lyrics']['matched'] == 'transcribed'
+            with pytest.raises(urllib.error.HTTPError) as bad_source:
+                worker.post('/internal/jobs/lyrics', {**lyrics, 'source': 'guessed'})
+            assert bad_source.value.code == 422
             reset_library(tmp_path / 'cache', apply=True)
             with pytest.raises(urllib.error.HTTPError) as after_reset:
                 worker.post('/internal/jobs/lyrics', lyrics)
