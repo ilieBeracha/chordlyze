@@ -83,17 +83,17 @@ final class SpotifyAPI: ObservableObject {
     }
 
     /// Liked Songs — available to dev-mode apps (unlike playlist contents).
-    func likedTracks() async throws -> [Track] {
+    func likedTracks(max: Int = 500) async throws -> [Track] {
         struct Item: Decodable { let track: Track }
         struct Page: Decodable { let items: [Item]; let next: String? }
         var all: [Track] = []
         var path: String? = "me/tracks?limit=50"
-        while let p = path, all.count < 500 {
+        while let p = path, all.count < max {
             let page: Page = try await get(p)
             all += page.items.map(\.track)
             path = page.next.map { $0.replacingOccurrences(of: "https://api.spotify.com/v1/", with: "") }
         }
-        return all
+        return Array(all.prefix(max))
     }
 
     func topTracks() async throws -> [Track] {
