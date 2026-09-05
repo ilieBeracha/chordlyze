@@ -237,6 +237,38 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
             audio.unlink(missing_ok=True)
 
 
+def claim_loop(client: WorkerClient, stopping: threading.Event, aligner: LyricsAligner | None,
+               *, once: bool = False, process=None) -> None:
+    process = process or process_job
+    while not stopping.is_set():
+        try:
+            job = client.post('/internal/jobs/claim').get('job')
+            if job:
+                started = time.monotonic()
+                result = process(client, job, stopping, aligner)
+                print(f'Song request {result} ({time.monotonic() - started:.0f}s)', flush=True)
+            elif not once:
+                stopping.wait(3)
+        except Exception as error:
+            print(f'Analysis service unavailable ({type(error).__name__}); reconnecting.', flush=True)
+            stopping.wait(15)
+        if once:
+            break
+
+
+def run_loops(client: WorkerClient, stopping: threading.Event, aligner: LyricsAligner | None,
+              *, concurrency: int, once: bool = False, process=None) -> None:
+    """Several songs at once: a slow recording download must not hold every
+    other request. Chord inference itself is serialized by the recognizer."""
+    threads = [threading.Thread(target=claim_loop, args=(client, stopping, aligner),
+                                kwargs={'once': once, 'process': process}, daemon=True, name=f'claim-{index}')
+               for index in range(max(1, concurrency))]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--env', type=Path, default=Path(__file__).with_name('.env.worker'))
@@ -254,19 +286,9 @@ def main():
     signal.signal(signal.SIGTERM, lambda *_: stopping.set())
     signal.signal(signal.SIGINT, lambda *_: stopping.set())
     aligner = LyricsAligner(client, stopping)
+    concurrency = 1 if args.once else int(os.environ.get('CHORDLYZE_WORKER_CONCURRENCY', '3'))
     try:
-        while not stopping.is_set():
-            try:
-                job = client.post('/internal/jobs/claim').get('job')
-                if job:
-                    print('Song request ' + process_job(client, job, stopping, aligner), flush=True)
-                elif not args.once:
-                    stopping.wait(3)
-            except Exception as error:
-                print(f'Analysis service unavailable ({type(error).__name__}); reconnecting.', flush=True)
-                stopping.wait(15)
-            if args.once:
-                break
+        run_loops(client, stopping, aligner, concurrency=concurrency, once=args.once)
     finally:
         close()
 

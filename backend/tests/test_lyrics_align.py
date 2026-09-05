@@ -163,3 +163,26 @@ def test_published_chart_hands_audio_to_the_aligner(monkeypatch, tmp_path):
     assert handed == [('song', audio, 'gen')] and audio.exists(), 'audio is kept for the aligner'
     assert song_worker.process_job(Publisher(), job) == 'ready'
     assert not audio.exists(), 'without an aligner the audio is deleted as before'
+
+
+def test_worker_processes_several_songs_at_once():
+    import time
+    jobs = [{'id': 'a'}, {'id': 'b'}, {'id': 'c'}]
+    lock = threading.Lock()
+    class Claims:
+        def post(self, path, payload=None):
+            assert path == '/internal/jobs/claim'
+            with lock:
+                return {'job': jobs.pop(0) if jobs else None}
+    active, peak, seen = [0], [0], []
+    def process(client, job, stopping, aligner):
+        with lock:
+            active[0] += 1; peak[0] = max(peak[0], active[0]); seen.append(job['id'])
+        time.sleep(.1)
+        with lock:
+            active[0] -= 1
+        if not jobs: stopping.set()
+        return 'ready'
+    stopping = threading.Event()
+    song_worker.run_loops(Claims(), stopping, None, concurrency=3, process=process)
+    assert sorted(seen) == ['a', 'b', 'c'] and peak[0] >= 2, 'downloads overlap instead of queueing serially'

@@ -165,3 +165,20 @@ def test_missing_audio_is_reported_as_unavailable(cache, monkeypatch):
         def post(self, path, body):
             assert path == '/internal/jobs/finish' and body['state'] == 'unavailable'
     assert song_worker.process_job(Client(), job) == 'unavailable'
+
+
+def test_queue_position_counts_only_earlier_unfinished_requests(tmp_path, monkeypatch):
+    now = [1000]
+    monkeypatch.setattr(song_jobs.time, 'time', lambda: now[0])
+    jobs = song_jobs.SongJobs(tmp_path)
+    for name in ('first', 'second', 'third'):
+        now[0] += 1
+        jobs.request({'track_id': name, 'title': name, 'artist': 'Band', 'duration': 200})
+    assert jobs.public(jobs.get('third'))['ahead'] == 2
+    assert jobs.public(jobs.get('first'))['ahead'] == 0
+    claimed = jobs.claim()  # first is now processing: still ahead of the others
+    assert claimed['song']['track_id'] == 'first'
+    assert jobs.public(jobs.get('third'))['ahead'] == 2
+    jobs.finish('first', claimed['id'], claimed['lease'], claimed['generation'], 'failed')
+    assert jobs.public(jobs.get('third'))['ahead'] == 1
+    assert 'ahead' not in jobs.public(jobs.get('first'))

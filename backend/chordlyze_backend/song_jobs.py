@@ -156,8 +156,22 @@ class SongJobs:
             write_json(self.path(track_id), job)
             return True
 
+    def ahead(self, job: dict) -> int:
+        """Earlier requests still waiting or being processed."""
+        with library_lock(self.directory):
+            count = 0
+            for path in self.directory.glob('job-*.json'):
+                other = json.loads(path.read_text())
+                if (other['id'] != job['id'] and other['state'] in ('queued', 'processing')
+                        and other['created_at'] < job['created_at']):
+                    count += 1
+            return count
+
     def public(self, job: dict | None) -> dict:
         if not job:
             return {'state': 'missing', 'worker_online': self.worker_online()}
-        return {key: job.get(key) for key in ('state', 'stage', 'message')} | {
+        result = {key: job.get(key) for key in ('state', 'stage', 'message')} | {
             'worker_online': self.worker_online()}
+        if job['state'] == 'queued':
+            result['ahead'] = self.ahead(job)
+        return result

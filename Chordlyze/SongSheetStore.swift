@@ -150,7 +150,11 @@ final class SongSheetStore: ObservableObject {
         switch state {
         case "ready": message = ""
         case "processing": message = !status.job.workerOnline ? "Analysis paused while the service reconnects…" : (status.job.stage == "analyzing" ? "Recognizing the song’s chords…" : "Preparing the full recording…")
-        case "queued": message = status.job.workerOnline ? "Full-song analysis queued. Chords will appear here automatically." : "Waiting for the analysis service. This song will update automatically."
+        case "queued":
+            let ahead = status.job.ahead ?? 0
+            message = !status.job.workerOnline ? "Waiting for the analysis service. This song will update automatically."
+                : ahead == 0 ? "Full-song analysis queued. Chords will appear here automatically."
+                : "Queued behind \(ahead) \(ahead == 1 ? "song" : "songs"). Chords will appear here automatically."
         case "missing": message = "This analysis was cleared. Tap Retry to analyze the song again."
         default: message = status.job.message ?? "Analysis unavailable. Tap Retry to try again."
         }
