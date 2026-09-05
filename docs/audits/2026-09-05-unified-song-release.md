@@ -2,6 +2,8 @@
 
 Recorded 5 September 2026 for iOS/API 0.5.0. Implementation commit: `167dcfd79ee89f90f2b7553edbbb2177d78b05fd`. Subsequent release metadata adds the API version to health and updates documentation; recognition and rendering logic are unchanged.
 
+The Mac worker dependency described in this historical verification was subsequently removed by the [API 0.5.1 cloud-worker release](2026-09-05-cloud-worker-release.md).
+
 ## Checks
 
 - Backend on macOS with the pinned installed ensemble: **164 passed, 17 expected failures**.
