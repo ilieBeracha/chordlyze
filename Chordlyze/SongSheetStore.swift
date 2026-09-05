@@ -134,6 +134,18 @@ final class SongSheetStore: ObservableObject {
         }
         let changed = analysis != status.analysis
         analysis = status.analysis
+        if let aligned = status.lyrics, aligned.synced, aligned != lyricsResult {
+            // Lyrics timed to the analyzed recording beat any catalog lookup.
+            lyricRevision += 1
+            lyricTask?.cancel(); lyricTask = nil
+            lyricKey = lyricLookupKey
+            lyricsResult = aligned
+            lines = aligned.lines
+            untimedLyrics = []
+            lyricsLoading = false
+            lyricsFailed = false
+            lyricsNote = "Lyrics timed to this recording automatically."
+        }
         state = status.job.state
         switch state {
         case "ready": message = ""
@@ -142,13 +154,16 @@ final class SongSheetStore: ObservableObject {
         case "missing": message = "This analysis was cleared. Tap Retry to analyze the song again."
         default: message = status.job.message ?? "Analysis unavailable. Tap Retry to try again."
         }
-        if changed || reset || oldSong != song || rows.isEmpty { rebuild() }
+        if changed || reset || oldSong != song || rows.isEmpty || status.lyrics != nil { rebuild() }
         loadLyrics(force: lyricsFailed && (nextLyricRetry.map { ContinuousClock.now >= $0 } ?? true))
     }
 
+    private var lyricLookupKey: String { "\(song.title)|\(song.artist)|\(song.album ?? "")|\(song.duration ?? 0)" }
+    private var hasAlignedLyrics: Bool { lyricsResult?.matched == "aligned" }
+
     private func loadLyrics(force: Bool = false) {
-        let key = "\(song.title)|\(song.artist)|\(song.album ?? "")|\(song.duration ?? 0)"
-        guard force || key != lyricKey else { return }
+        let key = lyricLookupKey
+        guard !hasAlignedLyrics, force || key != lyricKey else { return }
         lyricKey = key
         lyricRevision += 1
         let token = lyricRevision

@@ -9,6 +9,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir cython numpy && \
     pip install --no-cache-dir -r requirements.txt
 
+# Speech model for timing plain lyrics against the recording; only the worker uses it.
+ENV CHORDLYZE_WHISPER_DIR=/opt/chordlyze/whisper
+RUN python -c "from faster_whisper import download_model; download_model('small', cache_dir='$CHORDLYZE_WHISPER_DIR')"
+
 COPY requirements-ismir.txt .
 COPY scripts/setup_ismir.sh ./scripts/setup_ismir.sh
 # Only model-loading code invalidates the expensive model installation layer.
