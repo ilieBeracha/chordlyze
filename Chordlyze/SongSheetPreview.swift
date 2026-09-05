@@ -59,8 +59,16 @@ struct SongSheetPreview: View {
                                      ["start": 20, "end": 40, "label": "F:maj7"]],
                          "source": "youtube", "audio_duration": 40, "song_duration": 40, "key": "C major"]
         ])
+        let arguments = ProcessInfo.processInfo.arguments
+        // "estimated": catalog lyrics without timing, spread over the song as the backend does.
+        let estimated = arguments.contains("--song-sheet-preview-estimated")
         let words: BackendClient.LyricsResult = decode([
-            "synced": true, "lines": [
+            "synced": !estimated, "lines": estimated ? [
+                ["time": 2, "text": "Sample words follow every chord"],
+                ["time": 10.7, "text": "A held chord is not repeated on this line"],
+                ["time": 22.4, "text": "שרים יחד בקצב של הלב"],
+                ["time": 28.4, "text": "The final line keeps its harmony"]
+            ] : [
                 ["time": 0, "text": "Sample words follow every chord"],
                 ["time": 8, "text": "A held chord is not repeated on this line"],
                 ["time": 16, "text": ""],
@@ -70,7 +78,6 @@ struct SongSheetPreview: View {
         ])
         let song = SongDescriptor(trackID: "offline-preview", title: "Song sheet preview",
                                   artist: "Offline regression fixture", duration: 40)
-        let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("--song-sheet-preview-delayed") || arguments.contains("--song-sheet-preview-missing") {
             // Chart arrives after three polls, as it does for a fresh song.
             // "missing": nothing happens until Analyze is tapped, as in the app.
