@@ -9,9 +9,9 @@ struct SpotifyLiveView: View {
     var body: some View {
         Group {
             if let playing = nowPlaying.playing {
-                LiveNowView(store: SongSheetStore.shared(for: SongDescriptor(track: playing.track)),
-                            onSeek: { await nowPlaying.seek(to: $0) },
-                            playbackNote: nowPlaying.playbackNote) {
+                LiveSongView(store: SongSheetStore.shared(for: SongDescriptor(track: playing.track)),
+                             onSeek: { await nowPlaying.seek(to: $0) },
+                             playbackNote: nowPlaying.playbackNote) {
                     nowPlaying.livePosition()
                 }
                 .id(playing.track.id)
@@ -21,6 +21,76 @@ struct SpotifyLiveView: View {
             }
         }
         .onAppear { nowPlaying.resume() }
+    }
+}
+
+/// Live follows only an analyzed song. Until the chart is ready the screen is
+/// a compact card, never a sheet of pending rows.
+struct LiveSongView: View {
+    @ObservedObject var store: SongSheetStore
+    var onSeek: ((Double) async -> Bool)? = nil
+    var playbackNote: String? = nil
+    let livePosition: () -> TimeInterval?
+
+    var body: some View {
+        if store.canPractice {
+            LiveNowView(store: store, onSeek: onSeek, playbackNote: playbackNote, livePosition: livePosition)
+        } else {
+            LiveAnalyzingView(store: store, playbackNote: playbackNote)
+        }
+    }
+}
+
+/// Artwork, one line of state, and a Retry when analysis stopped.
+struct LiveAnalyzingView: View {
+    @ObservedObject var store: SongSheetStore
+    var playbackNote: String? = nil
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                BackCircle(size: 38)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(store.song.title).font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white).lineLimit(1)
+                    Text(store.song.artist).font(.system(size: 12)).foregroundStyle(Palette.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 20).padding(.vertical, 12)
+            Spacer()
+            VStack(spacing: 18) {
+                AsyncImage(url: store.song.artwork.flatMap(URL.init)) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    Rectangle().fill(Palette.card)
+                }
+                .frame(width: 168, height: 168)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                HStack(spacing: 8) {
+                    if store.busy { ProgressView().controlSize(.small) }
+                    Text(store.message).font(.system(size: 15, weight: .medium)).foregroundStyle(Palette.nearWhite)
+                }
+                .accessibilityIdentifier("live-analyzing-state")
+                if !store.busy {
+                    Button(store.state == "missing" ? "Analyze" : "Retry") { store.retry() }
+                        .font(.system(size: 14, weight: .bold)).foregroundStyle(.black)
+                        .padding(.vertical, 9).padding(.horizontal, 22)
+                        .background(Capsule().fill(Color.spotifyGreen))
+                }
+                if let playbackNote {
+                    Text(playbackNote).font(.system(size: 12)).foregroundStyle(Palette.secondary)
+                }
+            }
+            .padding(.horizontal, 30)
+            Spacer()
+        }
+        .background(Color.black.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+        .task(id: scenePhase) {
+            if scenePhase == .active { await store.observe() }
+        }
     }
 }
 

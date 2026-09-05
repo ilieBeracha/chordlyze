@@ -29,12 +29,15 @@ struct LiveNowView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 20).padding(.vertical, 12)
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 6) {
                         if let playbackNote {
                             Text(playbackNote).font(.system(size: 13)).foregroundStyle(Palette.secondary)
                         }
                         if seekDenied { Text("Spotify could not seek. Check playback permissions or Premium.").font(.caption).foregroundStyle(Palette.secondary) }
-                        SongSheetStatus(store: store, pill: true)
+                        if let note = store.lyricsNote {
+                            Label(note, systemImage: "clock").font(.system(size: 12)).foregroundStyle(Palette.tertiary)
+                                .accessibilityIdentifier("lyrics-detail")
+                        }
                     }.padding(.horizontal, 20).padding(.bottom, 6)
                     ScrollView {
                         ChordSheetView(store: store, playhead: position, style: .live,
