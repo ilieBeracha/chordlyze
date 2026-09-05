@@ -89,8 +89,6 @@ struct AnalysisTabsView: View {
 
 struct SongSheetStatus: View {
     @ObservedObject var store: SongSheetStore
-    /// Live shows each note as a capsule with an icon.
-    var pill = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -111,15 +109,13 @@ struct SongSheetStatus: View {
         HStack(spacing: 8) {
             if spinning {
                 ProgressView().controlSize(.small)
-            } else if pill, let icon {
-                Image(systemName: icon).font(.system(size: 12, weight: .semibold))
+            } else if let icon {
+                Image(systemName: icon).font(.system(size: 11, weight: .semibold))
             }
-            Text(text).font(.system(size: pill ? 13 : 12))
-            if retry { Button("Retry") { store.retry() }.font(.system(size: 12, weight: .bold)) }
+            Text(text).font(.system(size: 12))
+            if retry { Button(store.state == "missing" ? "Analyze" : "Retry") { store.retry() }.font(.system(size: 12, weight: .bold)) }
         }
         .foregroundStyle(Palette.secondary)
-        .padding(.vertical, pill ? 8 : 0).padding(.horizontal, pill ? 14 : 0)
-        .background { if pill { Capsule().fill(Color.white.opacity(0.08)) } }
     }
 }
 

@@ -98,6 +98,8 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         let second = Task { await sheet.observe() }
         try await waitFor { !sheet.lyricsLoading }
         check(sheet.analysis == nil && sheet.rows.contains { !$0.text.isEmpty }, "Lyrics do not wait for recognition")
+        try await waitFor { sheet.message == "Analyzing, about a minute" }
+        check(!sheet.canPractice, "A pending chart is not ready for Live or Practice")
         try await waitFor { sheet.canPractice }
         check(requests == 1, "Two screens share one analysis request")
         check(sheet.rows.filter { !$0.text.isEmpty }.allSatisfy { !$0.chords.isEmpty }, "Finished analysis fills existing lyric rows automatically")
@@ -154,6 +156,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
             lyrics: { _ in lyrics() }, sleep: { _ in try await Task.sleep(for: .milliseconds(25)) }))
         let resetTask = Task { await resetting.observe() }
         try await waitFor { resetting.state == "missing" }
+        check(resetting.message == "Not analyzed", "A cleared song reads as not analyzed")
         check(resetting.analysis == nil && resetting.rows.allSatisfy { $0.chords.isEmpty }, "Reset removes old charts from an already open view")
         check(!resetting.canPractice, "A cleared reference cannot start practice")
         resetTask.cancel(); await resetTask.value
@@ -260,6 +263,21 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(delays.first == 37, "Retry-After is respected instead of hammering Spotify")
         check(limited.connectionMessage == nil, "A recovered Spotify request clears the error in place")
         limited.reset()
+
+        var requested: [String] = []
+        var queued = 0
+        let upcoming: [Track] = decode([["id": "two", "name": "Next", "artists": [["name": "Band"]], "album": ["name": "Album"], "duration_ms": 180000],
+                                        ["id": "three", "name": "After", "artists": [["name": "Band"]], "album": ["name": "Album"], "duration_ms": 200000]])
+        let ahead = SpotifyNowPlaying(service: .init(current: { playback() }, seek: { _ in },
+            sleep: { _ in try await Task.sleep(for: .milliseconds(20)) },
+            queue: { queued += 1; return upcoming },
+            request: { requested.append($0.trackID) }), sheetProvider: provider)
+        ahead.resume()
+        try await waitFor { requested.count == 2 }
+        try await Task.sleep(for: .milliseconds(80))
+        check(requested == ["two", "three"], "The next tracks are analyzed while the current one plays")
+        check(queued == 1, "The queue is read once per song, not on every poll")
+        ahead.reset()
         try await liveFlowTests()
     }
 

@@ -17,7 +17,12 @@ final class SpotifyNowPlaying: ObservableObject {
         var current: () async throws -> SpotifyAPI.CurrentlyPlaying?
         var seek: (Double) async throws -> Void
         var sleep: (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
+        /// Upcoming tracks, and the request that analyzes one ahead of time.
+        var queue: () async throws -> [Track] = { [] }
+        var request: (SongDescriptor) async throws -> Void = { _ = try await BackendClient.requestSong($0) }
     }
+    /// How many upcoming tracks are analyzed before they play.
+    static let prefetchCount = 3
     @Published private(set) var playing: Playing?
     @Published private(set) var analysis: ChordAnalysis?
     @Published private(set) var analysisFailed = false
@@ -31,6 +36,8 @@ final class SpotifyNowPlaying: ObservableObject {
     private var sheetID: String?
     private var service: Service?
     private var generation = 0
+    private var prefetchTask: Task<Void, Never>?
+    private var prefetched = Set<String>()
     private var now: () -> ContinuousClock.Instant
     private var sheetProvider: @MainActor (Track) -> SongSheetStore
 
@@ -48,7 +55,8 @@ final class SpotifyNowPlaying: ObservableObject {
     }
     func start(api: SpotifyAPI) {
         service = Service(current: { try await api.currentlyPlaying() },
-                          seek: { try await api.seek(toMs: Int($0 * 1000)) })
+                          seek: { try await api.seek(toMs: Int($0 * 1000)) },
+                          queue: { try await api.queue(limit: Self.prefetchCount) })
         restart()
     }
     func resume() {
@@ -58,6 +66,7 @@ final class SpotifyNowPlaying: ObservableObject {
     func stop() {
         generation += 1
         pollTask?.cancel(); pollTask = nil
+        prefetchTask?.cancel(); prefetchTask = nil
         sheetTask?.cancel(); sheetTask = nil
         subscriptions.removeAll()
         sheetID = nil
@@ -65,6 +74,7 @@ final class SpotifyNowPlaying: ObservableObject {
     func reset() {
         stop()
         service = nil
+        prefetched.removeAll()
         playing = nil
         anchor = nil
         lastSuccess = nil
@@ -130,6 +140,7 @@ final class SpotifyNowPlaying: ObservableObject {
                 anchor = (position, sampledAt)
             }
             playing = next
+            if sheetID != track.id { prefetch(after: track, service: service) }
             observeSheet(track)
             return 2
         } catch {
@@ -148,6 +159,19 @@ final class SpotifyNowPlaying: ObservableObject {
             return 3
         }
     }
+    /// Analyze what plays next while this song plays, so Live opens ready.
+    private func prefetch(after track: Track, service: Service) {
+        prefetchTask?.cancel()
+        prefetchTask = Task { [weak self] in
+            guard let upcoming = try? await service.queue(), let self else { return }
+            for next in upcoming where next.id != track.id && !prefetched.contains(next.id) {
+                guard !Task.isCancelled else { return }
+                prefetched.insert(next.id)
+                try? await service.request(SongDescriptor(track: next))
+            }
+        }
+    }
+
     private func observeSheet(_ track: Track) {
         guard sheetID != track.id else { return }
         sheetTask?.cancel()

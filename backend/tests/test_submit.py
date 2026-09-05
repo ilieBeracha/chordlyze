@@ -6,7 +6,6 @@ from fastapi import HTTPException
 
 from chordlyze_backend import main
 from chordlyze_backend.main import SubmittedAnalysis, SubmittedSegment, submit_analysis
-from ingest_worker import parse_lab
 
 
 @pytest.fixture(autouse=True)
@@ -79,12 +78,3 @@ def test_whole_song_madmom_upgrades_to_ismir_but_not_back(cache):
     assert main._save_track("t4", {"chords": [], "source": "youtube", "model": "madmom"}, "S", "B")
     assert main._save_track("t4", {"chords": [], "source": "youtube", "model": "ismir2019"}, "S", "B")
     assert not main._save_track("t4", {"chords": [], "source": "upload"}, "S", "B")  # legacy = madmom
-
-
-def test_parse_lab():
-    text = "0.0\t0.02\tN\n0.02\t1.99\tC:7\n1.99\t4.0\tAb:dim7\n4.0\t4.0\tG:maj\nbroken line\n"
-    assert parse_lab(text) == [
-        {"start": 0.0, "end": 0.02, "label": "N"},
-        {"start": 0.02, "end": 1.99, "label": "C:7"},
-        {"start": 1.99, "end": 4.0, "label": "Ab:dim7"},
-    ]

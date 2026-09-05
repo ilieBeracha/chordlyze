@@ -152,6 +152,18 @@ final class SpotifyAPI: ObservableObject {
         return try JSONDecoder().decode(CurrentlyPlaying.self, from: data)
     }
 
+    /// The next tracks Spotify will play after the current one. Episodes and
+    /// local files are skipped.
+    func queue(limit: Int = 3) async throws -> [Track] {
+        struct Item: Decodable {
+            let track: Track?
+            init(from decoder: Decoder) throws { track = try? Track(from: decoder) }
+        }
+        struct Queue: Decodable { let queue: [Item] }
+        let queue: Queue = try await get("me/player/queue")
+        return Array(queue.queue.compactMap(\.track).prefix(limit))
+    }
+
     /// Seek the account's active playback. Needs Premium + playback scope.
     func seek(toMs ms: Int) async throws {
         let token = try await auth.validToken()

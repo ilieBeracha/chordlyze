@@ -22,7 +22,7 @@ struct SongSheetPreview: View {
                     Button(paused ? "Resume preview" : "Pause preview") {
                         offset = position(); anchor = .now; paused.toggle()
                     }
-                    LiveNowView(store: store, playbackNote: paused ? "Playback paused" : nil) { position() }
+                    LiveSongView(store: store, playbackNote: paused ? "Playback paused" : nil) { position() }
                 } else if mode == "Practice", let chart = store.analysis {
                     PracticeView(analysis: chart, title: store.song.title, artist: store.song.artist,
                                  trackID: store.song.id, songStore: store)

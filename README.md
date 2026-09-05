@@ -26,19 +26,14 @@ bash scripts/setup_ismir.sh
 PYTHONPATH=. .venv/bin/uvicorn chordlyze_backend.main:app --port 8787
 ```
 
-`setup_ismir.sh` pins the upstream revision and dependencies, checks all five checkpoint hashes and the dictionary, and loads the model. Set `CHORDLYZE_ISMIR_DIR` to use another installation directory; export the same setting when starting the API or ingest worker.
+`setup_ismir.sh` pins the upstream revision and dependencies, checks all five checkpoint hashes and the dictionary, and loads the model. Set `CHORDLYZE_ISMIR_DIR` to use another installation directory; export the same setting when starting the API or song worker.
 
 ```bash
 # Release checks: missing model weights are a failure, never a silent skip.
 CHORDLYZE_REQUIRE_MODELS=1 PYTHONPATH=. .venv/bin/python -m pytest tests/ -q
-
-# Legacy development-only batch against a local API (not production).
-CHORDLYZE_API_URL=http://127.0.0.1:8787 PYTHONPATH=. .venv/bin/python ingest_worker.py --jobs 3
 ```
 
-The managed on-demand worker downloads matching full-track audio with yt-dlp and submits analyzed chords using authenticated job leases. See the [song-sheet and deployment guide](docs/unified-song-sheet.md) for installation, availability, timing limits and the explicit library reset. The legacy ingest utility below is restricted to development instances without worker authentication. Its default API is the deployed Fly service; set `CHORDLYZE_API_URL` explicitly for local work. Spotify's API supplies metadata and playback control, not downloadable audio or chord labels.
-
-Downloads overlap in at most three jobs by default, while the resident model serializes inference. A shared throttle limits iTunes lookups, including retries, and each job owns its temporary audio. Transient HTTP/DNS failures receive up to three attempts; long `Retry-After` delays leave the entry pending. Restarting a pass skips entries that are already current; the final summary distinguishes updates, skips and failures.
+The managed on-demand worker downloads matching full-track audio with yt-dlp and submits analyzed chords using authenticated job leases. See the [song-sheet and deployment guide](docs/unified-song-sheet.md) for installation, availability, timing limits and the explicit library reset. Spotify's API supplies metadata and playback control, not downloadable audio or chord labels.
 
 ## iOS app
 

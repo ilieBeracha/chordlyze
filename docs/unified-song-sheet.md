@@ -8,7 +8,7 @@ Live follows Spotify playback automatically. Search and Library show the static 
 
 Opening a song posts its recording metadata to `/song/request`, then follows `/song/{track_id}`. Lyrics load independently while a complete chart is prepared. Reopening a ready song reuses the chart. Concurrent views share a document and subscriber count; the last departure cancels work. Reentry starts fresh requests. Old, canceled responses cannot replace the current song.
 
-Full song duration and album information travel from Spotify/iTunes through Search, Library and lyrics lookup. Both exact and search lyric matches are checked against title, artist and duration. A 30-second iTunes preview starts at an unknown offset and is never positioned against the whole song. The old `/analyze_track` route now queues a whole-song chart and returns HTTP 202 while pending.
+Full song duration and album information travel from Spotify/iTunes through Search, Library and lyrics lookup. Both exact and search lyric matches are checked against title, artist and duration. A 30-second iTunes preview starts at an unknown offset and is never positioned against the whole song.
 
 Known lyrics and known chords can load at different times. Missing data is shown explicitly. Instrumentals keep their chords. Unavailable lyrics are not invented. Enhanced LRC supplies word timestamps; ordinary synchronized LRC supplies line timestamps, so placement within a line is approximate and labeled. Lyrics without timestamps are never shown as timed rows: the sheet keeps chord rows on the audio timeline and lists the words below them. After a chart is published, the worker transcribes the recording with word timestamps (faster-whisper, `CHORDLYZE_WHISPER_MODEL`, default `small`), matches the catalog text to the transcript, and attaches the timed lines to the chart through `/internal/jobs/lyrics`; `/song/{track_id}` then returns them as `lyrics` and the app prefers them over the catalog lookup. Too few matched words leaves the lyrics untimed rather than guessed. Matching source title, artist and duration reduces edition errors but does not prove sample-accurate alignment between services.
 
@@ -30,14 +30,7 @@ Production uses Fly secrets `CHORDLYZE_WORKER_TOKEN` and `APIFY_TOKEN`. Configur
 
 For optional local development, use `backend/.env.worker` with mode 600: `CHORDLYZE_API_URL`, `CHORDLYZE_WORKER_TOKEN`, `CHORDLYZE_ISMIR_DIR`, `CHORDLYZE_TORCH_THREADS=2`, and an optional writable `NUMBA_CACHE_DIR`. Set `CHORDLYZE_AUDIO_PROVIDER=apify` and `APIFY_TOKEN` to test the cloud path. The default `yt_dlp` provider is retained for explicit local development. Do not run a local production worker after cloud cutover.
 
-```bash
-cd backend
-.venv/bin/python scripts/install_song_worker.py         # show installation paths
-.venv/bin/python scripts/install_song_worker.py --apply # install/restart this one LaunchAgent
-launchctl print gui/$(id -u)/com.chordlyze.song-worker
-```
-
-The optional LaunchAgent is `~/Library/LaunchAgents/com.chordlyze.song-worker.plist`; it should be unloaded and disabled after cloud verification. Logs are under ignored `backend/worker-logs/`. `GET /health` reports `api_version`, `release`, `analysis_version`, `library_generation`, and `song_worker_online`; no credentials are returned. The legacy batch ingestion utility is for development only: production requires a current on-demand lease.
+`GET /health` reports `api_version`, `release`, `analysis_version`, `library_generation`, and `song_worker_online`; no credentials are returned.
 
 ## Explicit fresh start
 

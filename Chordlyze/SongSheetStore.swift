@@ -28,7 +28,7 @@ final class SongSheetStore: ObservableObject {
     @Published private(set) var analysis: ChordAnalysis?
     @Published private(set) var rows: [SheetModel.Row] = []
     @Published private(set) var state = "loading"
-    @Published private(set) var message = "Preparing this song…"
+    @Published private(set) var message = "Checking this song…"
     @Published private(set) var lyricsNote: String?
     /// Lyric lines without timing: shown as text, never as timed rows.
     @Published private(set) var untimedLyrics: [String] = []
@@ -108,7 +108,7 @@ final class SongSheetStore: ObservableObject {
                     }
                     failures += 1
                     state = "connection"
-                    message = "Connection interrupted. Reconnecting automatically…"
+                    message = "Reconnecting…"
                 }
                 do { try await service.sleep(failures > 0 ? min(30, Double(failures * 3)) : (state == "ready" ? 15 : 3)) }
                 catch { return }
@@ -147,16 +147,15 @@ final class SongSheetStore: ObservableObject {
             lyricsNote = "Lyrics timed from the recording"
         }
         state = status.job.state
+        // Three states the user sees: not analyzed, analyzing, ready.
         switch state {
         case "ready": message = ""
-        case "processing": message = !status.job.workerOnline ? "Analysis paused while the service reconnects…" : (status.job.stage == "analyzing" ? "Recognizing the song’s chords…" : "Preparing the full recording…")
-        case "queued":
-            let ahead = status.job.ahead ?? 0
-            message = !status.job.workerOnline ? "Waiting for the analysis service. This song will update automatically."
-                : ahead == 0 ? "Full-song analysis queued. Chords will appear here automatically."
-                : "Queued behind \(ahead) \(ahead == 1 ? "song" : "songs"). Chords will appear here automatically."
-        case "missing": message = "This analysis was cleared. Tap Retry to analyze the song again."
-        default: message = status.job.message ?? "Analysis unavailable. Tap Retry to try again."
+        case "processing", "queued":
+            let ahead = state == "queued" ? status.job.ahead ?? 0 : 0
+            message = !status.job.workerOnline ? "Analyzing, waiting for the service"
+                : ahead > 0 ? "Analyzing, \(ahead) ahead" : "Analyzing, about a minute"
+        case "missing": message = "Not analyzed"
+        default: message = status.job.message ?? "Analysis unavailable"
         }
         if changed || reset || oldSong != song || rows.isEmpty || status.lyrics != nil { rebuild() }
         loadLyrics(force: lyricsFailed && (nextLyricRetry.map { ContinuousClock.now >= $0 } ?? true))
