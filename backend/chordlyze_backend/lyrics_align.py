@@ -96,14 +96,19 @@ def transcribe_words(audio: Path, language: str | None) -> list[dict]:
     return words
 
 
-def align_lyrics(audio: Path, lines: list[str], transcribe=transcribe_words) -> list[dict] | None:
+def align_lyrics(audio: Path, lines: list[str], transcribe=transcribe_words,
+                 stats: dict | None = None) -> list[dict] | None:
     """Timed lines for the given plain lyrics, or None when too little of the
-    text was found in the recording to trust the result."""
+    text was found in the recording to trust the result. `stats` receives
+    the match counts (numbers only, safe to log)."""
     lines = [line.strip() for line in lines if line.strip()]
     if not lines:
         return None
     words = transcribe(audio, language_hint(lines))
     timed, matched, total = time_lines(lines, words)
+    if stats is not None:
+        stats.update(matched_words=matched, lyric_words=total, transcript_words=len(words),
+                     placed_lines=len(timed), lines=len(lines))
     if total == 0 or matched < MIN_MATCHED_WORDS * total or len(timed) < MIN_PLACED_LINES * len(lines):
         return None
     return timed

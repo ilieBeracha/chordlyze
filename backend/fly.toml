@@ -13,8 +13,9 @@ kill_timeout = "30s"
   CHORDLYZE_APIFY_MAX_CHARGE_USD = "1"
   CHORDLYZE_APIFY_TIMEOUT = "300"
   CHORDLYZE_AUDIO_MAX_MB = "100"
-  # Lyrics timing transcript; "base" is the faster, less accurate fallback (both are in the image).
-  CHORDLYZE_WHISPER_MODEL = "small"
+  # Lyrics timing transcript. "small" took 9.5 minutes per song on shared CPUs; "base" is
+  # about three times faster and less accurate. Both models are in the image.
+  CHORDLYZE_WHISPER_MODEL = "base"
   NUMBA_CACHE_DIR = "/tmp/chordlyze-numba"
 
 [build]

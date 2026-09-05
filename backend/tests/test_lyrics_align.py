@@ -53,7 +53,9 @@ def test_language_hint_from_script():
 def test_alignment_refuses_a_poor_match_instead_of_guessing(tmp_path):
     audio = tmp_path / 'song.mp3'
     poor = lambda path, language: words('something completely different here', 10)
-    assert align_lyrics(audio, LINES, transcribe=poor) is None
+    stats = {}
+    assert align_lyrics(audio, LINES, transcribe=poor, stats=stats) is None
+    assert stats == {'matched_words': 0, 'lyric_words': 20, 'transcript_words': 4, 'placed_lines': 0, 'lines': 4}
     good = lambda path, language: words('come up to meet you tell you i need you nobody said it was easy nobody said it was easy', 27.4)
     timed = align_lyrics(audio, LINES, transcribe=good)
     assert timed and len(timed) == 4 and timed[0]['time'] == 27.4
@@ -91,7 +93,9 @@ SONG = {'track_id': 'song', 'title': 'Song', 'artist': 'Band', 'duration': 200}
 
 def test_worker_times_only_untimed_catalog_lyrics(tmp_path):
     aligned = [{'time': 27.4, 'text': 'Come up to meet you', 'words': [{'time': 27.4, 'text': 'Come'}]}]
-    align = lambda audio, lines: aligned if lines == ['Come up to meet you', 'Tell you I need you'] else None
+    def align(audio, lines, stats=None):
+        if stats is not None: stats.update(matched_words=1, lyric_words=9)
+        return aligned if lines == ['Come up to meet you', 'Tell you I need you'] else None
     plain = {'synced': False, 'lines': [{'time': 12, 'text': 'Come up to meet you'}, {'time': 40, 'text': 'Tell you I need you'}]}
     client = Client(plain)
     assert song_worker.attach_lyrics(client, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'aligned'
@@ -105,13 +109,13 @@ def test_worker_times_only_untimed_catalog_lyrics(tmp_path):
     stopping = threading.Event(); stopping.set()
     assert song_worker.attach_lyrics(Client(plain), SONG, tmp_path / 'a.mp3', 'gen', stopping, align=align) == 'skipped'
     poor = Client({'synced': False, 'lines': [{'time': 1, 'text': 'Other words'}]})
-    assert song_worker.attach_lyrics(poor, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'unaligned'
+    assert song_worker.attach_lyrics(poor, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'unaligned matched_words=1 lyric_words=9'
     assert not poor.posted
 
 
 def test_aligner_runs_in_the_background_and_deletes_audio_when_done(tmp_path):
     done = threading.Event()
-    def align(audio, lines):
+    def align(audio, lines, stats=None):
         assert Path(audio).exists(), 'audio must survive until alignment runs'
         done.set()
         return None
@@ -126,7 +130,7 @@ def test_aligner_runs_in_the_background_and_deletes_audio_when_done(tmp_path):
 
 def test_full_alignment_queue_drops_lyrics_not_charts(tmp_path):
     started, release = threading.Event(), threading.Event()
-    def align(audio, lines):
+    def align(audio, lines, stats=None):
         started.set(); release.wait(5); return None
     aligner = song_worker.LyricsAligner(Client({'synced': False, 'lines': [{'time': 1, 'text': 'Some words'}]}),
                                         align=align, limit=1)

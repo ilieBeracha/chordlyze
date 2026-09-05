@@ -103,9 +103,10 @@ def attach_lyrics(client: WorkerClient, song: dict, audio: Path, generation: str
         raise
     if found.get('synced') or found.get('instrumental'):
         return 'synced'
-    timed = align(audio, [line.get('text') or '' for line in found.get('lines', [])])
+    stats: dict = {}
+    timed = align(audio, [line.get('text') or '' for line in found.get('lines', [])], stats=stats)
     if timed is None:
-        return 'unaligned'
+        return 'unaligned ' + ' '.join(f'{key}={value}' for key, value in stats.items())
     client.post('/internal/jobs/lyrics', {'track_id': song['track_id'], 'library_generation': generation,
                                           'lines': timed, 'aligner': ALIGNER})
     return 'aligned'
