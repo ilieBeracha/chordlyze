@@ -173,18 +173,66 @@ def test_cloud_search_normalizes_duration_and_preserves_hebrew():
     assert saved == [{'search_run_id': 'run123'}]
 
 
-def test_cloud_path_never_uses_direct_youtube(monkeypatch, tmp_path):
-    monkeypatch.setenv('CHORDLYZE_AUDIO_PROVIDER', 'apify')
-    import yt_dlp
-    monkeypatch.setattr(yt_dlp, 'YoutubeDL', lambda *a, **kw: pytest.fail('direct YouTube used'))
-    path = tmp_path / 'audio.mp3'; path.write_bytes(b'audio')
+class _FlatSearch:
+    """yt-dlp stand-in: metadata search only; any download attempt fails the test."""
+    entries: list | Exception = []
+
+    def __init__(self, options):
+        assert options.get('skip_download') is True and options.get('extract_flat')
+
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+
+    def extract_info(self, query, download=False):
+        assert not download and query.startswith('ytsearch')
+        if isinstance(self.entries, Exception):
+            raise self.entries
+        return {'entries': self.entries}
+
+
+def _cloud_provider(monkeypatch, path, *, search):
     class Provider:
-        def search(self, *a, **kw): return [CANDIDATE]
+        def search(self, *a, **kw): return search()
         def download(self, candidate, *a, **kw):
             assert candidate == CANDIDATE
             return path
     monkeypatch.setattr(cloud, 'ApifyAudio', Provider)
-    assert fulltrack.fetch_full_track('Song', 'Band', 200) == path
+
+
+def test_cloud_path_searches_directly_and_never_downloads_from_youtube(monkeypatch, tmp_path):
+    monkeypatch.setenv('CHORDLYZE_AUDIO_PROVIDER', 'apify')
+    import yt_dlp
+    monkeypatch.setattr(_FlatSearch, 'entries', [CANDIDATE])
+    monkeypatch.setattr(yt_dlp, 'YoutubeDL', _FlatSearch)
+    path = tmp_path / 'audio.mp3'; path.write_bytes(b'audio')
+    _cloud_provider(monkeypatch, path, search=lambda: pytest.fail('paid search used after a direct match'))
+    source = {}
+    assert fulltrack.fetch_full_track('Song', 'Band', 200, source_info=source) == path
+    assert source['search'] == 'yt_dlp' and source['video_id'] == VIDEO
+
+
+@pytest.mark.parametrize('direct', ['blocked', 'miss'])
+def test_cloud_path_falls_back_to_paid_search(direct, monkeypatch, tmp_path):
+    monkeypatch.setenv('CHORDLYZE_AUDIO_PROVIDER', 'apify')
+    import yt_dlp
+    blocked = yt_dlp.utils.DownloadError('Sign in to confirm you’re not a bot')
+    monkeypatch.setattr(_FlatSearch, 'entries', blocked if direct == 'blocked' else [{**CANDIDATE, 'duration': 90}])
+    monkeypatch.setattr(yt_dlp, 'YoutubeDL', _FlatSearch)
+    path = tmp_path / 'audio.mp3'; path.write_bytes(b'audio')
+    _cloud_provider(monkeypatch, path, search=lambda: [CANDIDATE])
+    source = {}
+    assert fulltrack.fetch_full_track('Song', 'Band', 200, source_info=source) == path
+    assert source['search'] == 'apify'
+
+
+def test_worker_warm_up_recognizes_silence_and_removes_the_file(monkeypatch):
+    seen = []
+    monkeypatch.setattr(song_worker, 'warm', lambda: seen.append('model'))
+    monkeypatch.setattr(song_worker, 'recognize_audio',
+                        lambda path, **kw: seen.append(Path(path).exists() and Path(path).stat().st_size > 0))
+    monkeypatch.setattr(song_worker, 'track_beats', lambda path: seen.append(Path(path)))
+    assert song_worker.warm_recognizer() >= 0
+    assert seen[:2] == ['model', True] and not seen[2].exists()
 
 
 def test_reclaimed_job_keeps_download_checkpoint_and_reset_rejects_old_updates(tmp_path, monkeypatch):

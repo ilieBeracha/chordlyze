@@ -98,7 +98,9 @@ class ApifyAudio:
             # POST is deliberately not retried: an ambiguous response must not
             # silently launch and bill for a second download.
             run = self.run_response('POST', f'/acts/{actor}/runs', params={
-                'timeout': self.timeout, 'memory': 1024,
+                # Apify grants one CPU core per 4096 MB; pay-per-event Actors
+                # do not bill platform usage, so this only buys speed.
+                'timeout': self.timeout, 'memory': 4096,
                 'maxTotalChargeUsd': max_charge if max_charge is not None else self.max_charge,
             }, json=payload)
         run_id = run['id']

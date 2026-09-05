@@ -69,6 +69,11 @@ class IsmirProcess:
         if self._response().get("ready") is not True:
             raise RecognitionUnavailable("chord recognizer did not initialize")
 
+    def warm(self) -> None:
+        """Load the model now so the first request does not pay the start-up cost."""
+        with self._lock:
+            self._start()
+
     def recognize(self, wav: Path) -> list:
         if not self._lock.acquire(timeout=self.timeout):
             raise RecognitionUnavailable("chord recognizer is busy; try again shortly")
@@ -109,6 +114,10 @@ atexit.register(_worker.close)
 
 def recognize(wav: Path) -> list:
     return _worker.recognize(wav)
+
+
+def warm() -> None:
+    _worker.warm()
 
 
 def close() -> None:

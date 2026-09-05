@@ -75,6 +75,23 @@ def pick_candidate(entries: list[dict], title: str, artist: str, duration: float
     return max(good, key=score)
 
 
+def _search_youtube(title: str, artist: str, *, blocked_ok: bool = True) -> list[dict] | None:
+    """Flat YouTube search results (id, title, channel, duration), no download.
+    None when YouTube refuses the search from this network and `blocked_ok`."""
+    import yt_dlp
+
+    options = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist",
+               "skip_download": True, "socket_timeout": 20}
+    try:
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(f"ytsearch8:{artist} {title}".strip(), download=False)
+    except yt_dlp.utils.DownloadError:
+        if not blocked_ok:
+            raise
+        return None
+    return info.get("entries") or []
+
+
 def fetch_full_track(title: str, artist: str, duration: float, *, source_info: dict | None = None,
                      checkpoint: dict | None = None, save_checkpoint=None,
                      cancelled=lambda: False) -> Path | None:
@@ -90,9 +107,17 @@ def fetch_full_track(title: str, artist: str, duration: float, *, source_info: d
         client = ApifyAudio()
         previous = (checkpoint or {}).get('candidate')
         chosen = pick_candidate([previous], title, artist, duration) if isinstance(previous, dict) else None
+        search = 'checkpoint'
+        if chosen is None:
+            # Datacenter IPs are refused downloads, not usually searches. The
+            # paid cloud search is the fallback when refused or on a miss.
+            entries = _search_youtube(title, artist)
+            search = 'yt_dlp'
+            chosen = pick_candidate(entries, title, artist, duration) if entries is not None else None
         if chosen is None:
             entries = client.search(title, artist, checkpoint=checkpoint,
                                     save_checkpoint=save_checkpoint, cancelled=cancelled)
+            search = 'apify'
             chosen = pick_candidate(entries, title, artist, duration)
         if chosen is None:
             return None
@@ -101,18 +126,14 @@ def fetch_full_track(title: str, artist: str, duration: float, *, source_info: d
         if source_info is not None:
             source_info.update(video_id=chosen['id'], url=f"https://www.youtube.com/watch?v={chosen['id']}",
                                title=chosen['title'], channel=chosen.get('channel'),
-                               duration=chosen['duration'], matching='title_artist_duration')
+                               duration=chosen['duration'], matching='title_artist_duration', search=search)
         return path
     if provider != 'yt_dlp':
         raise AudioProviderError('provider_configuration')
 
     import yt_dlp
 
-    search = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist",
-              "skip_download": True, "socket_timeout": 20}
-    with yt_dlp.YoutubeDL(search) as ydl:
-        info = ydl.extract_info(f"ytsearch6:{artist} {title}".strip(), download=False)
-    chosen = pick_candidate(info.get("entries") or [], title, artist, duration)
+    chosen = pick_candidate(_search_youtube(title, artist, blocked_ok=False), title, artist, duration)
     if chosen is None:
         return None
 

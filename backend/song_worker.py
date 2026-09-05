@@ -6,15 +6,19 @@ import json
 import os
 from pathlib import Path
 import signal
+import tempfile
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
 from dotenv import load_dotenv
+import numpy as np
+import soundfile as sf
 from chordlyze_backend.analysis.beats import track_beats
 from chordlyze_backend.analysis.engine import recognize_audio
-from chordlyze_backend.analysis.ismir import close, ismir_available
+from chordlyze_backend.analysis.ismir import close, ismir_available, warm
 from chordlyze_backend.fulltrack import fetch_full_track
 from chordlyze_backend.audio_apify import ApifyAudio, AudioProviderError, DownloadCancelled
 
@@ -29,6 +33,23 @@ class WorkerClient:
                                                   'Authorization': 'Bearer ' + self.token})
         with urllib.request.urlopen(request, timeout=30) as response:
             return json.load(response)
+
+
+def warm_recognizer() -> float:
+    """Load the recognizer and run the JIT-compiled decode and beat paths once
+    on silence, so the first real song does not pay start-up costs."""
+    started = time.monotonic()
+    warm()
+    descriptor, name = tempfile.mkstemp(prefix='chordlyze-warmup-', suffix='.wav')
+    os.close(descriptor)
+    path = Path(name)
+    try:
+        sf.write(path, np.zeros(22050 * 4, dtype='float32'), 22050)
+        recognize_audio(path, model='ismir2019', max_duration=10)
+        track_beats(path)
+    finally:
+        path.unlink(missing_ok=True)
+    return time.monotonic() - started
 
 
 def recording_metadata(song: dict) -> dict:
@@ -158,6 +179,7 @@ def main():
         raise SystemExit('Configure the worker token and install the pinned recognizer before starting.')
     if os.environ.get('CHORDLYZE_AUDIO_PROVIDER') == 'apify':
         ApifyAudio()  # Validate credentials and limits before claiming any jobs.
+    print(f'Recognizer ready in {warm_recognizer():.0f}s', flush=True)
     client = WorkerClient(os.environ.get('CHORDLYZE_API_URL', 'https://chordlyze-api.fly.dev'), token)
     stopping = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stopping.set())
