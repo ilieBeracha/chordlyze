@@ -19,13 +19,16 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from email.utils import parsedate_to_datetime
 import json
 import os
 import sys
 import time
 import threading
 import urllib.parse
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -44,8 +47,7 @@ ISMIR_MODEL = "ismir2019"
 def itunes_duration(title: str, artist: str | None) -> float | None:
     term = urllib.parse.quote(f"{title} {artist or ''}".strip())
     url = f"https://itunes.apple.com/search?term={term}&entity=song&limit=1"
-    with urllib.request.urlopen(url, timeout=15) as resp:
-        results = json.loads(resp.read()).get("results", [])
+    results = _read_json(url, timeout=15, before_attempt=_LOOKUP_THROTTLE.wait).get("results", [])
     ms = results[0].get("trackTimeMillis") if results else None
     return ms / 1000 if ms else None
 
@@ -53,8 +55,40 @@ def itunes_duration(title: str, artist: str | None) -> float | None:
 def _post_json(path: str, payload: dict, timeout: int = 120) -> dict:
     req = urllib.request.Request(f"{BASE}{path}", data=json.dumps(payload).encode(),
                                  method="POST", headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read())
+    # Submitting the same track/revision/audio payload is an idempotent cache
+    # replacement, so a lost response can be retried without duplicate charts.
+    return _read_json(req, timeout=timeout)
+
+
+def _read_json(request, *, timeout: int, before_attempt: Callable[[], None] | None = None) -> dict:
+    for attempt in range(3):
+        if before_attempt:
+            before_attempt()
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return json.loads(response.read())
+        except urllib.error.HTTPError as exc:
+            if attempt == 2 or exc.code not in {408, 429, 500, 502, 503, 504}:
+                raise
+            delay = float(2 ** (attempt + 1))
+            retry_after = (exc.headers or {}).get("Retry-After")
+            if retry_after:
+                try:
+                    requested = float(retry_after)
+                except ValueError:
+                    try:
+                        requested = parsedate_to_datetime(retry_after).timestamp() - time.time()
+                    except (TypeError, ValueError, OverflowError):
+                        requested = 0
+                if requested > 30:
+                    raise  # Leave this entry pending instead of retrying too early.
+                delay = max(delay, requested)
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            if attempt == 2:
+                raise
+            delay = float(2 ** (attempt + 1))
+        time.sleep(delay)
+    raise RuntimeError("request retries exhausted")
 
 
 def parse_lab(text: str) -> list[dict]:
@@ -88,8 +122,7 @@ def submit(audio: Path, item: dict) -> dict:
 
 def pending() -> list[dict]:
     """Previews first, then outdated models or analysis revisions."""
-    with urllib.request.urlopen(f"{BASE}/library", timeout=30) as resp:
-        library = json.loads(resp.read())["items"]
+    library = _read_json(f"{BASE}/library", timeout=30)["items"]
     previews, upgrades = [], []
     for entry in library:
         if not entry.get("title"):
@@ -116,6 +149,9 @@ class LookupThrottle:
             self.next_request = time.monotonic() + self.interval
 
 
+_LOOKUP_THROTTLE = LookupThrottle()
+
+
 def run_once(items: list[dict] | None = None, *, jobs: int = 3) -> int:
     """Overlap bounded downloads; the shared recognizer serializes inference."""
     if not 1 <= jobs <= 4:
@@ -123,12 +159,10 @@ def run_once(items: list[dict] | None = None, *, jobs: int = 3) -> int:
     if items is None:
         items = pending()
     print(f"{len(items)} pending", flush=True)
-    throttle = LookupThrottle()
 
     def process(item: dict) -> str:
         title, artist = item["title"], item.get("artist")
         try:
-            throttle.wait()
             duration = itunes_duration(title, artist)
             if not duration:
                 print(f"skip {title!r}: no iTunes length", flush=True)

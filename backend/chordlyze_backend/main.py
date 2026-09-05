@@ -17,11 +17,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import logging
+import hmac
 import os
 import re
 import tempfile
-import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -30,7 +31,7 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 
 import anyio.to_thread
-from fastapi import FastAPI, Form, HTTPException, UploadFile
+from fastapi import FastAPI, Form, Header, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from .analysis.beats import track_beats
@@ -40,6 +41,7 @@ from .analysis.ismir import RecognitionUnavailable, close as close_recognizer
 from .analysis.provenance import (ANALYSIS_VERSION, MODEL_QUALITIES, MODEL_RANK,
                                   MODEL_REVISIONS, is_current, quality)
 from .analysis.keyfinder import analyze
+from .song_jobs import SongJobs, generation, library_lock
 
 CACHE_DIR = Path(os.environ.get("CHORDLYZE_CACHE",
                                 str(Path(__file__).resolve().parent.parent / "analysis_cache")))
@@ -57,10 +59,11 @@ logger = logging.getLogger(__name__)
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok"}
+    return {"status": "ok", "release": os.environ.get("CHORDLYZE_RELEASE", "development"),
+            "analysis_version": ANALYSIS_VERSION, "library_generation": generation(CACHE_DIR),
+            "song_worker_online": SongJobs(CACHE_DIR).worker_online()}
 
 
-_CACHE_LOCK = threading.RLock()
 
 
 def _recognize_locked(path: Path):
@@ -110,7 +113,7 @@ def _save_track(track_id: str, result: dict, title: str | None, artist: str | No
     """Save under the track id (and its ISRC, when known). False when a better
     analysis is already stored: a preview never replaces a whole song, and a
     maj/min chart never replaces a large-vocabulary one."""
-    with _CACHE_LOCK:
+    with library_lock(CACHE_DIR):
         entry = dict(result)
         entry.pop("analysis_stale", None)
         entry["track_id"] = track_id
@@ -186,48 +189,19 @@ async def analyze_track(
     duration: float | None = Form(default=None),
     itunes_id: int | None = Form(default=None),
 ) -> dict:
-    """The saved analysis when there is one, else chords from the 30 s iTunes
-    preview so the song has something right away. Whole-song recognition
-    happens off-server (ingest_worker.py) and replaces the preview through
-    /analysis/submit. 404 when the song is not on iTunes either. `itunes_id`
-    pins the exact iTunes track when the client picked one."""
-    cached = _track_cache_path(track_id)
-    if cached.exists():
-        entry = _read_analysis(cached)
-        if not entry["analysis_stale"] or entry.get("source") != "itunes_preview":
-            return entry
-    if hit := _cached_by_isrc(track_id, isrc, title, artist):
-        if not hit["analysis_stale"] or hit.get("source") != "itunes_preview":
-            return hit
-
-    def fetch_and_recognize():
-        song = _itunes_lookup(isrc, title, artist, itunes_id)
-        if not song:
-            raise HTTPException(404, "song not found on iTunes")
-        with tempfile.NamedTemporaryFile(suffix=".m4a", delete=False) as tmp:
-            with urllib.request.urlopen(song["previewUrl"], timeout=30) as resp:
-                tmp.write(resp.read())
-            tmp_path = Path(tmp.name)
-        try:
-            return song, _recognize_locked(tmp_path)
-        finally:
-            tmp_path.unlink(missing_ok=True)
-
-    try:
-        song, (recognition, tempo) = await anyio.to_thread.run_sync(fetch_and_recognize)
-    except AudioDecodeError as exc:
-        raise HTTPException(422, str(exc)) from exc
-    except (urllib.error.URLError, TimeoutError) as exc:
-        raise HTTPException(503, f"iTunes unavailable: {exc}") from exc
-
-    result = analyze(recognition.segments)
-    result.update(recognition.metadata())
-    result["tempo"] = tempo
-    result["source"] = "itunes_preview"
-    _save_track(track_id, result,
-                title or song.get("trackName"), artist or song.get("artistName"),
-                isrc, artwork=song.get("artworkUrl100"))
-    return _read_analysis(cached)
+    """Compatibility route: queue a complete chart; never present a preview as a song."""
+    if not title:
+        path = _track_cache_path(track_id)
+        if path.exists():
+            saved = _read_analysis(path)
+            title, artist = saved.get("title"), artist or saved.get("artist")
+    if not title:
+        raise HTTPException(422, "song title is required")
+    result = request_song(SongRequest(track_id=track_id, title=title, artist=artist or "",
+                                      duration=duration, isrc=isrc, itunes_id=itunes_id))
+    if result["analysis"] is not None:
+        return result["analysis"]
+    raise HTTPException(202, "Full-song analysis queued. The updated song sheet follows its progress automatically.")
 
 
 # MARK: - Off-server submission
@@ -255,10 +229,30 @@ class SubmittedAnalysis(BaseModel):
     model_revision: str | None = None
     audio_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     audio_duration: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    album: str | None = None
+    song_duration: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    audio_source: dict | None = None
+    job_id: str | None = None
+    lease: str | None = None
+    library_generation: str | None = None
 
 
 @app.post("/analysis/submit")
-def submit_analysis(body: SubmittedAnalysis) -> dict:
+def submit_analysis(body: SubmittedAnalysis, authorization: str | None = Header(default=None)) -> dict:
+    # Legacy direct submissions remain available in unconfigured development
+    # environments. Production only accepts a current worker lease.
+    if os.environ.get("CHORDLYZE_WORKER_TOKEN"):
+        _worker_authorized(authorization)
+        with library_lock(CACHE_DIR):
+            return _submit_analysis(body, require_lease=True)
+    return _submit_analysis(body)
+
+
+def _submit_analysis(body: SubmittedAnalysis, require_lease: bool = False) -> dict:
+    jobs = SongJobs(CACHE_DIR)
+    if require_lease and not jobs.valid_lease(body.track_id, body.job_id or "", body.lease or "",
+                                            body.library_generation or ""):
+        raise HTTPException(409, "analysis job was reset, expired or replaced")
     if body.model not in _MODEL_RANK:
         raise HTTPException(422, f"unknown model {body.model!r}")
     if body.analysis_version == ANALYSIS_VERSION and (
@@ -286,10 +280,104 @@ def submit_analysis(body: SubmittedAnalysis) -> dict:
     result["model"] = body.model
     result.update(analysis_version=body.analysis_version, model_revision=body.model_revision,
                   audio_sha256=body.audio_sha256, audio_duration=body.audio_duration)
+    result.update(album=body.album, song_duration=body.song_duration or body.audio_duration,
+                  audio_source=body.audio_source, library_generation=generation(CACHE_DIR))
     if not _save_track(body.track_id, result, body.title, body.artist, body.isrc,
                        artwork=body.artwork):
         raise HTTPException(409, "a better analysis is already stored for this track")
+    if require_lease:
+        jobs.finish(body.track_id, body.job_id, body.lease, body.library_generation, "ready")
     return _read_analysis(_track_cache_path(body.track_id))
+
+
+# MARK: - Complete song sheets and on-demand analysis
+
+class SongRequest(BaseModel):
+    track_id: str = Field(min_length=1, max_length=200)
+    title: str = Field(min_length=1, max_length=500)
+    artist: str = Field(default="", max_length=500)
+    album: str | None = Field(default=None, max_length=500)
+    duration: float | None = Field(default=None, gt=0, le=1200, allow_inf_nan=False)
+    isrc: str | None = None
+    artwork: str | None = None
+    itunes_id: int | None = Field(default=None, gt=0)
+    retry: bool = False
+
+
+def _song_status(track_id: str, isrc: str | None = None) -> dict:
+    jobs = SongJobs(CACHE_DIR)
+    path = _track_cache_path(track_id)
+    chart = _read_analysis(path) if path.exists() else _cached_by_isrc(track_id, isrc, None, None)
+    ready = chart and chart.get("source") != "itunes_preview" and is_current(chart, model="ismir2019")
+    job = jobs.get(track_id)
+    song = job["song"] if job else None
+    if ready:
+        song = {"track_id": track_id, "title": chart.get("title"), "artist": chart.get("artist"),
+                "album": chart.get("album"), "duration": chart.get("song_duration") or chart.get("audio_duration"),
+                "isrc": chart.get("isrc"), "artwork": chart.get("artwork")}
+    return {"song": song, "analysis": chart if ready else None,
+            "job": {"state": "ready", "worker_online": jobs.worker_online()} if ready else jobs.public(job),
+            "library_generation": generation(CACHE_DIR)}
+
+
+@app.post("/song/request")
+def request_song(body: SongRequest) -> dict:
+    with library_lock(CACHE_DIR):
+        status = _song_status(body.track_id, body.isrc)
+        if status["analysis"] is not None:
+            return status
+        SongJobs(CACHE_DIR).request(body.model_dump(exclude={"retry"}), retry=body.retry)
+        return _song_status(body.track_id)
+
+
+@app.get("/song/{track_id}")
+def song_status(track_id: str) -> dict:
+    with library_lock(CACHE_DIR):
+        return _song_status(track_id)
+
+
+def _worker_authorized(authorization: str | None) -> None:
+    token = os.environ.get("CHORDLYZE_WORKER_TOKEN")
+    if not token:
+        raise HTTPException(503, "song worker is not configured")
+    if not isinstance(authorization, str) or not hmac.compare_digest(authorization, "Bearer " + token):
+        raise HTTPException(401, "worker authorization required")
+
+
+@app.post("/internal/jobs/claim")
+def claim_song(authorization: str | None = Header(default=None)) -> dict:
+    _worker_authorized(authorization)
+    return {"job": SongJobs(CACHE_DIR).claim()}
+
+
+class WorkerUpdate(BaseModel):
+    track_id: str | None = None
+    job_id: str | None = None
+    lease: str | None = None
+    library_generation: str | None = None
+    stage: str | None = None
+    state: str | None = None
+
+
+@app.post("/internal/jobs/heartbeat")
+def heartbeat_song(body: WorkerUpdate, authorization: str | None = Header(default=None)) -> dict:
+    _worker_authorized(authorization)
+    if not SongJobs(CACHE_DIR).heartbeat(body.job_id, body.lease, body.stage):
+        raise HTTPException(409, "job lease is no longer active")
+    return {"ok": True}
+
+
+@app.post("/internal/jobs/finish")
+def finish_song(body: WorkerUpdate, authorization: str | None = Header(default=None)) -> dict:
+    _worker_authorized(authorization)
+    if body.state not in ("failed", "unavailable"):
+        raise HTTPException(422, "invalid job result")
+    message = ("A matching full recording could not be found. Try another edition of this song."
+               if body.state == "unavailable" else "Could not finish analyzing this song. Retry to try again.")
+    if not SongJobs(CACHE_DIR).finish(body.track_id or "", body.job_id or "", body.lease or "",
+                                    body.library_generation or "", body.state, message):
+        raise HTTPException(409, "job lease is no longer active")
+    return {"ok": True}
 
 
 # MARK: - Lyrics
@@ -319,13 +407,17 @@ def parse_synced_lyrics(synced: str) -> list[dict]:
                 if text:
                     words.append({"time": round(t, 3), "text": text})
         clean = " ".join(w["text"] for w in words) if words else body
-        if not clean:
-            continue
+        # A timestamp with no words marks a real instrumental break.
         line = {"time": int(m.group(1)) * 60 + float(m.group(2)), "text": clean}
         if words:
             line["words"] = words
         lines.append(line)
-    return lines
+    by_time = {}
+    for line in lines:
+        old = by_time.get(line["time"])
+        if old is None or line["text"]:
+            by_time[line["time"]] = line
+    return sorted(by_time.values(), key=lambda line: line["time"])
 
 
 def _lrclib(endpoint: str, params: dict):
@@ -422,13 +514,22 @@ def lyrics(title: str, artist: str = "", duration: float | None = None,
            album: str | None = None) -> dict:
     """Time-synced lyrics from LRCLIB, cached on disk. Duration/album narrow
     the match to the right version (not a cover/remix) when provided."""
+    if duration is not None and (not math.isfinite(duration) or duration <= 0):
+        raise HTTPException(422, "duration must be finite and positive")
+    epoch = generation(CACHE_DIR)
     digest = hashlib.sha256(
         f"{title}|{artist}|{album or ''}|{round(duration) if duration else ''}"
         .lower().encode()).hexdigest()[:24]
-    # v4: tighter fuzzy gate (±5s, high bar without duration).
-    cached = CACHE_DIR / f"lyrics4-{digest}.json"
-    if cached.exists():
-        return json.loads(cached.read_text())
+    # v5: validate exact matches too; preserve instrumental timestamps.
+    cached = CACHE_DIR / f"lyrics5-{digest}.json"
+    with library_lock(CACHE_DIR):
+        if cached.exists():
+            return json.loads(cached.read_text())
+
+    def save(result):
+        with library_lock(CACHE_DIR):
+            if generation(CACHE_DIR) == epoch:
+                _write_analysis(cached, result)
 
     params = {"track_name": title, "artist_name": artist}
     matched = "exact"
@@ -440,8 +541,17 @@ def lyrics(title: str, artist: str = "", duration: float | None = None,
         if duration:
             exact["duration"] = round(duration)
         data = _lrclib_get(exact)
+    if data is not None and score_candidate(data, title, artist, duration) == 0:
+        data = None
     if data is None:
         data = _lrclib_get(params)
+        if data is not None and score_candidate(data, title, artist, duration) == 0:
+            data = None
+    if data is not None and data.get("instrumental"):
+        result = {"duration": data.get("duration"), "lines": [], "synced": True,
+                  "matched": matched, "instrumental": True}
+        save(result)
+        return result
     if data is None or not (data.get("syncedLyrics") or data.get("plainLyrics")):
         data = _search_lrclib(title, artist, duration)
         matched = "fuzzy"
@@ -450,15 +560,15 @@ def lyrics(title: str, artist: str = "", duration: float | None = None,
 
     synced = True
     lines = parse_synced_lyrics(data.get("syncedLyrics") or "")
-    if not lines:
+    if not any(line["text"] for line in lines):
         lines = synthesize_lines(data.get("plainLyrics") or "",
                                  duration or data.get("duration"))
         synced = False
-    if not lines:
+    if not any(line["text"] for line in lines):
         raise HTTPException(404, "no lyrics for this song")
     result = {"duration": data.get("duration"), "lines": lines,
-              "synced": synced, "matched": matched}
-    cached.write_text(json.dumps(result))
+              "synced": synced, "matched": matched, "instrumental": False}
+    save(result)
     return result
 
 
@@ -466,6 +576,11 @@ def lyrics(title: str, artist: str = "", duration: float | None = None,
 
 @app.get("/library")
 def library() -> dict:
+    with library_lock(CACHE_DIR):
+        return _library()
+
+
+def _library() -> dict:
     items = []
     for path in sorted(CACHE_DIR.glob("track-*.json"),
                        key=lambda p: p.stat().st_mtime, reverse=True):
@@ -483,8 +598,10 @@ def library() -> dict:
             "analysis_version": data.get("analysis_version", 0),
             "model_revision": data.get("model_revision"),
             "analysis_stale": not is_current(data),
+            "album": data.get("album"),
+            "duration": data.get("song_duration") or data.get("audio_duration"),
         })
-    return {"items": items}
+    return {"items": items, "library_generation": generation(CACHE_DIR)}
 
 
 @app.get("/analysis/track/{track_id}")

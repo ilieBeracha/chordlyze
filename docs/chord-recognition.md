@@ -41,6 +41,8 @@ Reports carry `model`, `model_revision`, `analysis_version`, `audio_sha256`, `au
 
 Deploy the backend before running the updated ingest worker, then run an ingest pass to upgrade existing entries. Merely replacing the server does not redownload whole songs. Use `CHORDLYZE_API_URL` to choose the target; the worker's default is the deployed service. `--jobs 1..4` bounds concurrent downloads (default 3), with a shared iTunes lookup throttle and serialized model inference. Download files are independent even if two library entries resolve to the same upload. On interruption, queued jobs are canceled, running jobs finish, and restarting skips current entries. Each pass reports updated/skipped/failed totals. Song title and duration matching remains heuristic; this does not establish authoritative recording identity.
 
+HTTP lookups and idempotent cache submissions retry transient DNS/connection errors and HTTP 408/429/5xx responses up to three times. Every iTunes retry passes through the same throttle. Permanent HTTP errors are returned immediately, and a `Retry-After` exceeding 30 seconds leaves the item pending instead of retrying early or occupying a download worker indefinitely.
+
 ## Verification
 
 Run from `backend/`:
@@ -56,13 +58,15 @@ Validation on 4–5 September 2026:
 
 | Check | Result |
 | --- | --- |
-| Complete backend suite, macOS | 140 passed, 17 expected failures |
-| Complete suite against the final Linux AMD64 image | 140 passed, 17 expected failures |
+| Recognition snapshot, macOS, including HTTP retries | 145 passed, 17 expected failures |
+| Complete suite against the Linux AMD64 recognition image | 140 passed, 17 expected failures |
 | Linux ARM64 and AMD64 images | Built; pinned ensemble loaded during installation |
 | iOS simulator build, signing disabled | Passed |
 | Production Swift report decoder/timing contract | Legacy response plus four timing cases passed |
 
-The expected failures are 15 existing major/minor-model limitations and the two documented rich-model limitations. The backend was deployed on 5 September 2026 with 4 GB RAM; the public health endpoint and an actual Cmaj7 inference check passed. The synthetic production check took 61.03 seconds including cold model/feature initialization for four seconds of audio. Resident reuse avoids repeating model loading, but this is not a latency guarantee. The production volume was snapshotted before deployment, and a library upgrade pass was started separately.
+The expected failures are 15 existing major/minor-model limitations and the two documented rich-model limitations. The backend was deployed on 5 September 2026 with 4 GB RAM; the public health endpoint and an actual Cmaj7 inference check passed. The synthetic production check took 61.03 seconds including cold model/feature initialization for four seconds of audio. Resident reuse avoids repeating model loading, but this is not a latency guarantee. The production volume was snapshotted before deployment. The refresh upgraded 166 of 196 existing entries before stopping; the user's subsequent request to clear the library superseded retrying the remaining entries.
+
+Final verification used an isolated recognition snapshot because another active task was changing the song queue, lyrics and screens in the shared checkout. Those in-progress changes are not covered by the recognition results above. The [release record](audits/2026-09-05-recognition-release.md) identifies the checked source, deployment and refresh outcome.
 
 The capacity script generates a ten-minute chord take, keeps the preview model resident, and runs full rich inference. In a Linux container it prints peak cgroup memory and elapsed recognition time. Repeat this on the target architecture and resource limit after dependency/model changes. It checks capacity and output integrity, not musical accuracy.
 

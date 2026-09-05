@@ -9,28 +9,18 @@ struct SpotifyLiveView: View {
     var body: some View {
         Group {
             if let playing = nowPlaying.playing {
-                if let analysis = nowPlaying.analysis {
-                    LiveNowView(title: playing.track.name, artist: playing.track.artistNames,
-                                analysis: analysis,
-                                trackDuration: (playing.track.durationMs).map { Double($0) / 1000 },
-                                album: playing.track.album.name,
-                                onSeek: { await nowPlaying.seek(to: $0) }) {
-                        nowPlaying.livePosition()
-                    }
-                    .id(playing.track.id)  // rebuild per song
-                } else {
-                    WaitingView(title: playing.track.name,
-                                subtitle: playing.track.artistNames.uppercased(),
-                                message: nowPlaying.analysisFailed
-                                    ? "Chords unavailable for this song."
-                                    : "Analyzing chords…",
-                                spinning: !nowPlaying.analysisFailed)
+                LiveNowView(store: SongSheetStore.shared(for: SongDescriptor(track: playing.track)),
+                            onSeek: { await nowPlaying.seek(to: $0) },
+                            playbackNote: nowPlaying.playbackNote) {
+                    nowPlaying.livePosition()
                 }
+                .id(playing.track.id)
             } else {
-                WaitingView(title: "Nothing playing", subtitle: "",
-                            message: "Play something on Spotify.", spinning: false)
+                WaitingView(title: nowPlaying.needsReauth ? "Reconnect Spotify" : "Nothing playing",
+                            subtitle: "", message: nowPlaying.playbackNote ?? "Play something on Spotify.", spinning: false)
             }
         }
+        .onAppear { nowPlaying.resume() }
     }
 }
 

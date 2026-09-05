@@ -76,12 +76,26 @@ struct DrillAudioWorkerTests {
         canceled.cancel()
         try await Task.sleep(for: .milliseconds(30))
         check(canceledDeliveries == 0, "cancel suppresses an already pending UI delivery")
+        let canceledFinal = await canceled.finish()
+        check(canceledFinal == nil, "a canceled worker cannot return an earlier score")
+
+        var beforeFailure: DrillSnapshot?
+        let failingAtFinish = try DrillAudioWorker(sampleRate: 44100, chordA: "C", chordB: "Am", onSnapshot: { beforeFailure = $0 })
+        let quiet = [Float](repeating: 0, count: 4096)
+        quiet.withUnsafeBufferPointer { failingAtFinish.offer($0, sampleTime: 0) }
+        for _ in 0..<100 where beforeFailure == nil { try await Task.sleep(for: .milliseconds(5)) }
+        check(beforeFailure != nil, "the stream has delivered a valid snapshot before failing")
+        failingAtFinish.invalidateFormat()
+        let immediateFailure = await failingAtFinish.finish()
+        check(immediateFailure == nil, "finishing immediately after invalid input cannot recover the last valid snapshot")
 
         var formatFailures = 0
         let invalid = try DrillAudioWorker(sampleRate: 44100, chordA: "C", chordB: "Am", onSnapshot: { _ in }, onFailure: { formatFailures += 1 })
         for _ in 0..<10 { invalid.invalidateFormat() }
         try await Task.sleep(for: .milliseconds(50))
         check(formatFailures == 1, "an invalid microphone stream reports one failure, not a callback storm")
+        let invalidFinal = await invalid.finish()
+        check(invalidFinal == nil, "a failed microphone stream cannot return a completed score")
 
         print("Drill audio worker: \(checks - failures)/\(checks) checks passed")
         if failures > 0 { exit(1) }

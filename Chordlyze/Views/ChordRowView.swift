@@ -11,14 +11,14 @@ struct ChordRowView: View {
 
         var chordFont: Font {
             self == .sheet ? .system(size: 13, weight: .bold, design: .rounded)
-                           : .system(size: 22, weight: .heavy, design: .rounded)
+                           : .system(size: 17, weight: .bold, design: .rounded)
         }
         var wordFont: Font {
             self == .sheet ? .system(size: 18, design: .rounded)
-                           : .system(size: 30, weight: .bold, design: .rounded)
+                           : .system(size: 23, weight: .semibold, design: .rounded)
         }
         var chipPadding: (vertical: CGFloat, horizontal: CGFloat) {
-            self == .sheet ? (3, 9) : (9, 16)
+            self == .sheet ? (3, 9) : (5, 10)
         }
     }
 
@@ -29,34 +29,19 @@ struct ChordRowView: View {
     var playhead: Double? = nil
     var style: Style = .sheet
     var onChordTap: ((String) -> Void)? = nil
+    var onLyricTap: (() -> Void)? = nil
 
     private var rtl: Bool { row.text.isRTLText }
 
     var body: some View {
         VStack(alignment: rtl ? .trailing : .leading, spacing: style == .sheet ? 4 : 14) {
-            switch row.kind {
-            case .uncovered:
-                Label(row.text.isEmpty ? "Chords not analyzed for \(Self.span(row))"
-                                       : "Chords not analyzed past \(mmss(row.start))",
-                      systemImage: "questionmark.circle")
-                    .font(style == .sheet ? .caption2 : .system(size: 14))
-                    .foregroundStyle(Palette.tertiary)
-            case .lyric where row.words != nil && !rtl && !row.text.isEmpty:
-                // Word times known: each chord above the word it starts on.
-                ChordLyricLine(text: row.text, chords: row.chords, transposeBy: transposeBy,
-                               playhead: playhead, style: style, onChordTap: onChordTap)
-            default:
+            if !row.text.isEmpty {
+                ChordLyricLine(text: row.text, chords: row.chords, words: row.words?.map(\.text), transposeBy: transposeBy,
+                               playhead: playhead, style: style, onChordTap: onChordTap, onLyricTap: onLyricTap)
+                    .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
+            } else {
                 timedRow
-                if row.isInstrumental || row.text.isEmpty {
-                    caption
-                }
-            }
-            if !row.text.isEmpty, row.kind != .lyric || row.words == nil || rtl {
-                Text(row.text)
-                    .font(style.wordFont)
-                    .foregroundStyle(style == .sheet ? Palette.nearWhite : .white)
-                    .lineSpacing(style == .sheet ? 18 * 0.35 : 30 * 0.22)
-                    .multilineTextAlignment(rtl ? .trailing : .leading)
+                caption
             }
         }
         .frame(maxWidth: .infinity, alignment: rtl ? .trailing : .leading)
@@ -93,6 +78,8 @@ struct ChordRowView: View {
             if row.isInstrumental {
                 Image(systemName: "music.quarternote.3")
                 Text("Instrumental")
+            } else if row.kind == .uncovered {
+                Text("Chords pending")
             }
             Text(Self.span(row))
                 .font(.system(size: style == .sheet ? 10 : 12, design: .monospaced))

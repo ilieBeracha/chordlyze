@@ -6,3 +6,6 @@ backend/analysis_cache/
 **/__pycache__/
 *.xcarchive
 backend/backups/
+backend/.env
+backend/.env.*
+backend/worker-logs/

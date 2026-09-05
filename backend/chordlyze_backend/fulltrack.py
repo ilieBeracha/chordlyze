@@ -12,6 +12,7 @@ import re
 import os
 import shutil
 import tempfile
+import unicodedata
 from pathlib import Path
 
 _VARIANT = re.compile(
@@ -22,7 +23,7 @@ _DECORATION = re.compile(r"[\(\[][^\)\]]*[\)\]]|\s+-\s+.*$")
 
 def _words(text: str) -> str:
     """Lowercase words only: case and punctuation ignored."""
-    return re.sub(r"[^a-z0-9֐-׿؀-ۿ]+", " ", text.lower()).strip()
+    return " ".join(re.sub(r"[^\w]+", " ", unicodedata.normalize("NFKC", text).casefold()).split())
 
 
 def _core(title: str) -> str:
@@ -32,21 +33,27 @@ def _core(title: str) -> str:
 
 def pick_candidate(entries: list[dict], title: str, artist: str, duration: float) -> dict | None:
     """Best search result for `title` lasting `duration` seconds, or None.
-    The result's title must contain the song's title; duration (±2 %, at
-    least 3 s) narrows it to the same edition; variant words in a result
+    The result's title must contain the song's title; duration (±1%, bounded to 2–3 seconds)
+    narrows it to the same edition; variant words in a result
     title disqualify it unless the requested title carries the same word."""
-    tol = max(3.0, duration * 0.02)
+    tol = max(2.0, min(3.0, duration * 0.01))
     wanted = _core(title)
+    if not wanted:
+        return None
 
     def usable(e: dict) -> bool:
         d = e.get("duration")
         if not d or abs(d - duration) > tol:
             return False
         name = e.get("title") or ""
+        credit = _words(f"{name} {e.get('channel') or e.get('uploader') or ''}")
+        requested_artist = _words(artist)
+        if requested_artist and f" {requested_artist} " not in f" {credit} ":
+            return False
         if f" {wanted} " not in f" {_core(name)} " and f" {wanted} " not in f" {_words(name)} ":
             return False
-        hit = _VARIANT.search(name)
-        return not hit or bool(re.search(rf"\b{re.escape(hit.group(0))}\b", title, re.I))
+        return all(re.search(rf"\b{re.escape(hit.group(0))}\b", title, re.I)
+                   for hit in _VARIANT.finditer(name))
 
     good = [e for e in entries if usable(e)]
     if not good:
@@ -68,7 +75,7 @@ def pick_candidate(entries: list[dict], title: str, artist: str, duration: float
     return max(good, key=score)
 
 
-def fetch_full_track(title: str, artist: str, duration: float) -> Path | None:
+def fetch_full_track(title: str, artist: str, duration: float, *, source_info: dict | None = None) -> Path | None:
     """Download the matching upload's audio to a temp file; None when no
     result matches. Raises yt_dlp.utils.DownloadError when YouTube refuses."""
     import yt_dlp
@@ -99,4 +106,8 @@ def fetch_full_track(title: str, artist: str, duration: float) -> Path | None:
         except BaseException:
             path.unlink(missing_ok=True)
             raise
+        if source_info is not None:
+            source_info.update(video_id=chosen['id'], url=f"https://www.youtube.com/watch?v={chosen['id']}",
+                               title=chosen.get('title'), channel=chosen.get('channel') or chosen.get('uploader'),
+                               duration=chosen.get('duration'), matching='title_artist_duration')
         return path

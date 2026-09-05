@@ -15,7 +15,7 @@ ENHANCED = """[00:12.00] <00:12.00> Never <00:12.40> gonna <00:12.80> give
 
 def test_plain_lines():
     lines = parse_synced_lyrics(PLAIN)
-    assert [l["text"] for l in lines] == ["Hello world", "Second line", "Third line"]
+    assert [l["text"] for l in lines] == ["Hello world", "Second line", "", "Third line"]
     assert lines[0]["time"] == 12.34
     assert all("words" not in l for l in lines)
 
@@ -63,3 +63,39 @@ def test_synthesize_lines():
     assert lines[-1]["time"] < 93.0           # ends before 93%
     assert lines[0]["time"] < lines[1]["time"] < lines[2]["time"]
     assert synthesize_lines("", 100.0) == []
+
+
+def test_lyrics_sorted_and_duplicate_timestamps_do_not_create_empty_rows():
+    lines = parse_synced_lyrics('[00:20]Later\n[00:10]\n[00:10]Earlier')
+    assert [line['text'] for line in lines] == ['Earlier', 'Later']
+
+
+def test_wrong_duration_exact_response_is_rejected(monkeypatch, tmp_path):
+    from chordlyze_backend import main
+    monkeypatch.setattr(main, 'CACHE_DIR', tmp_path)
+    wrong = {'trackName': 'Song', 'artistName': 'Band', 'duration': 300, 'syncedLyrics': '[00:01]Wrong edition'}
+    correct = {**wrong, 'duration': 200, 'syncedLyrics': '[00:01]Right edition'}
+    monkeypatch.setattr(main, '_lrclib_get', lambda _: wrong)
+    monkeypatch.setattr(main, '_search_lrclib', lambda *args: correct)
+    result = main.lyrics('Song', 'Band', 200, 'Album')
+    assert result['lines'][0]['text'] == 'Right edition'
+
+
+def test_instrumental_recording_is_distinct_from_missing_lyrics(monkeypatch, tmp_path):
+    from chordlyze_backend import main
+    monkeypatch.setattr(main, 'CACHE_DIR', tmp_path)
+    monkeypatch.setattr(main, '_lrclib_get', lambda _: {'trackName': 'Song', 'artistName': 'Band', 'duration': 200, 'instrumental': True})
+    result = main.lyrics('Song', 'Band', 200, None)
+    assert result['instrumental'] is True and result['lines'] == []
+
+
+def test_reset_during_lyrics_lookup_does_not_restore_old_cache(monkeypatch, tmp_path):
+    from chordlyze_backend import main
+    from chordlyze_backend.song_jobs import reset_library
+    monkeypatch.setattr(main, 'CACHE_DIR', tmp_path)
+    def lookup(_):
+        reset_library(tmp_path, apply=True)
+        return {'trackName': 'Song', 'artistName': 'Band', 'duration': 200, 'syncedLyrics': '[00:01]Words'}
+    monkeypatch.setattr(main, '_lrclib_get', lookup)
+    assert main.lyrics('Song', 'Band', 200)['lines'][0]['text'] == 'Words'
+    assert not list(tmp_path.glob('lyrics*.json'))

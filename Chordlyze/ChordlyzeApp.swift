@@ -3,15 +3,18 @@ import SwiftUI
 @main
 struct ChordlyzeApp: App {
     @StateObject private var auth = SpotifyAuth()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             Group {
-                if auth.isAuthorized {
-                    PlaylistsView().environmentObject(auth)
-                } else {
-                    LoginView().environmentObject(auth)
-                }
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--song-sheet-preview") {
+                    SongSheetPreview()
+                } else { root }
+                #else
+                root
+                #endif
             }
             .preferredColorScheme(.dark)
             .tint(.spotifyGreen)
@@ -20,7 +23,24 @@ struct ChordlyzeApp: App {
                 // the old account should still be on screen after a re-login.
                 if !authorized { SpotifyNowPlaying.shared.reset() }
             }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background { SpotifyNowPlaying.shared.stop() }
+                if phase == .active, auth.isAuthorized, !isPreview { SpotifyNowPlaying.shared.start(api: SpotifyAPI(auth: auth)) }
+            }
         }
+    }
+
+    @ViewBuilder private var root: some View {
+        if auth.isAuthorized { PlaylistsView().environmentObject(auth) }
+        else { LoginView().environmentObject(auth) }
+    }
+
+    private var isPreview: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--song-sheet-preview")
+        #else
+        false
+        #endif
     }
 }
 
