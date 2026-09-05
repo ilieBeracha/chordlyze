@@ -102,6 +102,36 @@ final class SpotifyAPI: ObservableObject {
         return page.items
     }
 
+    struct RecentPlay {
+        let track: Track
+        let playedAt: Date
+    }
+
+    /// The account's last plays, newest first. Needs `user-read-recently-played`;
+    /// an older token gets 403 until the user reconnects. Episodes are skipped.
+    func recentlyPlayed(limit: Int = 50) async throws -> [RecentPlay] {
+        struct Item: Decodable {
+            let track: Track?
+            let playedAt: String
+            enum CodingKeys: String, CodingKey { case track, playedAt = "played_at" }
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                track = try? container.decode(Track.self, forKey: .track)
+                playedAt = try container.decode(String.self, forKey: .playedAt)
+            }
+        }
+        struct Page: Decodable { let items: [Item] }
+        let page: Page = try await get("me/player/recently-played?limit=\(limit)")
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let whole = ISO8601DateFormatter()
+        return page.items.compactMap { item in
+            guard let track = item.track,
+                  let date = fractional.date(from: item.playedAt) ?? whole.date(from: item.playedAt) else { return nil }
+            return RecentPlay(track: track, playedAt: date)
+        }
+    }
+
     func savedTracksTotal() async throws -> Int {
         struct Page: Decodable { let total: Int }
         let page: Page = try await get("me/tracks?limit=1")
@@ -178,5 +208,42 @@ final class SpotifyAPI: ObservableObject {
                           userInfo: [NSLocalizedDescriptionKey: "Spotify returned \(http.statusCode): \(body)"])
         }
         return try JSONDecoder().decode(T.self, from: data)
+    }
+}
+
+/// What Home says about recent plays: one row per song, newest first.
+enum RecentPlays {
+    struct Song: Identifiable {
+        let track: Track
+        let lastPlayed: Date
+        let count: Int
+        var id: String { track.id }
+    }
+
+    static func songs(_ plays: [SpotifyAPI.RecentPlay]) -> [Song] {
+        var order: [String] = []
+        var byID: [String: Song] = [:]
+        for play in plays.sorted(by: { $0.playedAt > $1.playedAt }) {
+            if let seen = byID[play.track.id] {
+                byID[play.track.id] = Song(track: seen.track, lastPlayed: seen.lastPlayed, count: seen.count + 1)
+            } else {
+                byID[play.track.id] = Song(track: play.track, lastPlayed: play.playedAt, count: 1)
+                order.append(play.track.id)
+            }
+        }
+        return order.compactMap { byID[$0] }
+    }
+
+    /// "now", "12m ago", "3h ago", "yesterday", a weekday within the week, else a short date.
+    static func relativeTime(_ date: Date, calendar: Calendar = .current, now: Date = .now) -> String {
+        let seconds = now.timeIntervalSince(date)
+        if seconds < 60 { return "now" }
+        if seconds < 3600 { return "\(Int(seconds / 60))m ago" }
+        if seconds < 86400 { return "\(Int(seconds / 3600))h ago" }
+        if calendar.isDateInYesterday(date) { return "yesterday" }
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date),
+                                           to: calendar.startOfDay(for: now)).day ?? 0
+        if days < 7 { return calendar.shortWeekdaySymbols[calendar.component(.weekday, from: date) - 1] }
+        return date.formatted(.dateTime.month(.abbreviated).day().locale(calendar.locale ?? .current))
     }
 }

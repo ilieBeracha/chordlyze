@@ -28,6 +28,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 from contextlib import asynccontextmanager
+from typing import Annotated
 
 import anyio.to_thread
 from fastapi import FastAPI, Form, Header, HTTPException, UploadFile
@@ -641,6 +642,8 @@ async def practice_take(
     file: UploadFile,
     track_id: str = Form(...),
     offset: float = Form(default=0.0, allow_inf_nan=False),
+    transpose: Annotated[int, Form(ge=-12, le=12)] = 0,
+    playback_rate: Annotated[float, Form(ge=0.5, le=1, allow_inf_nan=False)] = 1.0,
 ) -> dict:
     """Score a practice recording (instrument only, song in headphones)
     against the track's reference chart."""
@@ -679,7 +682,8 @@ async def practice_take(
         report = score_take(reference.get("chords", []),
                             [s.to_dict() for s in recognition.segments], offset,
                             take_duration=recognition.duration, comparison=comparison,
-                            supported_qualities=MODEL_QUALITIES[recognition.model])
+                            supported_qualities=MODEL_QUALITIES[recognition.model],
+                            transpose=transpose, playback_rate=playback_rate)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     if "error" in report:

@@ -64,7 +64,8 @@ def _timing(offsets: list[float]) -> dict:
 
 def score_take(reference: list[dict], detected: list[dict], offset: float = 0.0, *,
                take_duration: float | None = None, comparison: str = "root_quality",
-               supported_qualities: set[str] | None = None) -> dict:
+               supported_qualities: set[str] | None = None,
+               transpose: int = 0, playback_rate: float = 1.0) -> dict:
     """Score a take whose second zero is song second offset.
 
     The API supplies duration measured from decoded audio, independent of
@@ -76,9 +77,19 @@ def score_take(reference: list[dict], detected: list[dict], offset: float = 0.0,
         raise ValueError("unknown chord comparison")
     if not math.isfinite(offset):
         raise ValueError("offset must be finite")
+    if isinstance(transpose, bool) or not isinstance(transpose, int) or not -12 <= transpose <= 12:
+        raise ValueError("transpose must be an integer between -12 and 12")
+    if not math.isfinite(playback_rate) or not 0.5 <= playback_rate <= 1:
+        raise ValueError("playback rate must be between 0.5 and 1")
     if take_duration is not None and (not math.isfinite(take_duration) or take_duration <= 0):
         raise ValueError("take duration must be positive and finite")
-    ref = _segments(reference, comparison)
+    # Score in performed seconds, preserving real early/late timing windows.
+    # Song second s occurs at performed second s / playback_rate. Capo shape
+    # changes are deliberately absent: only the sounding key shifts.
+    ref = [replace(r, start=r.start / playback_rate, end=r.end / playback_rate,
+                   chord=r.chord.transposed(transpose) if r.chord else None)
+           for r in _segments(reference, comparison)]
+    offset = offset / playback_rate
     det = _segments(detected, comparison, offset)
     if not any(r.chord for r in ref):
         return {"error": "no reference chords"}
@@ -158,17 +169,19 @@ def score_take(reference: list[dict], detected: list[dict], offset: float = 0.0,
             if b > a:
                 total += b - a
                 hit += hit_time(r, a, b)
-        sections.append({"start": round(start, 3), "end": round(end, 3),
+        sections.append({"start": round(start * playback_rate, 3), "end": round(end * playback_rate, 3),
                          "accuracy": round(hit / total, 3) if total else None})
 
     offsets = [x for row in transitions.values() for x in row["offsets"]]
     return {
         "scoring_version": SCORING_VERSION,
         "comparison": comparison,
+        "transpose": transpose,
+        "playback_rate": playback_rate,
         "accuracy": round(correct_time / total_time, 3),
         **_timing(offsets),
-        "covered_start": round(span0, 3),
-        "covered_end": round(span1, 3),
+        "covered_start": round(span0 * playback_rate, 3),
+        "covered_end": round(span1 * playback_rate, 3),
         "scored_duration": round(total_time, 3),
         "per_chord": sorted(
             [{"name": r["name"], "accuracy": round(r["hit"] / r["total"], 3), "count": r["count"]}

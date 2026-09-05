@@ -11,6 +11,8 @@ extension Color {
 /// Design tokens from the Chordlyze redesign handoff.
 enum Palette {
     static let card = Color(hex: 0x141414)
+    /// Home cards (design 8a).
+    static let homeCard = Color(hex: 0x101010)
     static let elevated = Color(hex: 0x1C1C1E)
     static let gray5 = Color(hex: 0x2C2C2E)
     static let nearWhite = Color(hex: 0xE5E5EA)
@@ -86,8 +88,11 @@ struct BackCircle: View {
                 .foregroundStyle(.white)
                 .frame(width: size, height: size)
                 .background(Circle().fill(Palette.elevated))
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Back")
     }
 }
 

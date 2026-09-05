@@ -41,7 +41,24 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         try await documentTests()
         try await cancellationTests()
         try await playbackTests()
+        recentPlaysTests()
         print("Song sheet and playback: \(checks)/\(checks) checks passed")
+    }
+
+    @MainActor static func recentPlaysTests() {
+        func track(_ id: String) -> Track {
+            decode(["id": id, "name": id, "artists": [["name": "Band"]], "album": ["name": "Album"]])
+        }
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let plays = [SpotifyAPI.RecentPlay(track: track("a"), playedAt: now.addingTimeInterval(-7200)),
+                     SpotifyAPI.RecentPlay(track: track("b"), playedAt: now.addingTimeInterval(-90)),
+                     SpotifyAPI.RecentPlay(track: track("a"), playedAt: now.addingTimeInterval(-30))]
+        let songs = RecentPlays.songs(plays)
+        check(songs.map(\.id) == ["a", "b"], "One row per song, most recent play first")
+        check(songs[0].count == 2 && songs[1].count == 1 && songs[0].lastPlayed == now.addingTimeInterval(-30), "Repeat plays are counted and dated by the latest")
+        check(RecentPlays.relativeTime(now.addingTimeInterval(-30), now: now) == "now", "Under a minute reads as now")
+        check(RecentPlays.relativeTime(now.addingTimeInterval(-600), now: now) == "10m ago", "Minutes ago")
+        check(RecentPlays.relativeTime(now.addingTimeInterval(-7200), now: now) == "2h ago", "Hours ago")
     }
 
     @MainActor static func modelTests() {

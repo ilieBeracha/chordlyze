@@ -226,14 +226,14 @@ enum BackendClient {
 
     // MARK: - Practice
 
-    struct PracticeReport: Decodable, Identifiable {
-        struct ChordScore: Decodable, Identifiable {
+    struct PracticeReport: Codable, Identifiable {
+        struct ChordScore: Codable, Identifiable {
             let name: String
             let accuracy: Double
             let count: Int
             var id: String { name }
         }
-        struct Transition: Decodable, Identifiable {
+        struct Transition: Codable, Identifiable {
             let from: String
             let to: String
             let avgLag: Double?
@@ -260,7 +260,7 @@ enum BackendClient {
                 case avgTimingError = "avg_timing_error"
             }
         }
-        struct Section: Decodable {
+        struct Section: Codable {
             let start: Double
             let end: Double
             let accuracy: Double?
@@ -270,12 +270,15 @@ enum BackendClient {
         let avgLag: Double?
         let avgTimingError: Double?
         let comparison: String?
+        let transpose: Int?
+        let playbackRate: Double?
         let perChord: [ChordScore]
         let transitions: [Transition]
         let sections: [Section]
         var id: String { takeId }
         enum CodingKeys: String, CodingKey {
-            case accuracy, transitions, sections, comparison
+            case accuracy, transitions, sections, comparison, transpose
+            case playbackRate = "playback_rate"
             case takeId = "take_id"
             case avgLag = "avg_lag"
             case avgTimingError = "avg_timing_error"
@@ -285,7 +288,20 @@ enum BackendClient {
 
     /// Upload a practice recording; the backend scores it against the track's chart.
     /// `offset`: song second that take second 0 corresponds to (Spotify sync).
-    static func submitPracticeTake(fileURL: URL, trackID: String, offset: Double) async throws -> PracticeReport {
+    static func submitPracticeTake(fileURL: URL, trackID: String, offset: Double, transpose: Int = 0, playbackRate: Double = 1) async throws -> PracticeReport {
+        let request = try practiceTakeRequest(fileURL: fileURL, trackID: trackID, offset: offset,
+            transpose: transpose, playbackRate: playbackRate)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            let detail = String(data: data, encoding: .utf8) ?? ""
+            throw BackendError(status: (response as? HTTPURLResponse)?.statusCode ?? 0,
+                detail: "Scoring failed: \(detail)")
+        }
+        return try practiceReport(data, transpose: transpose, playbackRate: playbackRate)
+    }
+
+    static func practiceTakeRequest(fileURL: URL, trackID: String, offset: Double,
+                                    transpose: Int, playbackRate: Double) throws -> URLRequest {
         let boundary = "chordlyze-\(UUID().uuidString)"
         var req = URLRequest(url: Config.backendBaseURL.appendingPathComponent("practice_take"))
         req.httpMethod = "POST"
@@ -298,17 +314,24 @@ enum BackendClient {
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"offset\"\r\n\r\n\(offset)\r\n".data(using: .utf8)!)
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"transpose\"\r\n\r\n\(transpose)\r\n".data(using: .utf8)!)
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"playback_rate\"\r\n\r\n\(playbackRate)\r\n".data(using: .utf8)!)
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"file\"; filename=\"take.m4a\"\r\n".data(using: .utf8)!)
         body.append("Content-Type: application/octet-stream\r\n\r\n".data(using: .utf8)!)
         body.append(fileData)
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
         req.httpBody = body
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            let detail = String(data: data, encoding: .utf8) ?? ""
-            throw NSError(domain: "Chordlyze", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: "Scoring failed: \(detail)"])
+        return req
+    }
+
+    static func practiceReport(_ data: Data, transpose: Int, playbackRate: Double) throws -> PracticeReport {
+        let report = try JSONDecoder().decode(PracticeReport.self, from: data)
+        guard ((report.transpose ?? 0) == transpose),
+              ((report.playbackRate ?? 1) == playbackRate) else {
+            throw BackendError(status: 409, detail: "Scoring needs a service update for this key or pace. Your take is saved; retry after the service is updated.")
         }
-        return try JSONDecoder().decode(PracticeReport.self, from: data)
+        return report
     }
 }

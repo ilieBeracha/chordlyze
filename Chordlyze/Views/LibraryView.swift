@@ -3,6 +3,7 @@ import SwiftUI
 /// Analyzed library, "key column" (design 5a): full-bleed rows on black with
 /// album art and a two-line key badge (large root, small mode).
 struct LibraryView: View {
+    var isRoot = false
     enum SortMode: String, CaseIterable, Identifiable {
         case recent, alpha, key
         var id: String { rawValue }
@@ -48,8 +49,8 @@ struct LibraryView: View {
                 } else if let error {
                     errorView(error)
                 } else if items.isEmpty {
-                    ContentUnavailableView("No analyses yet", systemImage: "music.note",
-                                           description: Text("Open a song from your playlists, or search for one."))
+                    ContentUnavailableView("No saved songs yet", systemImage: "music.note",
+                                           description: Text("Search for a song and prepare its chord sheet to find it here."))
                         .padding(.top, 40)
                 } else {
                     VStack(spacing: 0) {
@@ -83,9 +84,9 @@ struct LibraryView: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            BackCircle(size: 40)
+            if !isRoot { BackCircle() }
             VStack(alignment: .leading, spacing: 1) {
-                Text("Analyzed")
+                Text("Saved songs")
                     .font(.system(size: 26, weight: .bold))
                     .tracking(-0.3)
                     .foregroundStyle(.white)

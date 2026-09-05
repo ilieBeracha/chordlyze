@@ -43,6 +43,13 @@ struct ReportCardView: View {
                             .font(.system(size: 12))
                             .foregroundStyle(Palette.tertiary)
                     }
+                    if let rate = report.playbackRate, rate != 1 {
+                        Text("Practiced at \(Int(rate * 100))% pace").font(.subheadline).foregroundStyle(Palette.secondary)
+                    }
+                    if let shift = report.transpose, shift != 0 {
+                        Text("Sounding key shifted \(shift > 0 ? "+" : "")\(shift) semitones")
+                            .font(.subheadline).foregroundStyle(Palette.secondary)
+                    }
                     if report.comparison == "major_minor" {
                         Text("Scored at this chart’s major/minor level")
                             .font(.system(size: 12))
@@ -69,8 +76,8 @@ struct ReportCardView: View {
                             }
                             .frame(height: 70)
                             .background(RoundedRectangle(cornerRadius: 4).fill(Palette.elevated))
-                            Text("\(i + 1)")
-                                .font(.system(size: 11, weight: .semibold))
+                            Text("\(mmss(section.start))–\(mmss(section.end))")
+                                .font(.system(size: 10, weight: .semibold))
                                 .foregroundStyle(Palette.secondary)
                         }
                     }

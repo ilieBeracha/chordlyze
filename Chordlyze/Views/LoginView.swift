@@ -38,7 +38,7 @@ struct LoginView: View {
                     .foregroundStyle(.white)
                     .padding(.bottom, 18)
 
-                Text("Connect Spotify. Play anything.\nThe chords appear as you listen.")
+                Text("Connect Spotify to read your music as chords\nand follow it live.")
                     .font(.system(size: 17))
                     .foregroundStyle(Palette.secondary)
                     .lineSpacing(17 * 0.45)
@@ -56,7 +56,7 @@ struct LoginView: View {
                 }
                 .buttonStyle(.plain)
 
-                Text("Read-only. Your library never leaves your account.")
+                Text("Chordlyze uses your Spotify library and playback.")
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.tertiary)
                     .frame(maxWidth: .infinity)
