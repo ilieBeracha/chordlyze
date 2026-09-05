@@ -12,7 +12,7 @@ import urllib.request
 import pytest
 
 from chordlyze_backend.analysis.provenance import model_metadata
-from chordlyze_backend.song_jobs import reset_library
+from chordlyze_backend.song_jobs import SongJobs, reset_library
 from song_worker import WorkerClient
 
 
@@ -47,7 +47,19 @@ def test_song_request_to_ready_and_reset_over_http(tmp_path):
             job = worker.post('/internal/jobs/claim')['job']
             identity = {'track_id': 'synthetic', 'job_id': job['id'], 'lease': job['lease'],
                         'library_generation': job['generation']}
+            checkpoint = {'search_run_id': 'search123', 'run_id': 'run123', 'video_id': 'abcdefghijk',
+                          'candidate': {'id': 'abcdefghijk', 'title': 'Synthetic test',
+                                        'channel': 'Test', 'duration': 8}}
+            worker.post('/internal/jobs/heartbeat', {**identity, 'stage': 'downloading',
+                                                     'download_checkpoint': checkpoint})
+            with pytest.raises(urllib.error.HTTPError) as malformed:
+                worker.post('/internal/jobs/heartbeat', {**identity,
+                    'download_checkpoint': {'run_id': 'https://invalid.test'}})
+            assert malformed.value.code == 422
             worker.post('/internal/jobs/heartbeat', {**identity, 'stage': 'analyzing'})
+            assert SongJobs(tmp_path / 'cache').get('synthetic')['download_checkpoint'] == checkpoint
+            with urllib.request.urlopen(url + '/song/synthetic') as response:
+                assert 'download_checkpoint' not in json.load(response)['job']
             submission = {**identity, **model_metadata('ismir2019'), 'title': 'Synthetic test',
                           'audio_duration': 8, 'song_duration': 8, 'audio_sha256': 'a' * 64,
                           'source': 'youtube', 'segments': [{'start': 0, 'end': 8, 'label': 'C:maj7'}]}

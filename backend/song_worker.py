@@ -16,6 +16,7 @@ from chordlyze_backend.analysis.beats import track_beats
 from chordlyze_backend.analysis.engine import recognize_audio
 from chordlyze_backend.analysis.ismir import close, ismir_available
 from chordlyze_backend.fulltrack import fetch_full_track
+from chordlyze_backend.audio_apify import ApifyAudio, AudioProviderError, DownloadCancelled
 
 
 class WorkerClient:
@@ -59,13 +60,22 @@ def recording_metadata(song: dict) -> dict:
             'artwork': song.get('artwork') or match.get('artworkUrl100')}
 
 
-def process_job(client: WorkerClient, job: dict) -> str:
+def process_job(client: WorkerClient, job: dict, stopping: threading.Event | None = None) -> str:
     song = job['song']
     identity = {'track_id': song['track_id'], 'job_id': job['id'], 'lease': job['lease'],
                 'library_generation': job['generation']}
     finished = threading.Event()
     abandoned = threading.Event()
     stage = ['downloading']
+    checkpoint = dict(job.get('download_checkpoint') or {})
+
+    def cancelled():
+        return abandoned.is_set() or bool(stopping and stopping.is_set())
+
+    def save_checkpoint(update):
+        checkpoint.update(update)
+        client.post('/internal/jobs/heartbeat', {**identity, 'stage': stage[0],
+                                                 'download_checkpoint': checkpoint})
 
     def heartbeat():
         while not finished.wait(15):
@@ -87,8 +97,10 @@ def process_job(client: WorkerClient, job: dict) -> str:
             client.post('/internal/jobs/finish', {**identity, 'state': 'unavailable'})
             return 'unavailable'
         source_info = {}
-        audio = fetch_full_track(song['title'], song.get('artist') or '', song['duration'], source_info=source_info)
-        if abandoned.is_set():
+        audio = fetch_full_track(song['title'], song.get('artist') or '', song['duration'],
+                                 source_info=source_info, checkpoint=checkpoint,
+                                 save_checkpoint=save_checkpoint, cancelled=cancelled)
+        if cancelled():
             return 'abandoned'
         if audio is None:
             client.post('/internal/jobs/finish', {**identity, 'state': 'unavailable'})
@@ -100,7 +112,7 @@ def process_job(client: WorkerClient, job: dict) -> str:
         if abs(recognition.duration - song['duration']) > max(2, min(3, song['duration'] * .01)):
             client.post('/internal/jobs/finish', {**identity, 'state': 'unavailable'})
             return 'unavailable'
-        if abandoned.is_set():
+        if cancelled():
             return 'abandoned'
         client.post('/analysis/submit', {
             **identity, **recognition.metadata(), 'title': song['title'],
@@ -111,6 +123,16 @@ def process_job(client: WorkerClient, job: dict) -> str:
             'tempo': track_beats(audio),
         })
         return 'ready'
+    except DownloadCancelled:
+        return 'abandoned'
+    except AudioProviderError as error:
+        try:
+            state = 'unavailable' if error.code == 'recording_mismatch' else 'failed'
+            client.post('/internal/jobs/finish', {**identity, 'state': state, 'error_code': error.code})
+        except Exception:
+            pass
+        print('Recording provider: ' + error.code, flush=True)
+        return state
     except Exception:
         # Do not write track metadata, downloaded audio, tokens or lyrics to logs.
         try:
@@ -134,6 +156,8 @@ def main():
     token = os.environ.get('CHORDLYZE_WORKER_TOKEN')
     if not token or not ismir_available():
         raise SystemExit('Configure the worker token and install the pinned recognizer before starting.')
+    if os.environ.get('CHORDLYZE_AUDIO_PROVIDER') == 'apify':
+        ApifyAudio()  # Validate credentials and limits before claiming any jobs.
     client = WorkerClient(os.environ.get('CHORDLYZE_API_URL', 'https://chordlyze-api.fly.dev'), token)
     stopping = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stopping.set())
@@ -143,7 +167,7 @@ def main():
             try:
                 job = client.post('/internal/jobs/claim').get('job')
                 if job:
-                    print('Song request ' + process_job(client, job), flush=True)
+                    print('Song request ' + process_job(client, job, stopping), flush=True)
                 elif not args.once:
                     stopping.wait(3)
             except Exception:

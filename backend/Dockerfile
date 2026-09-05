@@ -19,6 +19,7 @@ ENV CHORDLYZE_ISMIR_DIR=/opt/chordlyze/ismir2019 \
 RUN PYTHON=python3.11 bash scripts/setup_ismir.sh "$CHORDLYZE_ISMIR_DIR"
 
 COPY chordlyze_backend ./chordlyze_backend
+COPY song_worker.py ./song_worker.py
 COPY scripts/reset_song_library.py ./scripts/reset_song_library.py
 
 ARG APP_REVISION=unknown

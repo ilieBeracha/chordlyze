@@ -53,7 +53,7 @@ async def lifespan(_app):
     await anyio.to_thread.run_sync(close_recognizer)
 
 
-app = FastAPI(title="Chordlyze", version="0.5.0", lifespan=lifespan)
+app = FastAPI(title="Chordlyze", version="0.5.1", lifespan=lifespan)
 logger = logging.getLogger(__name__)
 
 
@@ -351,6 +351,20 @@ def claim_song(authorization: str | None = Header(default=None)) -> dict:
     return {"job": SongJobs(CACHE_DIR).claim()}
 
 
+class DownloadCandidate(BaseModel):
+    id: str = Field(pattern=r'^[A-Za-z0-9_-]{11}$')
+    title: str = Field(max_length=500)
+    channel: str = Field(max_length=500)
+    duration: float = Field(gt=0, le=1203, allow_inf_nan=False)
+
+
+class DownloadCheckpoint(BaseModel):
+    search_run_id: str | None = Field(default=None, pattern=r'^[A-Za-z0-9_-]{1,100}$')
+    run_id: str | None = Field(default=None, pattern=r'^[A-Za-z0-9_-]{1,100}$')
+    video_id: str | None = Field(default=None, pattern=r'^[A-Za-z0-9_-]{11}$')
+    candidate: DownloadCandidate | None = None
+
+
 class WorkerUpdate(BaseModel):
     track_id: str | None = None
     job_id: str | None = None
@@ -358,12 +372,15 @@ class WorkerUpdate(BaseModel):
     library_generation: str | None = None
     stage: str | None = None
     state: str | None = None
+    download_checkpoint: DownloadCheckpoint | None = None
+    error_code: str | None = None
 
 
 @app.post("/internal/jobs/heartbeat")
 def heartbeat_song(body: WorkerUpdate, authorization: str | None = Header(default=None)) -> dict:
     _worker_authorized(authorization)
-    if not SongJobs(CACHE_DIR).heartbeat(body.job_id, body.lease, body.stage):
+    checkpoint = body.download_checkpoint.model_dump(exclude_none=True) if body.download_checkpoint else None
+    if not SongJobs(CACHE_DIR).heartbeat(body.job_id, body.lease, body.stage, checkpoint):
         raise HTTPException(409, "job lease is no longer active")
     return {"ok": True}
 
@@ -375,6 +392,12 @@ def finish_song(body: WorkerUpdate, authorization: str | None = Header(default=N
         raise HTTPException(422, "invalid job result")
     message = ("A matching full recording could not be found. Try another edition of this song."
                if body.state == "unavailable" else "Could not finish analyzing this song. Retry to try again.")
+    if body.error_code in ('provider_authentication', 'provider_configuration'):
+        message = 'The recording service needs attention. Please try again later.'
+    elif body.error_code == 'provider_limit':
+        message = 'The recording service has reached its usage limit. Please try again later.'
+    elif body.error_code == 'provider_timeout':
+        message = 'The recording download took too long. Retry this song.'
     if not SongJobs(CACHE_DIR).finish(body.track_id or "", body.job_id or "", body.lease or "",
                                     body.library_generation or "", body.state, message):
         raise HTTPException(409, "job lease is no longer active")
