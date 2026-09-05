@@ -206,7 +206,9 @@ def test_cloud_path_searches_directly_and_never_downloads_from_youtube(monkeypat
     monkeypatch.setattr(yt_dlp, 'YoutubeDL', _FlatSearch)
     path = tmp_path / 'audio.mp3'; path.write_bytes(b'audio')
     _cloud_provider(monkeypatch, path, search=lambda: pytest.fail('paid search used after a direct match'))
-    assert fulltrack.fetch_full_track('Song', 'Band', 200) == path
+    source = {}
+    assert fulltrack.fetch_full_track('Song', 'Band', 200, source_info=source) == path
+    assert source['search'] == 'yt_dlp' and source['video_id'] == VIDEO
 
 
 @pytest.mark.parametrize('direct', ['blocked', 'miss'])
@@ -218,7 +220,19 @@ def test_cloud_path_falls_back_to_paid_search(direct, monkeypatch, tmp_path):
     monkeypatch.setattr(yt_dlp, 'YoutubeDL', _FlatSearch)
     path = tmp_path / 'audio.mp3'; path.write_bytes(b'audio')
     _cloud_provider(monkeypatch, path, search=lambda: [CANDIDATE])
-    assert fulltrack.fetch_full_track('Song', 'Band', 200) == path
+    source = {}
+    assert fulltrack.fetch_full_track('Song', 'Band', 200, source_info=source) == path
+    assert source['search'] == 'apify'
+
+
+def test_worker_warm_up_recognizes_silence_and_removes_the_file(monkeypatch):
+    seen = []
+    monkeypatch.setattr(song_worker, 'warm', lambda: seen.append('model'))
+    monkeypatch.setattr(song_worker, 'recognize_audio',
+                        lambda path, **kw: seen.append(Path(path).exists() and Path(path).stat().st_size > 0))
+    monkeypatch.setattr(song_worker, 'track_beats', lambda path: seen.append(Path(path)))
+    assert song_worker.warm_recognizer() >= 0
+    assert seen[:2] == ['model', True] and not seen[2].exists()
 
 
 def test_reclaimed_job_keeps_download_checkpoint_and_reset_rejects_old_updates(tmp_path, monkeypatch):

@@ -107,14 +107,17 @@ def fetch_full_track(title: str, artist: str, duration: float, *, source_info: d
         client = ApifyAudio()
         previous = (checkpoint or {}).get('candidate')
         chosen = pick_candidate([previous], title, artist, duration) if isinstance(previous, dict) else None
+        search = 'checkpoint'
         if chosen is None:
             # Datacenter IPs are refused downloads, not usually searches. The
             # paid cloud search is the fallback when refused or on a miss.
             entries = _search_youtube(title, artist)
+            search = 'yt_dlp'
             chosen = pick_candidate(entries, title, artist, duration) if entries is not None else None
         if chosen is None:
             entries = client.search(title, artist, checkpoint=checkpoint,
                                     save_checkpoint=save_checkpoint, cancelled=cancelled)
+            search = 'apify'
             chosen = pick_candidate(entries, title, artist, duration)
         if chosen is None:
             return None
@@ -123,7 +126,7 @@ def fetch_full_track(title: str, artist: str, duration: float, *, source_info: d
         if source_info is not None:
             source_info.update(video_id=chosen['id'], url=f"https://www.youtube.com/watch?v={chosen['id']}",
                                title=chosen['title'], channel=chosen.get('channel'),
-                               duration=chosen['duration'], matching='title_artist_duration')
+                               duration=chosen['duration'], matching='title_artist_duration', search=search)
         return path
     if provider != 'yt_dlp':
         raise AudioProviderError('provider_configuration')
