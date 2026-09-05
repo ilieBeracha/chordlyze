@@ -96,17 +96,36 @@ struct SongSheetHeader: View {
     }
 }
 
-/// Analysis and lyrics state under the toolbox. The Analyze/Retry label comes
-/// from the document, the same one the Live card shows.
+/// Analysis and lyrics state under the toolbox. When the song can be
+/// analyzed, that is the one clear action on the page: a full-width button.
 struct SongSheetStatus: View {
     @ObservedObject var store: SongSheetStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if !store.message.isEmpty {
-                note(store.message, icon: "exclamationmark.circle", spinning: store.busy) {
-                    if let title = store.actionTitle { Button(title) { store.retry() } }
+            if let title = store.actionTitle {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.circle").font(.system(size: 12, weight: .semibold))
+                        Text(store.message).font(.system(size: 13))
+                    }
+                    .foregroundStyle(Palette.secondaryAlt)
+                    Button { store.retry() } label: {
+                        Text(title == "Analyze" ? "Analyze this song" : "Retry analysis")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Capsule().fill(Color.spotifyGreen))
+                    }
+                    .buttonStyle(.plain)
                 }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Palette.homeCard))
+                .padding(.bottom, 4)
+            } else if !store.message.isEmpty {
+                note(store.message, icon: "exclamationmark.circle", spinning: store.busy) { EmptyView() }
             }
             if store.lyricsLoading {
                 note("Loading lyrics…", icon: nil, spinning: true) { EmptyView() }
