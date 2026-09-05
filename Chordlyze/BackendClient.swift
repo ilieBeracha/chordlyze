@@ -28,8 +28,10 @@ struct SongStatus: Decodable {
         let stage: String?
         let message: String?
         let workerOnline: Bool
+        /// Earlier requests still waiting, while queued.
+        let ahead: Int?
         enum CodingKeys: String, CodingKey {
-            case state, stage, message, workerOnline = "worker_online"
+            case state, stage, message, ahead, workerOnline = "worker_online"
         }
     }
     let song: Metadata?
