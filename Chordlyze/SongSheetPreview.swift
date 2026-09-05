@@ -70,15 +70,23 @@ struct SongSheetPreview: View {
         ])
         let song = SongDescriptor(trackID: "offline-preview", title: "Song sheet preview",
                                   artist: "Offline regression fixture", duration: 40)
-        if ProcessInfo.processInfo.arguments.contains("--song-sheet-preview-delayed") {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--song-sheet-preview-delayed") || arguments.contains("--song-sheet-preview-missing") {
             // Chart arrives after three polls, as it does for a fresh song.
+            // "missing": nothing happens until Analyze is tapped, as in the app.
             let processing: SongStatus = decode([
                 "job": ["state": "processing", "stage": "downloading", "worker_online": true],
                 "library_generation": "preview"])
+            let missing: SongStatus = decode([
+                "job": ["state": "missing", "worker_online": true], "library_generation": "preview"])
+            var requested = !arguments.contains("--song-sheet-preview-missing")
             var polls = 0
             return SongSheetStore(song: song, service: .init(
-                request: { _ in processing },
-                status: { _ in polls += 1; return polls < 3 ? processing : status },
+                request: { _ in requested = true; return processing },
+                status: { _ in
+                    guard requested else { return missing }
+                    polls += 1; return polls < 3 ? processing : status
+                },
                 lyrics: { _ in words }))
         }
         return SongSheetStore(song: song, analysis: chart,
