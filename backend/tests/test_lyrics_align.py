@@ -107,3 +107,55 @@ def test_worker_times_only_untimed_catalog_lyrics(tmp_path):
     poor = Client({'synced': False, 'lines': [{'time': 1, 'text': 'Other words'}]})
     assert song_worker.attach_lyrics(poor, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'unaligned'
     assert not poor.posted
+
+
+def test_aligner_runs_in_the_background_and_deletes_audio_when_done(tmp_path):
+    done = threading.Event()
+    def align(audio, lines):
+        assert Path(audio).exists(), 'audio must survive until alignment runs'
+        done.set()
+        return None
+    client = Client({'synced': False, 'lines': [{'time': 1, 'text': 'Some words'}]})
+    aligner = song_worker.LyricsAligner(client, align=align, limit=1)
+    audio = tmp_path / 'a.mp3'; audio.write_bytes(b'x')
+    assert aligner.submit(SONG, audio, 'gen')
+    assert done.wait(5)
+    aligner.pending.join()
+    assert not audio.exists()
+
+
+def test_full_alignment_queue_drops_lyrics_not_charts(tmp_path):
+    started, release = threading.Event(), threading.Event()
+    def align(audio, lines):
+        started.set(); release.wait(5); return None
+    aligner = song_worker.LyricsAligner(Client({'synced': False, 'lines': [{'time': 1, 'text': 'Some words'}]}),
+                                        align=align, limit=1)
+    first = tmp_path / 'first.mp3'; first.write_bytes(b'x')
+    second = tmp_path / 'second.mp3'; second.write_bytes(b'x')
+    third = tmp_path / 'third.mp3'; third.write_bytes(b'x')
+    assert aligner.submit(SONG, first, 'gen') and started.wait(5)  # being aligned
+    assert aligner.submit(SONG, second, 'gen')     # queued
+    assert not aligner.submit(SONG, third, 'gen')  # queue full: caller keeps ownership
+    release.set()
+    aligner.pending.join()
+    assert not first.exists() and not second.exists() and third.exists()
+
+
+def test_published_chart_hands_audio_to_the_aligner(monkeypatch, tmp_path):
+    import types
+    audio = tmp_path / 'song.mp3'; audio.write_bytes(b'x')
+    monkeypatch.setattr(song_worker, 'fetch_full_track', lambda *a, **kw: audio)
+    monkeypatch.setattr(song_worker, 'recognize_audio', lambda *a, **kw: types.SimpleNamespace(
+        duration=200.0, segments=[], metadata=lambda: {'model': 'ismir2019'}))
+    monkeypatch.setattr(song_worker, 'track_beats', lambda path: None)
+    handed = []
+    class Aligner:
+        def submit(self, song, path, generation):
+            handed.append((song['track_id'], path, generation)); return True
+    class Publisher:
+        def post(self, path, payload=None): return {}
+    job = {'id': 'job', 'lease': 'lease', 'generation': 'gen', 'song': dict(SONG)}
+    assert song_worker.process_job(Publisher(), job, aligner=Aligner()) == 'ready'
+    assert handed == [('song', audio, 'gen')] and audio.exists(), 'audio is kept for the aligner'
+    assert song_worker.process_job(Publisher(), job) == 'ready'
+    assert not audio.exists(), 'without an aligner the audio is deleted as before'

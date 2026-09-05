@@ -11,7 +11,7 @@ RUN pip install --no-cache-dir cython numpy && \
 
 # Speech model for timing plain lyrics against the recording; only the worker uses it.
 ENV CHORDLYZE_WHISPER_DIR=/opt/chordlyze/whisper
-RUN python -c "from faster_whisper import download_model; download_model('small', cache_dir='$CHORDLYZE_WHISPER_DIR')"
+RUN python -c "from faster_whisper import download_model; [download_model(name, cache_dir='$CHORDLYZE_WHISPER_DIR') for name in ('small', 'base')]"
 
 COPY requirements-ismir.txt .
 COPY scripts/setup_ismir.sh ./scripts/setup_ismir.sh
