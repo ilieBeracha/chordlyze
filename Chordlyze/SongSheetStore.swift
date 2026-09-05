@@ -144,7 +144,7 @@ final class SongSheetStore: ObservableObject {
             untimedLyrics = []
             lyricsLoading = false
             lyricsFailed = false
-            lyricsNote = "Lyrics timed to this recording automatically."
+            lyricsNote = "Lyrics timed from the recording"
         }
         state = status.job.state
         switch state {
@@ -182,14 +182,14 @@ final class SongSheetStore: ObservableObject {
                     // Guessed line times must never drive the runner or place chords.
                     lines = []
                     untimedLyrics = result.lines.map(\.text).filter { !$0.isEmpty }
-                    lyricsNote = "These lyrics have no timing. Chords follow the recording; the words are below."
+                    lyricsNote = "Lyrics have no timing; words listed below"
                 } else {
                     lines = result?.lines ?? []
                     untimedLyrics = []
                     lyricsNote = result?.instrumental == true ? "Instrumental recording" : result?.betaNote
-                    if result == nil { lyricsNote = "Lyrics are not available for this recording." }
+                    if result == nil { lyricsNote = "No lyrics for this recording" }
                     if result?.synced == true, result?.lines.contains(where: { !$0.text.isEmpty && $0.words == nil }) == true {
-                        lyricsNote = "Chords follow lyric lines; word placement is approximate."
+                        lyricsNote = "Approximate lyric timing"
                     }
                 }
                 lyricsLoading = false

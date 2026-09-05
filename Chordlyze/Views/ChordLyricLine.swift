@@ -15,6 +15,8 @@ struct ChordLyricLine: View {
     var transposeBy = 0
     var playhead: Double? = nil
     var style: ChordRowView.Style = .live
+    /// Live: this is the line being sung.
+    var active = false
     var onChordTap: ((String) -> Void)? = nil
     var onLyricTap: (() -> Void)? = nil
 
@@ -37,8 +39,8 @@ struct ChordLyricLine: View {
                         Color.clear.frame(height: style == .sheet ? 28 : 38)
                     }
                     Text(token.word)
-                        .font(style.wordFont)
-                        .foregroundStyle(style == .sheet ? Palette.nearWhite : .white)
+                        .font(style.wordFont(active: active))
+                        .foregroundStyle(style.wordColor(active: active))
                         .onTapGesture { onLyricTap?() }
                 }
             }

@@ -27,16 +27,14 @@ struct LiveNowView: View {
                             Text(store.song.artist).font(.system(size: 12)).foregroundStyle(Palette.secondary).lineLimit(1)
                         }
                         Spacer(minLength: 0)
-                        Text(mmss(position)).font(.system(size: 13, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color.spotifyGreen).accessibilityIdentifier("live-position")
                     }
                     .padding(.horizontal, 20).padding(.vertical, 12)
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
                         if let playbackNote {
-                            Text(playbackNote).font(.system(size: 12)).foregroundStyle(Palette.secondary)
+                            Text(playbackNote).font(.system(size: 13)).foregroundStyle(Palette.secondary)
                         }
                         if seekDenied { Text("Spotify could not seek. Check playback permissions or Premium.").font(.caption).foregroundStyle(Palette.secondary) }
-                        SongSheetStatus(store: store)
+                        SongSheetStatus(store: store, pill: true)
                     }.padding(.horizontal, 20).padding(.bottom, 6)
                     ScrollView {
                         ChordSheetView(store: store, playhead: position, style: .live,
@@ -51,8 +49,13 @@ struct LiveNowView: View {
                     .onChange(of: activeID, initial: true) { _, id in
                         if let id { withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) } }
                     }
-                    ProgressView(value: position, total: max(1, duration))
-                        .tint(.spotifyGreen).padding(.horizontal, 24).padding(.bottom, 24)
+                    HStack(spacing: 12) {
+                        Text(mmss(position)).font(.system(size: 13, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.white).accessibilityIdentifier("live-position")
+                        ProgressView(value: position, total: max(1, duration)).tint(.spotifyGreen)
+                        Text("Live").font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.secondary)
+                    }
+                    .padding(.horizontal, 20).padding(.bottom, 24)
                 }
                 .onChange(of: position) { _, value in lastPosition = value }
             }

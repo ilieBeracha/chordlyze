@@ -11,14 +11,19 @@ struct ChordRowView: View {
 
         var chordFont: Font {
             self == .sheet ? .system(size: 13, weight: .bold, design: .rounded)
-                           : .system(size: 17, weight: .bold, design: .rounded)
+                           : .system(size: 16, weight: .semibold, design: .rounded)
         }
-        var wordFont: Font {
+        var wordFont: Font { wordFont(active: false) }
+        /// Live: the sung line is white and bold, the others lighter grey.
+        func wordFont(active: Bool) -> Font {
             self == .sheet ? .system(size: 18, design: .rounded)
-                           : .system(size: 23, weight: .semibold, design: .rounded)
+                : .system(size: active ? 24 : 21, weight: active ? .bold : .regular, design: .rounded)
+        }
+        func wordColor(active: Bool) -> Color {
+            self == .sheet ? Palette.nearWhite : (active ? .white : Palette.lyricDim)
         }
         var chipPadding: (vertical: CGFloat, horizontal: CGFloat) {
-            self == .sheet ? (3, 9) : (5, 10)
+            self == .sheet ? (3, 9) : (4, 10)
         }
     }
 
@@ -32,12 +37,13 @@ struct ChordRowView: View {
     var onLyricTap: (() -> Void)? = nil
 
     private var rtl: Bool { row.text.isRTLText }
+    private var active: Bool { playhead.map(row.contains) ?? false }
 
     var body: some View {
-        VStack(alignment: rtl ? .trailing : .leading, spacing: style == .sheet ? 4 : 14) {
+        VStack(alignment: rtl ? .trailing : .leading, spacing: style == .sheet ? 4 : 12) {
             if !row.text.isEmpty {
                 ChordLyricLine(text: row.text, chords: row.chords, words: row.words?.map(\.text), transposeBy: transposeBy,
-                               playhead: playhead, style: style, onChordTap: onChordTap, onLyricTap: onLyricTap)
+                               playhead: playhead, style: style, active: active, onChordTap: onChordTap, onLyricTap: onLyricTap)
                     .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
             } else {
                 timedRow
@@ -45,6 +51,12 @@ struct ChordRowView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: rtl ? .trailing : .leading)
+        .overlay(alignment: rtl ? .trailing : .leading) {
+            if style == .live, active, !row.text.isEmpty {
+                RoundedRectangle(cornerRadius: 2).fill(Color.spotifyGreen)
+                    .frame(width: 3).padding(.vertical, 4).offset(x: rtl ? 14 : -14)
+            }
+        }
     }
 
     /// Chords at time-proportional positions, with the playhead when live.
@@ -112,7 +124,7 @@ struct ChordChip: View {
                 .background(
                     RoundedRectangle(cornerRadius: style == .sheet ? 7 : 13, style: .continuous)
                         .fill(active ? Color.spotifyGreen
-                              : style == .sheet ? Color.white.opacity(0.06) : Palette.greenTintFill)
+                              : style == .sheet ? Color.white.opacity(0.06) : Color.clear)
                 )
         }
         .buttonStyle(.plain)
