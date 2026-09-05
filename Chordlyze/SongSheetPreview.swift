@@ -62,7 +62,7 @@ struct SongSheetPreview: View {
         let words: BackendClient.LyricsResult = decode([
             "synced": true, "lines": [
                 ["time": 0, "text": "Sample words follow every chord"],
-                ["time": 8, "text": "Held notes stay above this line"],
+                ["time": 8, "text": "A held chord is not repeated on this line"],
                 ["time": 16, "text": ""],
                 ["time": 20, "text": "שרים יחד בקצב של הלב"],
                 ["time": 30, "text": "The final line keeps its harmony"]
@@ -77,12 +77,12 @@ struct SongSheetPreview: View {
                 "library_generation": "preview"])
             var polls = 0
             return SongSheetStore(song: song, service: .init(
-                request: { _, _ in processing },
+                request: { _ in processing },
                 status: { _ in polls += 1; return polls < 3 ? processing : status },
                 lyrics: { _ in words }))
         }
         return SongSheetStore(song: song, analysis: chart,
-                              service: .init(request: { _, _ in status }, status: { _ in status }, lyrics: { _ in words }))
+                              service: .init(request: { _ in status }, status: { _ in status }, lyrics: { _ in words }))
     }
 }
 #endif

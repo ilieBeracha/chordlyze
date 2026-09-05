@@ -141,9 +141,7 @@ struct ReportCardView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .sheet(item: $selectedChord) { selected in
-            ChordDiagramSheet(chord: selected.name)
-        }
+        .chordDiagram($selectedChord)
     }
 
     private var scoreColor: Color {

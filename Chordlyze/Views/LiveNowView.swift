@@ -10,7 +10,6 @@ struct LiveNowView: View {
     @State private var lastPosition: Double = 0
     @State private var selectedChord: SelectedChord?
     @State private var seekDenied = false
-    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -19,16 +18,7 @@ struct LiveNowView: View {
                 let position = max(0, min(livePosition() ?? lastPosition, duration > 0 ? duration : .infinity))
                 let activeID = SheetModel.activeRow(store.rows, at: position)?.id
                 VStack(spacing: 0) {
-                    HStack(spacing: 12) {
-                        BackCircle(size: 38)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(store.song.title).font(.system(size: 16, weight: .bold, design: .rounded))
-                                .foregroundStyle(.white).lineLimit(1)
-                            Text(store.song.artist).font(.system(size: 12)).foregroundStyle(Palette.secondary).lineLimit(1)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 20).padding(.vertical, 12)
+                    SongSheetHeader(store: store)
                     VStack(alignment: .leading, spacing: 6) {
                         if let playbackNote {
                             Text(playbackNote).font(.system(size: 13)).foregroundStyle(Palette.secondary)
@@ -65,9 +55,7 @@ struct LiveNowView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .sheet(item: $selectedChord) { ChordDiagramSheet(chord: $0.name) }
-        .task(id: scenePhase) {
-            if scenePhase == .active { await store.observe() }
-        }
+        .chordDiagram($selectedChord)
+        .observes(store)
     }
 }

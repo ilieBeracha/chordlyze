@@ -3,10 +3,12 @@ import Foundation
 
 /// One observable song document shared by search, library, live and practice.
 /// Lyrics load independently of analysis; complete charts replace pending rows.
+/// Opening a song only reads its status: analysis is requested by the
+/// Analyze button alone, never by a screen appearing or a song playing.
 @MainActor
 final class SongSheetStore: ObservableObject {
     struct Service {
-        var request: (SongDescriptor, Bool) async throws -> SongStatus = { try await BackendClient.requestSong($0, retry: $1) }
+        var request: (SongDescriptor) async throws -> SongStatus = { try await BackendClient.requestSong($0, retry: true) }
         var status: (String) async throws -> SongStatus = { try await BackendClient.songStatus(trackID: $0) }
         var lyrics: (SongDescriptor) async throws -> BackendClient.LyricsResult? = {
             try await BackendClient.lyrics(title: $0.title, artist: $0.artist, duration: $0.duration, album: $0.album)
@@ -30,10 +32,13 @@ final class SongSheetStore: ObservableObject {
     @Published private(set) var state = "loading"
     @Published private(set) var message = "Checking this song…"
     @Published private(set) var lyricsNote: String?
-    /// Lyric lines without timing: shown as text, never as timed rows.
-    @Published private(set) var untimedLyrics: [String] = []
     @Published private(set) var lyricsLoading = true
     @Published private(set) var lyricsFailed = false
+    /// Chord display shared by every surface, so the sheet, Live and Practice
+    /// name the same chords: capo mode favors open shapes, manual shift transposes.
+    @Published var capoMode = false
+    @Published var manualShift = 0
+    @Published private(set) var capo = 0
     private(set) var lyricsResult: BackendClient.LyricsResult?
     private var service: Service
     private var observers = 0
@@ -55,6 +60,17 @@ final class SongSheetStore: ObservableObject {
 
     var busy: Bool { ["loading", "queued", "processing"].contains(state) }
     var canPractice: Bool { analysis != nil && state == "ready" }
+    var shift: Int { (capoMode ? -capo : 0) + manualShift }
+    /// "Capo 2", "+1", "Capo 2 +1", or nil when chords show as analyzed.
+    var chordNote: String? {
+        let parts = [capoMode && capo > 0 ? "Capo \(capo)" : nil,
+                     manualShift != 0 ? String(format: "%+d", manualShift) : nil].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+    /// Label of the one action that requests analysis; nil while nothing can be requested.
+    var actionTitle: String? {
+        busy || state == "ready" ? nil : (state == "missing" ? "Analyze" : "Retry")
+    }
 
     /// SwiftUI owns this subscription through .task. Last departure cancels
     /// networking; reentry starts a new generation, including canceled lyrics.
@@ -75,23 +91,31 @@ final class SongSheetStore: ObservableObject {
         } catch {}
     }
 
+    /// Analyze / Retry button: the only path that requests analysis. After a
+    /// connection loss it reconnects without requesting anything.
     func retry() {
-        start(retry: true)
+        start(request: state != "connection")
         loadLyrics(force: true)
     }
 
-    private func start(retry: Bool = false) {
+    /// Pull to refresh: re-read status and lyrics, never request analysis.
+    func refresh() {
+        start()
+        loadLyrics(force: true)
+    }
+
+    private func start(request: Bool = false) {
         revision += 1
         let token = revision
         task?.cancel()
         loadLyrics(force: lyricsLoading || lyricsFailed)
         task = Task { [weak self] in
             guard let self else { return }
-            var first = true
+            var first = request
             var failures = 0
             while !Task.isCancelled && token == revision {
                 do {
-                    let result = try await (first ? service.request(song, retry) : service.status(song.id))
+                    let result = try await (first ? service.request(song) : service.status(song.id))
                     try Task.checkCancellation()
                     guard token == revision else { return }
                     first = false
@@ -110,7 +134,7 @@ final class SongSheetStore: ObservableObject {
                     state = "connection"
                     message = "Reconnecting…"
                 }
-                do { try await service.sleep(failures > 0 ? min(30, Double(failures * 3)) : (state == "ready" ? 15 : 3)) }
+                do { try await service.sleep(failures > 0 ? min(30, Double(failures * 3)) : (state == "ready" || state == "missing" ? 15 : 3)) }
                 catch { return }
             }
         }
@@ -121,7 +145,6 @@ final class SongSheetStore: ObservableObject {
         let reset = libraryGeneration != nil && libraryGeneration != status.libraryGeneration
         if let previous = libraryGeneration, previous != status.libraryGeneration {
             lines = []
-            untimedLyrics = []
             lyricsResult = nil
             lyricKey = nil
         }
@@ -141,7 +164,6 @@ final class SongSheetStore: ObservableObject {
             lyricKey = lyricLookupKey
             lyricsResult = aligned
             lines = aligned.lines
-            untimedLyrics = []
             lyricsLoading = false
             lyricsFailed = false
             lyricsNote = aligned.matched == "transcribed" ? "Transcribed from the recording" : "Lyrics timed from the recording"
@@ -181,14 +203,12 @@ final class SongSheetStore: ObservableObject {
                 try Task.checkCancellation()
                 guard token == lyricRevision else { return }
                 lyricsResult = result
+                lines = result?.lines ?? []
                 if let result, !result.synced {
-                    // Guessed line times must never drive the runner or place chords.
-                    lines = []
-                    untimedLyrics = result.lines.map(\.text).filter { !$0.isEmpty }
-                    lyricsNote = "Lyrics have no timing; words listed below"
+                    // Catalog lines with estimated times: chords still sit above the
+                    // words. The worker replaces them with recording-timed lines.
+                    lyricsNote = "Estimated lyric timing"
                 } else {
-                    lines = result?.lines ?? []
-                    untimedLyrics = []
                     lyricsNote = result?.instrumental == true ? "Instrumental recording" : result?.betaNote
                     if result == nil { lyricsNote = "No lyrics for this recording" }
                     if result?.synced == true, result?.lines.contains(where: { !$0.text.isEmpty && $0.words == nil }) == true {
@@ -210,8 +230,9 @@ final class SongSheetStore: ObservableObject {
 
     private func rebuild() {
         rows = SheetModel.build(analysis: analysis, lines: lines,
-                                duration: song.duration ?? analysis?.songDuration,
-                                untimedLyrics: !untimedLyrics.isEmpty)
+                                duration: song.duration ?? analysis?.songDuration)
+        capo = ChordMath.autoCapo(names: analysis?.chords.filter { $0.label != "N" }
+            .map { ($0.displayName, $0.duration) } ?? [])
     }
 }
 

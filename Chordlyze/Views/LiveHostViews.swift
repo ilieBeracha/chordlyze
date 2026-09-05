@@ -45,20 +45,10 @@ struct LiveSongView: View {
 struct LiveAnalyzingView: View {
     @ObservedObject var store: SongSheetStore
     var playbackNote: String? = nil
-    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                BackCircle(size: 38)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(store.song.title).font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white).lineLimit(1)
-                    Text(store.song.artist).font(.system(size: 12)).foregroundStyle(Palette.secondary).lineLimit(1)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 20).padding(.vertical, 12)
+            SongSheetHeader(store: store)
             Spacer()
             VStack(spacing: 18) {
                 AsyncImage(url: store.song.artwork.flatMap(URL.init)) { image in
@@ -73,8 +63,8 @@ struct LiveAnalyzingView: View {
                     Text(store.message).font(.system(size: 15, weight: .medium)).foregroundStyle(Palette.nearWhite)
                 }
                 .accessibilityIdentifier("live-analyzing-state")
-                if !store.busy {
-                    Button(store.state == "missing" ? "Analyze" : "Retry") { store.retry() }
+                if let title = store.actionTitle {
+                    Button(title) { store.retry() }
                         .font(.system(size: 14, weight: .bold)).foregroundStyle(.black)
                         .padding(.vertical, 9).padding(.horizontal, 22)
                         .background(Capsule().fill(Color.spotifyGreen))
@@ -88,9 +78,7 @@ struct LiveAnalyzingView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .task(id: scenePhase) {
-            if scenePhase == .active { await store.observe() }
-        }
+        .observes(store)
     }
 }
 

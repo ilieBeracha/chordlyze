@@ -49,8 +49,8 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         let rows = SheetModel.build(analysis: chart(), lines: lines, duration: 20)
         let sung = rows.filter { !$0.text.isEmpty }
         check(sung.count == 2, "Every lyric line is retained")
-        check(sung.allSatisfy { $0.chords.first?.event.chord?.display == "C" }, "Held chords repeat above later lyric lines")
-        check(sung[1].chords[0].position == 0 && sung[1].chords[0].wordIndex == 0, "Held chord is above the first word")
+        check(rows.first?.chords.first?.event.chord?.display == "C", "A chord is shown where it starts")
+        check(sung.allSatisfy { $0.chords.isEmpty && $0.held?.chord?.display == "C" }, "A held chord is never repeated on a later row")
         check(sung[1].end == 20 && sung[1].text == "Four five six", "Long lyric lines are not cut into blank eight-second rows")
         check(rows.first?.isInstrumental == true, "Intro has its own chord row")
         check(SheetModel.activeRow(rows, at: 9)?.id == 8, "Live selects current row by interval")
@@ -63,11 +63,11 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(preview.filter { !$0.text.isEmpty }.count == 2 && preview.allSatisfy { $0.chords.isEmpty }, "Unknown-offset previews never masquerade as aligned chords")
         let blank = SheetModel.build(analysis: chart(), lines: [lines[0], LyricLine(time: 5, text: "", words: nil), lines[1]], duration: 20)
         check(blank.first { $0.start == 5 }?.isInstrumental == true, "Blank timed lyric creates a real instrumental break")
-        check(blank.first { $0.start == 5 }?.chords.count == 1, "Instrumental break keeps held chords")
+        check(blank.first { $0.start == 5 }?.chords.isEmpty == true && blank.first { $0.start == 5 }?.held != nil, "An instrumental break does not repeat the held chord")
         let changed = chart([["start": 0, "end": 5, "label": "C:maj"], ["start": 5, "end": 20, "label": "G:7"]])
         let changedRows = SheetModel.build(analysis: changed, lines: lines, duration: 20)
-        check(changedRows.first { $0.start == 2 }?.chords.count == 2, "Chord changes remain above the lyric line")
-        check(changedRows.first { $0.start == 8 }?.chords.first?.event.chord?.display == "G7", "Later row carries the correct changed chord")
+        check(changedRows.first { $0.start == 2 }?.chords.map { $0.event.chord?.display } == ["G7"], "Only the change inside the line is shown above it")
+        check(changedRows.first { $0.start == 8 }?.chords.isEmpty == true && changedRows.first { $0.start == 8 }?.held?.chord?.display == "G7", "The later row knows its chord without repeating it")
         let gapped = chart([["start": 0, "end": 3, "label": "C:maj"], ["start": 10, "end": 20, "label": "G:maj"]])
         check(SheetModel.build(analysis: gapped, lines: lines, duration: 20).first { $0.start == 8 }?.chords.first?.event.start == 10, "A rest never extends an earlier chord")
         let badOrder = [lines[1], lines[0], lines[0], LyricLine(time: .nan, text: "invalid", words: nil)]
@@ -81,20 +81,14 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         let tail = SheetModel.build(analysis: changed, lines: lines, duration: 20.4)
         check(!tail.contains { $0.kind == .uncovered }, "A sub-second gap after the analyzed audio is not a pending row")
         check(SheetModel.build(analysis: changed, lines: [], duration: 30).contains { $0.kind == .uncovered }, "A real unanalyzed tail still shows as pending")
-        let untimed = SheetModel.build(analysis: changed, lines: [], duration: 20, untimedLyrics: true)
-        check(!untimed.isEmpty && untimed.allSatisfy { $0.text.isEmpty && $0.kind == .chords }, "Untimed lyrics never become timed rows")
-        check(SheetModel.activeRow(untimed, at: 6)?.chords.contains { $0.event.contains(6) } == true, "Chord rows still follow the recording")
         check(SheetModel.build(analysis: changed, lines: [], duration: 20).allSatisfy { $0.isInstrumental }, "Without any lyrics, blank rows stay instrumental")
     }
 
     @MainActor static func documentTests() async throws {
         let song = SongDescriptor(trackID: "fixture", title: "Song", artist: "Band", album: "Album", duration: 20)
         var requests = 0, polls = 0
-        let service = SongSheetStore.Service(request: { descriptor, _ in
-            requests += 1
-            check(descriptor.album == "Album" && descriptor.duration == 20, "Every surface sends real song duration and album")
-            return status("queued")
-        }, status: { _ in polls += 1; return status(polls < 3 ? "processing" : "ready", ready: polls >= 3) },
+        let service = SongSheetStore.Service(request: { _ in requests += 1; return status("queued") },
+        status: { _ in polls += 1; return status(polls < 3 ? "processing" : "ready", ready: polls >= 3) },
         lyrics: { _ in lyrics() }, sleep: { _ in try await Task.sleep(for: .milliseconds(25)) })
         let sheet = SongSheetStore(song: song, service: service)
         let first = Task { await sheet.observe() }
@@ -104,8 +98,8 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         try await waitFor { sheet.message == "Analyzing, about a minute" }
         check(!sheet.canPractice, "A pending chart is not ready for Live or Practice")
         try await waitFor { sheet.canPractice }
-        check(requests == 1, "Two screens share one analysis request")
-        check(sheet.rows.filter { !$0.text.isEmpty }.allSatisfy { !$0.chords.isEmpty }, "Finished analysis fills existing lyric rows automatically")
+        check(requests == 0, "Opening a song never requests analysis")
+        check(sheet.rows.first?.chords.isEmpty == false && sheet.rows.filter { !$0.text.isEmpty }.allSatisfy { $0.held != nil }, "Finished analysis fills existing rows automatically")
         first.cancel(); await first.value
         let previousPolls = polls
         try await waitFor { polls > previousPolls }
@@ -115,29 +109,59 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         try await Task.sleep(for: .milliseconds(70))
         check(polls == stopped, "Leaving the final screen cancels background polling")
         let resumed = Task { await sheet.observe() }
-        try await waitFor { requests == 2 }
-        check(requests == 2, "Reentry performs a fresh request instead of remaining stuck")
+        try await waitFor { polls > stopped }
+        check(requests == 0, "Reentry resumes polling without requesting analysis")
         resumed.cancel(); await resumed.value
 
-        let plain = SongSheetStore(song: song, service: .init(request: { _, _ in status("ready", ready: true) },
+        var missingPolls = 0, analyzeRequests = 0
+        let unanalyzed = SongSheetStore(song: song, service: .init(request: { descriptor in
+            analyzeRequests += 1
+            check(descriptor.album == "Album" && descriptor.duration == 20, "Analyze sends real song duration and album")
+            return status("queued")
+        }, status: { _ in missingPolls += 1; return analyzeRequests == 0 ? status("missing") : status("ready", ready: true) },
+        lyrics: { _ in lyrics() }, sleep: { _ in try await Task.sleep(for: .milliseconds(10)) }))
+        let unanalyzedTask = Task { await unanalyzed.observe() }
+        try await waitFor { missingPolls >= 3 }
+        check(analyzeRequests == 0 && unanalyzed.message == "Not analyzed", "A song stays unanalyzed until the user asks")
+        check(unanalyzed.actionTitle == "Analyze", "Every surface offers the same Analyze action")
+        unanalyzed.refresh()
+        let beforeRefresh = missingPolls
+        try await waitFor { missingPolls > beforeRefresh }
+        check(analyzeRequests == 0, "Pull to refresh never requests analysis")
+        unanalyzed.retry()
+        try await waitFor { unanalyzed.canPractice }
+        check(analyzeRequests == 1, "Analyze requests the song exactly once")
+        check(unanalyzed.actionTitle == nil, "A ready song has nothing to request")
+        unanalyzedTask.cancel(); await unanalyzedTask.value
+
+        let guitar = SongSheetStore(song: song, analysis: chart([["start": 0, "end": 20, "label": "F:maj"]]))
+        check(guitar.shift == 0 && guitar.chordNote == nil, "Chords show as analyzed until the user changes them")
+        guitar.capoMode = true
+        check(guitar.capo == 1 && guitar.shift == -1, "Capo mode picks the fret that gives open shapes")
+        check(guitar.rows.first?.chords.first?.event.display(transposedBy: guitar.shift) == "E", "Sheet, Live and Practice transpose from one shared shift")
+        guitar.manualShift = 2
+        check(guitar.shift == 1 && guitar.chordNote == "Capo 1 +2", "Manual shift stacks on the capo and is named in the header")
+
+        let plain = SongSheetStore(song: song, service: .init(request: { _ in status("ready", ready: true) },
             status: { _ in status("ready", ready: true) },
             lyrics: { _ in decode(["lines": [["time": 1, "text": "Guessed one"], ["time": 18.6, "text": "Guessed two"]], "synced": false]) },
             sleep: { _ in try await Task.sleep(for: .milliseconds(25)) }))
         let plainTask = Task { await plain.observe() }
         try await waitFor { plain.canPractice && !plain.lyricsLoading }
-        check(plain.rows.allSatisfy { $0.text.isEmpty } && plain.rows.contains { $0.kind == .chords }, "Guessed lyric times never drive the runner")
-        check(plain.untimedLyrics == ["Guessed one", "Guessed two"], "Untimed lyrics stay readable")
-        check(SheetModel.activeRow(plain.rows, at: 5)?.chords.first?.event.chord?.display == "C", "Chords still follow the recording without timed lyrics")
+        check(plain.rows.map(\.text).filter { !$0.isEmpty } == ["Guessed one", "Guessed two"], "Catalog lyrics without timing still become lyric rows")
+        check(plain.rows.first { $0.text == "Guessed one" }?.held?.chord?.display == "C", "Estimated lines sit on the chord timeline")
+        check(plain.lyricsNote == "Estimated lyric timing", "Estimated timing is labeled")
+        check(SheetModel.activeRow(plain.rows, at: 5)?.held?.chord?.display == "C", "Chords still follow the recording")
         plainTask.cancel(); await plainTask.value
 
         var lookups = 0
         let alignedStatus: SongStatus = decode([
             "job": ["state": "ready", "worker_online": true], "library_generation": "fresh",
-            "analysis": ["chords": [["start": 0, "end": 20, "label": "C:maj"]], "source": "youtube", "audio_duration": 20],
+            "analysis": ["chords": [["start": 0, "end": 3.5, "label": "C:maj"], ["start": 3.5, "end": 20, "label": "G:maj"]], "source": "youtube", "audio_duration": 20],
             "lyrics": ["synced": true, "matched": "aligned", "lines": [
                 ["time": 3, "text": "Timed one", "words": [["time": 3, "text": "Timed"], ["time": 3.5, "text": "one"]]],
                 ["time": 12, "text": "Timed two"]]]])
-        let aligned = SongSheetStore(song: song, service: .init(request: { _, _ in alignedStatus },
+        let aligned = SongSheetStore(song: song, service: .init(request: { _ in alignedStatus },
             status: { _ in alignedStatus },
             lyrics: { _ in
                 lookups += 1
@@ -149,12 +173,12 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         try await waitFor { aligned.canPractice && aligned.rows.contains { $0.text == "Timed one" } }
         try await Task.sleep(for: .milliseconds(120))
         check(aligned.rows.map(\.text).filter { !$0.isEmpty } == ["Timed one", "Timed two"], "Recording-timed lyrics replace the catalog lookup")
-        check(aligned.rows.first { $0.text == "Timed one" }?.chords.first?.wordIndex == 0, "Word times from the recording place chords")
-        check(aligned.untimedLyrics.isEmpty && !aligned.lyricsLoading, "A late catalog result cannot overwrite recording-timed lyrics")
+        check(aligned.rows.first { $0.text == "Timed one" }?.chords.map(\.wordIndex) == [1], "Word times from the recording place the change on its word")
+        check(!aligned.rows.contains { $0.text == "Guessed one" } && !aligned.lyricsLoading, "A late catalog result cannot overwrite recording-timed lyrics")
         alignedTask.cancel(); await alignedTask.value
 
         var resetPolls = 0
-        let resetting = SongSheetStore(song: song, service: .init(request: { _, _ in status("ready", ready: true) },
+        let resetting = SongSheetStore(song: song, service: .init(request: { _ in status("ready", ready: true) },
             status: { _ in resetPolls += 1; return status("missing", epoch: "after-reset") },
             lyrics: { _ in lyrics() }, sleep: { _ in try await Task.sleep(for: .milliseconds(25)) }))
         let resetTask = Task { await resetting.observe() }
@@ -165,28 +189,27 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         resetTask.cancel(); await resetTask.value
 
         var attempts = 0
-        let recovering = SongSheetStore(song: song, service: .init(request: { _, _ in
+        let recovering = SongSheetStore(song: song, service: .init(status: { _ in
             attempts += 1
             if attempts == 1 { throw URLError(.timedOut) }
             return status("ready", ready: true)
-        }, status: { _ in status("ready", ready: true) }, lyrics: { _ in lyrics() },
-        sleep: { _ in try await Task.sleep(for: .milliseconds(10)) }))
+        }, lyrics: { _ in lyrics() }, sleep: { _ in try await Task.sleep(for: .milliseconds(10)) }))
         let recovery = Task { await recovering.observe() }
         try await waitFor { recovering.canPractice }
-        check(attempts == 2, "A failed initial request recovers in place")
+        check(attempts == 2, "A failed initial status read recovers in place")
         recovery.cancel(); await recovery.value
     }
 
     @MainActor static func cancellationTests() async throws {
         var pending: CheckedContinuation<SongStatus, Never>?
         var pendingLyrics: CheckedContinuation<BackendClient.LyricsResult?, Never>?
-        var requests = 0, lyricCalls = 0
+        var statusReads = 0, lyricCalls = 0
         let sheet = SongSheetStore(song: SongDescriptor(trackID: "canceled", title: "Song", artist: "Band", duration: 20),
-            service: .init(request: { _, _ in
-                requests += 1
-                if requests == 1 { return await withCheckedContinuation { pending = $0 } }
+            service: .init(status: { _ in
+                statusReads += 1
+                if statusReads == 1 { return await withCheckedContinuation { pending = $0 } }
                 return status("ready", ready: true)
-            }, status: { _ in status("ready", ready: true) }, lyrics: { _ in
+            }, lyrics: { _ in
                 lyricCalls += 1
                 if lyricCalls == 1 { return await withCheckedContinuation { pendingLyrics = $0 } }
                 return lyrics("Fresh words")
@@ -208,9 +231,10 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
     @MainActor static func playbackTests() async throws {
         var instant = ContinuousClock.now
         var phase = 0
+        var requested = 0
         let provider: (Track) -> SongSheetStore = { track in
             SongSheetStore(song: SongDescriptor(track: track), service: .init(
-                request: { _, _ in status("ready", ready: true) }, status: { _ in status("ready", ready: true) },
+                request: { _ in requested += 1; return status("ready", ready: true) }, status: { _ in status("ready", ready: true) },
                 lyrics: { _ in lyrics() }, sleep: { _ in try await Task.sleep(for: .seconds(10)) }))
         }
         let player = SpotifyNowPlaying(service: .init(current: {
@@ -267,20 +291,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(limited.connectionMessage == nil, "A recovered Spotify request clears the error in place")
         limited.reset()
 
-        var requested: [String] = []
-        var queued = 0
-        let upcoming: [Track] = decode([["id": "two", "name": "Next", "artists": [["name": "Band"]], "album": ["name": "Album"], "duration_ms": 180000],
-                                        ["id": "three", "name": "After", "artists": [["name": "Band"]], "album": ["name": "Album"], "duration_ms": 200000]])
-        let ahead = SpotifyNowPlaying(service: .init(current: { playback() }, seek: { _ in },
-            sleep: { _ in try await Task.sleep(for: .milliseconds(20)) },
-            queue: { queued += 1; return upcoming },
-            request: { requested.append($0.trackID) }), sheetProvider: provider)
-        ahead.resume()
-        try await waitFor { requested.count == 2 }
-        try await Task.sleep(for: .milliseconds(80))
-        check(requested == ["two", "three"], "The next tracks are analyzed while the current one plays")
-        check(queued == 1, "The queue is read once per song, not on every poll")
-        ahead.reset()
+        check(requested == 0, "Playing a song never requests its analysis")
         try await liveFlowTests()
     }
 
@@ -294,7 +305,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         let provider: (Track) -> SongSheetStore = { track in
             if let existing = documents[track.id] { return existing }
             let store = SongSheetStore(song: SongDescriptor(track: track), service: .init(
-                request: { _, _ in status("processing") },
+                request: { _ in status("processing") },
                 status: { _ in polls += 1; return status(polls < readyAfter ? "processing" : "ready", ready: polls >= readyAfter) },
                 lyrics: { _ in lyrics() }, sleep: { _ in try await Task.sleep(for: .milliseconds(25)) }))
             documents[track.id] = store
