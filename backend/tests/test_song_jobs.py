@@ -1,4 +1,3 @@
-import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import json
 
@@ -122,15 +121,6 @@ def test_exhausted_jobs_stop_retrying_until_user_retries(cache, monkeypatch):
     assert jobs.get('song')['state'] == 'failed'
     jobs.request(song, retry=True)
     assert jobs.claim()['attempts'] == 1
-
-
-def test_legacy_analysis_request_queues_whole_song_instead_of_unknown_offset_preview(cache, monkeypatch):
-    monkeypatch.setattr(main, '_itunes_lookup', lambda *args: pytest.fail('must not analyze a preview'))
-    with pytest.raises(HTTPException) as error:
-        asyncio.run(main.analyze_track('song', None, 'Song', 'Band', 200, None))
-    assert error.value.status_code == 202
-    assert main.song_status('song')['job']['state'] == 'queued'
-    assert not list(cache.glob('track-*.json'))
 
 
 @pytest.mark.parametrize('failure', [False, True])

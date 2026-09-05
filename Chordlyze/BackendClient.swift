@@ -126,16 +126,6 @@ struct BackendError: LocalizedError {
 }
 
 enum BackendClient {
-    /// Saved analysis for a track, by any source; the ISRC lets the backend
-    /// find an analysis saved under another id for the same recording.
-    /// nil when none is saved.
-    static func cachedAnalysis(trackID: String, isrc: String? = nil) async throws -> ChordAnalysis? {
-        var comps = URLComponents(url: Config.backendBaseURL.appendingPathComponent("analysis/track/\(trackID)"),
-                                  resolvingAgainstBaseURL: false)!
-        if let isrc { comps.queryItems = [.init(name: "isrc", value: isrc)] }
-        return try await fetch(URLRequest(url: comps.url!))
-    }
-
     struct LibraryItem: Decodable, Identifiable {
         let trackId: String
         let title: String?
@@ -198,60 +188,6 @@ enum BackendClient {
         if let album { comps.queryItems?.append(.init(name: "album", value: album)) }
         return try await fetch(URLRequest(url: comps.url!, cachePolicy: .reloadIgnoringLocalCacheData,
                                           timeoutInterval: 50))
-    }
-
-    /// Chords for a song with no audio from the device: the saved analysis
-    /// when there is one, else a fresh one from the 30 s iTunes preview
-    /// (the ingest worker upgrades it to the whole song later). nil when the
-    /// song is found nowhere.
-    static func analyzeTrack(trackID: String, isrc: String?,
-                             title: String?, artist: String?,
-                             durationMs: Int? = nil, itunesID: Int? = nil) async throws -> ChordAnalysis? {
-        var req = URLRequest(url: Config.backendBaseURL.appendingPathComponent("analyze_track"))
-        req.httpMethod = "POST"
-        let boundary = "chordlyze-\(UUID().uuidString)"
-        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        req.timeoutInterval = 180
-        var body = Data()
-        let fields: [(String, String?)] = [("track_id", trackID), ("isrc", isrc),
-                                           ("title", title), ("artist", artist),
-                                           ("duration", durationMs.map { String(Double($0) / 1000) }),
-                                           ("itunes_id", itunesID.map(String.init))]
-        for (name, value) in fields {
-            guard let value else { continue }
-            body.append("--\(boundary)\r\n".data(using: .utf8)!)
-            body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".data(using: .utf8)!)
-        }
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
-        req.httpBody = body
-        return try await fetch(req)
-    }
-
-    /// Same, for a Spotify track.
-    static func analyzeTrack(_ track: Track) async throws -> ChordAnalysis? {
-        try await analyzeTrack(trackID: track.id, isrc: track.isrc,
-                               title: track.name, artist: track.artistNames,
-                               durationMs: track.durationMs)
-    }
-
-    /// `operation` again on a transport or 5xx failure, with a short pause
-    /// between tries; a nil (404) result returns at once.
-    static func retrying<T>(attempts: Int = 3,
-                            _ operation: () async throws -> T?) async throws -> T? {
-        var attempt = 1
-        while true {
-            do {
-                return try await operation()
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                if Task.isCancelled { throw CancellationError() }
-                if let error = error as? BackendError, error.status < 500 && error.status != 429 { throw error }
-                if attempt >= attempts { throw error }
-                attempt += 1
-                try await Task.sleep(for: .seconds(2 * attempt))
-            }
-        }
     }
 
     /// nil on 404; throws BackendError on any other non-200 response.

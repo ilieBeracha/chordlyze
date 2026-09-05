@@ -2,7 +2,6 @@
 
 POST /song/request            — request or retrieve a complete song chart.
 GET  /song/{id}               — song metadata, chart and processing status.
-POST /analyze_track           — compatibility route; queues a full chart.
 POST /analysis/submit         — authenticated, leased worker publication.
 GET  /analysis/track/{id}     — saved analysis for a track (or its ISRC twin).
 GET  /lyrics                  — time-synced lyrics from LRCLIB.
@@ -148,62 +147,6 @@ def _cached_by_isrc(track_id: str, isrc: str | None,
 
 
 # MARK: - iTunes preview analysis
-
-def _itunes_query(url: str) -> list[dict]:
-    with urllib.request.urlopen(url, timeout=15) as resp:
-        results = json.loads(resp.read()).get("results", [])
-    return [r for r in results if r.get("previewUrl")]
-
-
-def _itunes_lookup(isrc: str | None, title: str | None, artist: str | None,
-                   itunes_id: int | None = None) -> dict | None:
-    """Find a song on iTunes; returns the first result dict or None.
-
-    An iTunes track id (from the app's own iTunes search) is exact. The
-    public lookup-by-ISRC rarely resolves, so title+artist search is the
-    reliable path otherwise; ISRC is tried first as a free shot.
-    """
-    if itunes_id:
-        songs = _itunes_query(f"https://itunes.apple.com/lookup?id={itunes_id}&entity=song")
-        if songs:
-            return songs[0]
-    if isrc:
-        songs = _itunes_query(
-            f"https://itunes.apple.com/lookup?isrc={urllib.parse.quote(isrc)}&entity=song")
-        if songs:
-            return songs[0]
-    if title:
-        term = urllib.parse.quote(f"{title} {artist or ''}".strip())
-        songs = _itunes_query(
-            f"https://itunes.apple.com/search?term={term}&entity=song&limit=1")
-        if songs:
-            return songs[0]
-    return None
-
-
-@app.post("/analyze_track")
-async def analyze_track(
-    track_id: str = Form(...),
-    isrc: str | None = Form(default=None),
-    title: str | None = Form(default=None),
-    artist: str | None = Form(default=None),
-    duration: float | None = Form(default=None),
-    itunes_id: int | None = Form(default=None),
-) -> dict:
-    """Compatibility route: queue a complete chart; never present a preview as a song."""
-    if not title:
-        path = _track_cache_path(track_id)
-        if path.exists():
-            saved = _read_analysis(path)
-            title, artist = saved.get("title"), artist or saved.get("artist")
-    if not title:
-        raise HTTPException(422, "song title is required")
-    result = request_song(SongRequest(track_id=track_id, title=title, artist=artist or "",
-                                      duration=duration, isrc=isrc, itunes_id=itunes_id))
-    if result["analysis"] is not None:
-        return result["analysis"]
-    raise HTTPException(202, "Full-song analysis queued. The updated song sheet follows its progress automatically.")
-
 
 # MARK: - Off-server submission
 

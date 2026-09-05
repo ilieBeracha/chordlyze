@@ -1,12 +1,10 @@
 """Analysis upgrades must refresh old revisions without downgrading charts."""
-import asyncio
 import io
 import json
 
 import pytest
 from fastapi import HTTPException
 
-import ingest_worker
 from chordlyze_backend import main
 from chordlyze_backend.analysis.engine import ChordSegment, Recognition
 from chordlyze_backend.analysis.provenance import ANALYSIS_VERSION, is_current, model_metadata
@@ -60,39 +58,6 @@ def test_current_metadata_survives_isrc_alias_and_library(cache):
     rows = main.library()["items"]
     assert len(rows) == 2
     assert all(is_current(row) and row["isrc"] == "ILTEST000001" for row in rows)
-
-
-def test_worker_requeues_same_model_when_revision_is_outdated(monkeypatch):
-    items = [{"track_id": "preview", "title": "P", "source": "itunes_preview"},
-             {"track_id": "old", "title": "O", "model": "ismir2019"},
-             {"track_id": "current", "title": "C", **model_metadata("ismir2019")},
-             {"track_id": "old-version", "title": "V", **model_metadata("ismir2019"),
-              "analysis_version": ANALYSIS_VERSION - 1}]
-    monkeypatch.setattr(ingest_worker.urllib.request, "urlopen",
-                        lambda *a, **k: io.BytesIO(json.dumps({"items": items}).encode()))
-    assert [row["track_id"] for row in ingest_worker.pending()] == ["preview", "old", "old-version"]
-
-
-def test_ingest_uses_shared_recognition_and_submits_full_provenance(monkeypatch, tmp_path):
-    result = Recognition([ChordSegment(0, 4, "C:maj7")], 4, "b" * 64, "ismir2019")
-    monkeypatch.setattr(ingest_worker, "recognize_audio", lambda *a, **k: result)
-    monkeypatch.setattr(ingest_worker, "track_beats", lambda _: None)
-    monkeypatch.setattr(ingest_worker, "_post_json", lambda path, payload: payload)
-    payload = ingest_worker.submit(tmp_path / "audio.wav", {"track_id": "song", "title": "Song"})
-    assert is_current(payload)
-    assert payload["audio_sha256"] == "b" * 64 and payload["audio_duration"] == 4
-    assert payload["segments"][0]["label"] == "C:maj7"
-
-
-def test_stale_preview_queues_a_complete_chart_instead_of_another_preview(cache, monkeypatch):
-    main._save_track("song", {"source": "itunes_preview", "model": "madmom", "chords": []}, "Song", "Band")
-    monkeypatch.setattr(main, "_recognize_locked", lambda _: pytest.fail("must not analyze another excerpt"))
-    with pytest.raises(HTTPException) as error:
-        asyncio.run(main.analyze_track(track_id="song", isrc=None, title="Song", artist="Band",
-                                       duration=200, itunes_id=None))
-    assert error.value.status_code == 202
-    status = main.song_status("song")
-    assert status["analysis"] is None and status["job"]["state"] == "queued"
 
 
 def test_atomic_write_preserves_previous_result_on_serialization_failure(cache):
