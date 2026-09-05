@@ -17,6 +17,8 @@ struct ChordLyricLine: View {
     var style: ChordRowView.Style = .live
     /// Live: this is the line being sung.
     var active = false
+    /// No chord is known for this line yet (not merely held from the previous row).
+    var pending = false
     var onChordTap: ((String) -> Void)? = nil
     var onLyricTap: (() -> Void)? = nil
 
@@ -29,7 +31,7 @@ struct ChordLyricLine: View {
                     if hasChords {
                         chordRow(token.chords)
                             .frame(minHeight: style == .sheet ? 28 : 38, alignment: .bottomLeading)
-                    } else if token.id == 0 {
+                    } else if token.id == 0, pending {
                         Text("—")
                             .font(style.chordFont)
                             .foregroundStyle(Palette.tertiary)

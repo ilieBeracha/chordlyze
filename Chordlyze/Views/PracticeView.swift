@@ -68,7 +68,7 @@ struct PracticeView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .task { await songStore.observe() }
+        .observes(songStore)
         .onChange(of: songStore.analysis) { _, current in
             if current != analysis {
                 abandon()

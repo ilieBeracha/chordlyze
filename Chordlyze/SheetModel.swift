@@ -1,6 +1,7 @@
 import Foundation
 
-/// One timeline for every surface. Held chords repeat above each lyric line.
+/// One timeline for every surface. A chord is shown once, where it starts;
+/// a row never repeats the chord still sounding from the previous row.
 /// Blank LRC timestamps preserve instrumental breaks.
 enum SheetModel {
     struct Event: Identifiable, Equatable {
@@ -19,15 +20,18 @@ enum SheetModel {
         let wordIndex: Int?
         var id: Double { event.start }
     }
-    /// `chords`: the song has lyrics, but without timing; rows carry chords only.
-    enum Kind: Equatable { case lyric, instrumental, uncovered, chords }
+    enum Kind: Equatable { case lyric, instrumental, uncovered }
     struct Row: Identifiable {
         let start: Double
         let end: Double
         let kind: Kind
         let text: String
         let words: [WordStamp]?
+        /// Chord changes inside this row, in time order.
         let chords: [Placed]
+        /// The chord that started in an earlier row and is still sounding at
+        /// this row's start. Never drawn; it only tells the row it has chords.
+        let held: Event?
         var id: Double { start }
         func contains(_ time: Double) -> Bool { time >= start && time < end }
         var isInstrumental: Bool { kind == .instrumental }
@@ -51,12 +55,8 @@ enum SheetModel {
         rows.first { $0.contains(time) }
     }
 
-    /// `untimedLyrics`: lyrics exist but carry no timing, so no lyric rows are
-    /// built and blank rows are plain chord rows rather than instrumentals.
-    static func build(analysis: ChordAnalysis?, lines: [LyricLine], duration: Double?,
-                      untimedLyrics: Bool = false) -> [Row] {
+    static func build(analysis: ChordAnalysis?, lines: [LyricLine], duration: Double?) -> [Row] {
         let events = events(analysis)
-        let blank: Kind = untimedLyrics ? .chords : .instrumental
         let coverage = analysis?.isPreview == false ? analysis?.coverageEnd ?? 0 : 0
         var unique: [Double: LyricLine] = [:]
         for line in lines where line.time.isFinite && line.time >= 0 {
@@ -70,7 +70,7 @@ enum SheetModel {
 
         func append(start: Double, end: Double, text: String = "", words: [WordStamp]? = nil) {
             guard end > start else { return }
-            let kind: Kind = start >= coverage ? .uncovered : (text.isEmpty ? blank : .lyric)
+            let kind: Kind = start >= coverage ? .uncovered : (text.isEmpty ? .instrumental : .lyric)
             // A catalog duration a fraction longer than the analyzed audio is not a pending part.
             if kind == .uncovered, end - start < 1 { return }
             // A lyric line stays intact. Eight-second splits previously lost words.
@@ -82,7 +82,7 @@ enum SheetModel {
                     let next = min(end, cursor + rowLength, cursor < coverage ? coverage : end)
                     guard next > cursor else { break }
                     rows.append(place(events, start: cursor, end: next,
-                                      kind: cursor >= coverage ? .uncovered : blank, text: "", words: nil))
+                                      kind: cursor >= coverage ? .uncovered : .instrumental, text: "", words: nil))
                     cursor = next
                 }
             }
@@ -110,7 +110,8 @@ enum SheetModel {
     private static func place(_ events: [Event], start: Double, end: Double, kind: Kind,
                               text: String, words: [WordStamp]?) -> Row {
         let tokens = text.split(whereSeparator: \.isWhitespace).map(String.init)
-        let placed = events.filter { $0.end > start && $0.start < end }.map { event in
+        let held = events.first { $0.start < start && $0.end > start }
+        let placed = events.filter { $0.start >= start && $0.start < end }.map { event in
             let position = max(0, (event.start - start) / max(end - start, 0.001))
             let wordIndex: Int?
             if let words, !words.isEmpty {
@@ -131,6 +132,6 @@ enum SheetModel {
             } else { wordIndex = nil }
             return Placed(event: event, position: position, wordIndex: wordIndex)
         }
-        return Row(start: start, end: end, kind: kind, text: text, words: words, chords: placed)
+        return Row(start: start, end: end, kind: kind, text: text, words: words, chords: placed, held: held)
     }
 }

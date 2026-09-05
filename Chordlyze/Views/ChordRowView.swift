@@ -3,7 +3,8 @@ import SwiftUI
 /// One timeline row — lyric line, instrumental stretch, or unanalyzed part —
 /// drawn the same way in the sheet and the live view. Chords sit above the
 /// word they start on when the lyrics carry word times; otherwise they are
-/// spread across the row in proportion to time.
+/// spread across the row in proportion to time. A chord held over from the
+/// previous row is not drawn again.
 struct ChordRowView: View {
     enum Style {
         case sheet
@@ -43,7 +44,8 @@ struct ChordRowView: View {
         VStack(alignment: rtl ? .trailing : .leading, spacing: style == .sheet ? 4 : 12) {
             if !row.text.isEmpty {
                 ChordLyricLine(text: row.text, chords: row.chords, words: row.words?.map(\.text), transposeBy: transposeBy,
-                               playhead: playhead, style: style, active: active, onChordTap: onChordTap, onLyricTap: onLyricTap)
+                               playhead: playhead, style: style, active: active, pending: row.chords.isEmpty && row.held == nil,
+                               onChordTap: onChordTap, onLyricTap: onLyricTap)
                     .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
             } else {
                 timedRow
