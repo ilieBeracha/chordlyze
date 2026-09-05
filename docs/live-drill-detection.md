@@ -42,6 +42,8 @@ Thresholds are evidence gates, not calibrated probabilities. The UI therefore di
 
 `ChordDrillListener.swift` assigns a generation to each session. Canceled permission requests and callbacks from old workers cannot update a replacement session. Audio interruptions, route changes and configuration changes stop the drill with a restart message. Normal completion removes the tap and flushes the last queued audio before reading the score. Cancellation discards pending audio. Each worker owns its FFT and storage until its background work finishes.
 
+Invalid input records failure synchronously under the delivery-state lock before scheduling its failure notification. A simultaneous finish cannot return an earlier valid snapshot, and a canceled worker cannot produce a completed score. This exceptional failure path takes the short state lock; normal microphone buffer offers remain nonblocking.
+
 `DrillView.swift` guards repeated starts, cancels on navigation/backgrounding, and uses a monotonic countdown. Previous best scores use a separate `drillBest-v2-…` key because the old scoring behavior could award false changes. Existing saved scores are preserved under their old keys.
 
 ## Reproduce
@@ -61,7 +63,7 @@ The benchmark compiles and invokes the production Swift core, integrates accepte
 Validation on 5 September 2026:
 
 - 102 detector checks: wrong chords, single notes, dyads, broadband noise, silence, quiet audio, ±30-cent tuning, unequal string tuning, strumming/decay, extended qualities, transitions, rests, timestamp gaps, restarts, malformed configuration and buffer-size invariance.
-- 39 audio-worker checks: independent copies, queue limits, overload timestamps, cancellation, pending UI suppression, final flush and invalid-input reporting.
+- 43 audio-worker checks: independent copies, queue limits, overload timestamps, cancellation, pending UI suppression, final flush, invalid-input reporting and failure at completion.
 - Six additional input-format checks at 32 and 96 kHz.
 - Three benchmark tests: duration weighting, precision/coverage denominators and chord-label semantics.
 - iOS simulator build passed; generated bundle version remains 0.4.0 (build 2).

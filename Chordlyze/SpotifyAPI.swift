@@ -138,13 +138,16 @@ final class SpotifyAPI: ObservableObject {
     func currentlyPlaying() async throws -> CurrentlyPlaying? {
         let token = try await auth.validToken()
         var req = URLRequest(url: URL(string: "https://api.spotify.com/v1/me/player/currently-playing")!)
+        req.timeoutInterval = 12
+        req.cachePolicy = .reloadIgnoringLocalCacheData
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         if status == 204 { return nil }
         guard status == 200 else {
             throw NSError(domain: "SpotifyAPI", code: status,
-                          userInfo: [NSLocalizedDescriptionKey: "Spotify returned \(status)"])
+                          userInfo: [NSLocalizedDescriptionKey: "Spotify returned \(status)",
+                                     "retryAfter": Double((response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After") ?? "") ?? 5])
         }
         return try JSONDecoder().decode(CurrentlyPlaying.self, from: data)
     }

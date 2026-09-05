@@ -221,17 +221,10 @@ struct PlaylistsView: View {
             }
         }
         .buttonStyle(.plain)
-        .disabled(nowPlaying.analysis == nil)
     }
 
     private func chordSheetDestination(_ track: Track) -> some View {
-        Group {
-            if let analysis = nowPlaying.analysis {
-                AnalysisTabsView(analysis: analysis, title: track.name, artist: track.artistNames,
-                                 album: track.album.name, trackID: track.id,
-                                 trackDuration: track.durationMs.map { Double($0) / 1000 })
-            }
-        }
+        ChordView(track: track)
     }
 
     private var actionRow: some View {
@@ -258,9 +251,7 @@ struct PlaylistsView: View {
                     .background(Capsule().fill(Color.white.opacity(0.14)))
             }
             .buttonStyle(.plain)
-            .disabled(nowPlaying.analysis == nil)
-            .opacity(nowPlaying.analysis == nil ? 0.5 : 1)
-        }
+            }
     }
 
     // MARK: - Stats

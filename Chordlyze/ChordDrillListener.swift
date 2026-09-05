@@ -89,7 +89,12 @@ final class ChordDrillListener: ObservableObject {
         let final = await finishingWorker?.finish()
         try Task.checkCancellation()
         guard token == generation else { throw CancellationError() }
-        if let final { apply(final) }
+        guard let final else {
+            stop()
+            throw NSError(domain: "Drill", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "The microphone did not provide a complete audio stream. Start the drill again."])
+        }
+        apply(final)
         worker = nil
         generation &+= 1
         current = nil

@@ -82,6 +82,7 @@ final class DrillAudioWorker: @unchecked Sendable {
     private var deliveryScheduled = false
     private var active = true
     private var lastSnapshot: DrillSnapshot?
+    private var inputFailed = false // Protected by deliveryLock.
     private let onSnapshot: @MainActor @Sendable (DrillSnapshot) -> Void
     private let onFailure: @MainActor @Sendable () -> Void
 
@@ -113,7 +114,16 @@ final class DrillAudioWorker: @unchecked Sendable {
         if inbox.offer(samples, sampleTime: sampleTime) { source.or(data: 1) }
     }
 
-    func invalidateFormat() { source.or(data: 2) }
+    func invalidateFormat() {
+        // Record failure before scheduling its callback: finish may already be
+        // queued, and must not return the last good score from a broken stream.
+        deliveryLock.lock()
+        let notify = active && !inputFailed
+        inputFailed = true
+        latest = nil
+        deliveryLock.unlock()
+        if notify { source.or(data: 2) }
+    }
 
     /// The caller removes the audio tap first, then flushes the final queued
     /// buffers so a change near the end of the drill is not lost at shutdown.
@@ -121,7 +131,9 @@ final class DrillAudioWorker: @unchecked Sendable {
         await withCheckedContinuation { continuation in
             queue.async { [self] in
                 drain()
-                let final = lastSnapshot
+                deliveryLock.lock()
+                let final = active && !inputFailed ? lastSnapshot : nil
+                deliveryLock.unlock()
                 cancel()
                 continuation.resume(returning: final)
             }
@@ -158,7 +170,7 @@ final class DrillAudioWorker: @unchecked Sendable {
 
     private func publish(_ snapshot: DrillSnapshot) {
         deliveryLock.lock()
-        guard active else { deliveryLock.unlock(); return }
+        guard active && !inputFailed else { deliveryLock.unlock(); return }
         latest = snapshot
         let schedule = !deliveryScheduled
         deliveryScheduled = true
@@ -170,7 +182,7 @@ final class DrillAudioWorker: @unchecked Sendable {
 
     @MainActor private func deliver() {
         deliveryLock.lock()
-        let snapshot = active ? latest : nil
+        let snapshot = active && !inputFailed ? latest : nil
         latest = nil
         deliveryScheduled = false
         deliveryLock.unlock()

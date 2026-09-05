@@ -1,11 +1,52 @@
 import Foundation
 
-struct Difficulty: Decodable {
+struct SongDescriptor: Codable, Hashable, Identifiable {
+    let trackID: String
+    var title: String
+    var artist: String
+    var album: String? = nil
+    var duration: Double? = nil
+    var isrc: String? = nil
+    var artwork: String? = nil
+    var itunesID: Int? = nil
+    var id: String { trackID }
+    enum CodingKeys: String, CodingKey {
+        case trackID = "track_id", title, artist, album, duration, isrc, artwork
+        case itunesID = "itunes_id"
+    }
+}
+
+struct SongStatus: Decodable {
+    struct Metadata: Decodable {
+        let title: String?
+        let artist: String?
+        let album: String?
+        let duration: Double?
+    }
+    struct Job: Decodable {
+        let state: String
+        let stage: String?
+        let message: String?
+        let workerOnline: Bool
+        enum CodingKeys: String, CodingKey {
+            case state, stage, message, workerOnline = "worker_online"
+        }
+    }
+    let song: Metadata?
+    let analysis: ChordAnalysis?
+    let job: Job
+    let libraryGeneration: String
+    enum CodingKeys: String, CodingKey {
+        case song, analysis, job, libraryGeneration = "library_generation"
+    }
+}
+
+struct Difficulty: Decodable, Equatable {
     let score: Double  // 1…10
     let level: String  // "easy" | "medium" | "hard"
 }
 
-struct ChordAnalysis: Decodable {
+struct ChordAnalysis: Decodable, Equatable {
     let key: String?
     let keyConfidence: Double?
     let chords: [ChordSegment]
@@ -16,8 +57,11 @@ struct ChordAnalysis: Decodable {
     let difficulty: Difficulty?
     /// Beat grid on the chord timeline; nil for analyses made before beat tracking.
     let tempo: Tempo?
+    let audioDuration: Double?
+    let songDuration: Double?
+    let album: String?
 
-    struct Tempo: Decodable {
+    struct Tempo: Decodable, Equatable {
         let bpm: Double
         let beats: [Double]
     }
@@ -26,22 +70,23 @@ struct ChordAnalysis: Decodable {
         case key
         case keyConfidence = "key_confidence"
         case analyzedEnd = "analyzed_end"
-        case chords, source, difficulty, tempo
+        case audioDuration = "audio_duration", songDuration = "song_duration"
+        case chords, source, difficulty, tempo, album
     }
 
     /// Last second the chords cover. Playback past it has no chord information.
-    var coverageEnd: Double { analyzedEnd ?? chords.last?.end ?? 0 }
+    var coverageEnd: Double { audioDuration ?? analyzedEnd ?? chords.last?.end ?? 0 }
     /// 30 s excerpt at an unknown offset in the song: its chords cannot be
     /// placed on the song's timeline at all.
     var isPreview: Bool { source == "itunes_preview" }
 }
 
-struct WordStamp: Decodable {
+struct WordStamp: Decodable, Equatable {
     let time: Double
     let text: String
 }
 
-struct LyricLine: Decodable, Identifiable {
+struct LyricLine: Decodable, Identifiable, Equatable {
     let time: Double
     let text: String
     /// Per-word timestamps when the lyrics source has enhanced (A2) LRC.
@@ -49,7 +94,7 @@ struct LyricLine: Decodable, Identifiable {
     var id: Double { time }
 }
 
-struct ChordSegment: Decodable, Identifiable {
+struct ChordSegment: Decodable, Identifiable, Equatable {
     let start: Double
     let end: Double
     let label: String
@@ -94,9 +139,12 @@ enum BackendClient {
         let key: String?
         let artwork: String?
         let difficulty: Difficulty?
+        let album: String?
+        let duration: Double?
+        let isrc: String?
         var id: String { trackId }
         enum CodingKeys: String, CodingKey {
-            case trackId = "track_id", title, artist, key, artwork, difficulty
+            case trackId = "track_id", title, artist, key, artwork, difficulty, album, duration, isrc
         }
 
         /// iTunes thumb upscaled for retina 46pt rows.
@@ -110,21 +158,22 @@ enum BackendClient {
     static func library() async throws -> [LibraryItem] {
         struct Page: Decodable { let items: [LibraryItem] }
         let url = Config.backendBaseURL.appendingPathComponent("library")
-        let (data, _) = try await URLSession.shared.data(from: url)
-        return try JSONDecoder().decode(Page.self, from: data).items
+        let page: Page? = try await fetch(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
+        return page?.items ?? []
     }
 
-    struct LyricsResult: Decodable {
+    struct LyricsResult: Decodable, Equatable {
         let lines: [LyricLine]
         /// False when line times were synthesized from unsynced lyrics.
         let synced: Bool
         /// "exact" | "fuzzy" — how the song was matched on the lyrics source.
         let matched: String?
+        let instrumental: Bool?
 
         /// Barely-visible disclosure for non-exact lyrics (beta).
         var betaNote: String? {
-            if !synced { return "lyrics not synced — not from Spotify · beta" }
-            if matched == "fuzzy" { return "lyrics matched externally — not from Spotify · beta" }
+            if !synced { return "Lyrics timing is approximate." }
+            if matched == "fuzzy" { return "Lyrics matched by song, artist and duration." }
             return nil
         }
     }
@@ -135,13 +184,16 @@ enum BackendClient {
     /// the sheet and the live view must ask with the same values or they
     /// get different answers.
     static func lyrics(title: String, artist: String,
-                       duration: Double, album: String?) async throws -> LyricsResult? {
+                       duration: Double?, album: String?) async throws -> LyricsResult? {
         var comps = URLComponents(url: Config.backendBaseURL.appendingPathComponent("lyrics"),
                                   resolvingAgainstBaseURL: false)!
-        comps.queryItems = [.init(name: "title", value: title), .init(name: "artist", value: artist),
-                            .init(name: "duration", value: String(Int(duration)))]
+        comps.queryItems = [.init(name: "title", value: title), .init(name: "artist", value: artist)]
+        if let duration, duration.isFinite, duration > 0 {
+            comps.queryItems?.append(.init(name: "duration", value: String(duration)))
+        }
         if let album { comps.queryItems?.append(.init(name: "album", value: album)) }
-        return try await fetch(URLRequest(url: comps.url!))
+        return try await fetch(URLRequest(url: comps.url!, cachePolicy: .reloadIgnoringLocalCacheData,
+                                          timeoutInterval: 50))
     }
 
     /// Chords for a song with no audio from the device: the saved analysis
@@ -189,6 +241,8 @@ enum BackendClient {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
+                if Task.isCancelled { throw CancellationError() }
+                if let error = error as? BackendError, error.status < 500 && error.status != 429 { throw error }
                 if attempt >= attempts { throw error }
                 attempt += 1
                 try await Task.sleep(for: .seconds(2 * attempt))
@@ -205,6 +259,29 @@ enum BackendClient {
             throw BackendError(status: status, detail: String(data: data, encoding: .utf8) ?? "")
         }
         return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    static func requestSong(_ song: SongDescriptor, retry: Bool = false) async throws -> SongStatus {
+        var request = URLRequest(url: Config.backendBaseURL.appendingPathComponent("song/request"),
+                                 cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var payload = try JSONSerialization.jsonObject(with: JSONEncoder().encode(song)) as! [String: Any]
+        payload["retry"] = retry
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        guard let result: SongStatus = try await fetch(request) else {
+            throw BackendError(status: 404, detail: "Song request unavailable")
+        }
+        return result
+    }
+
+    static func songStatus(trackID: String) async throws -> SongStatus {
+        let request = URLRequest(url: Config.backendBaseURL.appendingPathComponent("song/\(trackID)"),
+                                 cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+        guard let result: SongStatus = try await fetch(request) else {
+            throw BackendError(status: 404, detail: "Song request unavailable")
+        }
+        return result
     }
 
     // MARK: - Practice

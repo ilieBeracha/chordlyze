@@ -1,11 +1,11 @@
+import Combine
 import Foundation
 
-/// Polls Spotify for what the account is playing right now — no mic needed.
-/// Fetches (or triggers) the chord analysis for each track as it starts.
+/// Spotify state polling is independent of lyric fetching and recognition.
+/// Restarts invalidate old requests; transient failures recover in place.
 @MainActor
 final class SpotifyNowPlaying: ObservableObject {
     static let shared = SpotifyNowPlaying()
-
     struct Playing: Equatable {
         let track: Track
         let isPlaying: Bool
@@ -13,138 +13,169 @@ final class SpotifyNowPlaying: ObservableObject {
             l.track.id == r.track.id && l.isPlaying == r.isPlaying
         }
     }
-
+    struct Service {
+        var current: () async throws -> SpotifyAPI.CurrentlyPlaying?
+        var seek: (Double) async throws -> Void
+        var sleep: (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
+    }
     @Published private(set) var playing: Playing?
-    /// Analysis of `playing`'s track; nil while it is being fetched. Never
-    /// an older track's: it is cleared the moment the track changes.
     @Published private(set) var analysis: ChordAnalysis?
-    /// Analysis was attempted for the current track and nothing came back.
     @Published private(set) var analysisFailed = false
-    /// Token lacks the playback scope (or Spotify refused) — reconnect in Profile.
     @Published private(set) var needsReauth = false
-
-    /// Playback position `offset` was true at monotonic instant `at`.
-    /// (Spotify's own `timestamp` field is when its state last changed, not
-    /// when `progress_ms` was sampled, so it is not used for timing.)
-    private var anchor: (offset: TimeInterval, at: ContinuousClock.Instant)?
+    @Published private(set) var connectionMessage: String?
+    private var anchor: (offset: Double, at: ContinuousClock.Instant)?
+    private var lastSuccess: ContinuousClock.Instant?
     private var pollTask: Task<Void, Never>?
-    /// Track id the analysis (or the fetch in flight) belongs to.
-    private var analysisKey: String?
-    private var analysisTask: Task<Void, Never>?
-    private var api: SpotifyAPI?
-    /// A fresh report within this much of the running prediction is poll
-    /// jitter, not new information: keep the anchor so the display doesn't hop.
-    private static let jitterTolerance: TimeInterval = 0.4
+    private var sheetTask: Task<Void, Never>?
+    private var subscriptions = Set<AnyCancellable>()
+    private var sheetID: String?
+    private var service: Service?
+    private var generation = 0
+    private var now: () -> ContinuousClock.Instant
+    private var sheetProvider: @MainActor (Track) -> SongSheetStore
 
-    /// Begin (or resume) polling. Safe to call repeatedly.
+    init(service: Service? = nil, now: @escaping () -> ContinuousClock.Instant = { .now },
+         sheetProvider: @escaping @MainActor (Track) -> SongSheetStore = { SongSheetStore.shared(for: SongDescriptor(track: $0)) }) {
+        self.service = service
+        self.now = now
+        self.sheetProvider = sheetProvider
+    }
+    var playbackNote: String? {
+        if needsReauth { return "Reconnect Spotify in Profile to resume live follow." }
+        if let connectionMessage { return connectionMessage }
+        if playing?.isPlaying == false { return "Playback paused" }
+        return nil
+    }
     func start(api: SpotifyAPI) {
-        self.api = api
-        guard pollTask == nil else { return }
-        needsReauth = false
-        pollTask = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.poll()
-                if self?.pollTask == nil { break }
-                try? await Task.sleep(for: .seconds(5))
-            }
-        }
+        service = Service(current: { try await api.currentlyPlaying() },
+                          seek: { try await api.seek(toMs: Int($0 * 1000)) })
+        restart()
     }
-
+    func resume() {
+        guard service != nil else { return }
+        restart()
+    }
     func stop() {
-        pollTask?.cancel()
-        pollTask = nil
+        generation += 1
+        pollTask?.cancel(); pollTask = nil
+        sheetTask?.cancel(); sheetTask = nil
+        subscriptions.removeAll()
+        sheetID = nil
     }
-
-    /// Stop and forget everything (sign-out).
     func reset() {
         stop()
-        analysisTask?.cancel()
-        analysisTask = nil
-        analysisKey = nil
+        service = nil
         playing = nil
         anchor = nil
+        lastSuccess = nil
         analysis = nil
         analysisFailed = false
         needsReauth = false
+        connectionMessage = nil
     }
-
-    /// Current playback position; frozen while paused; nil when Spotify has
-    /// not reported one.
-    func livePosition() -> TimeInterval? {
-        position(at: .now)
+    private func restart() {
+        stop()
+        guard let service else { return }
+        needsReauth = false
+        let token = generation
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, generation == token else { return }
+                let delay = await poll(service: service, token: token)
+                guard generation == token, !Task.isCancelled else { return }
+                do { try await service.sleep(delay) } catch { return }
+            }
+        }
     }
-
-    private func position(at instant: ContinuousClock.Instant) -> TimeInterval? {
-        guard let anchor else { return nil }
-        guard playing?.isPlaying == true else { return anchor.offset }
-        return anchor.offset + anchor.at.duration(to: instant).seconds
+    func livePosition() -> TimeInterval? { position(at: now()) }
+    private func position(at instant: ContinuousClock.Instant) -> Double? {
+        guard let anchor, let playing else { return nil }
+        let bound = playing.track.durationMs.map { Double($0) / 1000 } ?? .infinity
+        guard playing.isPlaying else { return min(bound, max(0, anchor.offset)) }
+        // Do not manufacture unbounded playback during a connection loss.
+        let reliableUntil = lastSuccess?.advanced(by: .seconds(15)) ?? instant
+        let elapsed = anchor.at.duration(to: min(instant, reliableUntil)).seconds
+        return min(bound, max(0, anchor.offset + elapsed))
     }
-
-    private func poll() async {
-        guard let api else { return }
+    private func poll(service: Service, token: Int) async -> Double {
         do {
-            let sent = ContinuousClock.now
-            let current = try await api.currentlyPlaying()
-            let received = ContinuousClock.now
+            let sent = now()
+            let current = try await service.current()
+            let received = now()
+            guard !Task.isCancelled, token == generation else { return 2 }
+            lastSuccess = received
+            connectionMessage = nil
             guard let current, let track = current.item else {
                 playing = nil
                 anchor = nil
-                return
+                analysis = nil
+                analysisFailed = false
+                sheetTask?.cancel(); sheetTask = nil
+                subscriptions.removeAll(); sheetID = nil
+                return 3
             }
-            // progress_ms was read somewhere inside the round trip; the midpoint
-            // is the best guess and halves the latency error.
             let sampledAt = sent.advanced(by: sent.duration(to: received) / 2)
             let next = Playing(track: track, isPlaying: current.isPlaying)
             if let ms = current.progressMs {
-                let reported = Double(ms) / 1000
+                let reported = max(0, Double(ms) / 1000)
                 let predicted = playing == next ? position(at: sampledAt) : nil
-                if let predicted, abs(predicted - reported) < Self.jitterTolerance {
-                    // Same track, same state, agrees with the running clock: keep it.
-                } else {
+                if predicted == nil || abs(predicted! - reported) >= 0.4 {
                     anchor = (reported, sampledAt)
                 }
-            } else {
+            } else if playing?.track.id != track.id {
                 anchor = nil
+            } else if playing?.isPlaying != current.isPlaying, let position = position(at: sampledAt) {
+                // Spotify occasionally omits progress during pause/resume.
+                // Freeze/resume the current estimate, never the old sample.
+                anchor = (position, sampledAt)
             }
             playing = next
-            fetchAnalysisIfNeeded(track)
-        } catch let error as NSError where error.code == 401 || error.code == 403 {
-            // Missing scope on an old login (or dev-mode block): stop hammering.
-            needsReauth = true
-            stop()
+            observeSheet(track)
+            return 2
         } catch {
-            // Transient network error or rate limit — keep the last known state.
+            guard !Task.isCancelled, token == generation else { return 2 }
+            let error = error as NSError
+            if error.code == 401 || error.code == 403 {
+                needsReauth = true
+                stop()
+                return 30
+            }
+            if error.code == 429 {
+                connectionMessage = "Spotify is limiting requests. Live follow will reconnect automatically."
+                return max(1, error.userInfo["retryAfter"] as? Double ?? 5)
+            }
+            connectionMessage = "Playback connection interrupted. Reconnecting…"
+            return 3
         }
     }
-
-    /// Jump the account's playback to `seconds`. False when Spotify refuses
-    /// (free account, or token missing the playback scope).
-    func seek(to seconds: Double) async -> Bool {
-        guard let api else { return false }
-        do {
-            try await api.seek(toMs: Int(seconds * 1000))
-            anchor = (seconds, .now)  // optimistic; next poll confirms
-            return true
-        } catch {
-            return false
-        }
-    }
-
-    /// One fetch per track, in its own task: the poll loop never waits on
-    /// it, so a song change is noticed while the previous song is still
-    /// being analyzed, and that stale result is dropped when it arrives.
-    private func fetchAnalysisIfNeeded(_ track: Track) {
-        guard analysisKey != track.id else { return }
-        analysisKey = track.id
-        analysisTask?.cancel()
+    private func observeSheet(_ track: Track) {
+        guard sheetID != track.id else { return }
+        sheetTask?.cancel()
+        subscriptions.removeAll()
+        sheetID = track.id
         analysis = nil
         analysisFailed = false
-        analysisTask = Task { [weak self] in
-            let result = try? await BackendClient.retrying { try await BackendClient.analyzeTrack(track) }
-            guard let self, !Task.isCancelled, self.analysisKey == track.id else { return }
-            self.analysis = result
-            self.analysisFailed = result == nil
-        }
+        let sheet = sheetProvider(track)
+        sheet.$analysis.sink { [weak self] value in
+            guard self?.playing?.track.id == track.id else { return }
+            self?.analysis = value
+        }.store(in: &subscriptions)
+        sheet.$state.sink { [weak self] value in
+            guard self?.playing?.track.id == track.id else { return }
+            self?.analysisFailed = ["failed", "unavailable"].contains(value)
+        }.store(in: &subscriptions)
+        sheetTask = Task { await sheet.observe() }
+    }
+    func seek(to seconds: Double) async -> Bool {
+        guard let service, let trackID = playing?.track.id, seconds.isFinite else { return false }
+        let target = max(0, min(seconds, playing?.track.durationMs.map { Double($0) / 1000 } ?? seconds))
+        do {
+            try await service.seek(target)
+            guard playing?.track.id == trackID else { return false }
+            anchor = (target, now())
+            lastSuccess = now()
+            return true
+        } catch { return false }
     }
 }
 

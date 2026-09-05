@@ -84,15 +84,15 @@ def test_ingest_uses_shared_recognition_and_submits_full_provenance(monkeypatch,
     assert payload["segments"][0]["label"] == "C:maj7"
 
 
-def test_stale_preview_refreshes_on_analysis_request(cache, monkeypatch):
+def test_stale_preview_queues_a_complete_chart_instead_of_another_preview(cache, monkeypatch):
     main._save_track("song", {"source": "itunes_preview", "model": "madmom", "chords": []}, "Song", "Band")
-    monkeypatch.setattr(main, "_itunes_lookup", lambda *a: {"previewUrl": "https://example.test/audio"})
-    monkeypatch.setattr(main.urllib.request, "urlopen", lambda *a, **k: io.BytesIO(b"audio"))
-    monkeypatch.setattr(main, "_recognize_locked", lambda _: (
-        Recognition([ChordSegment(0, 4, "C:maj")], 4, "c" * 64, "madmom"), None))
-    result = asyncio.run(main.analyze_track(track_id="song", isrc=None, title="Song", artist="Band",
-                                           duration=4, itunes_id=None))
-    assert is_current(result) and result["source"] == "itunes_preview"
+    monkeypatch.setattr(main, "_recognize_locked", lambda _: pytest.fail("must not analyze another excerpt"))
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(main.analyze_track(track_id="song", isrc=None, title="Song", artist="Band",
+                                       duration=200, itunes_id=None))
+    assert error.value.status_code == 202
+    status = main.song_status("song")
+    assert status["analysis"] is None and status["job"]["state"] == "queued"
 
 
 def test_atomic_write_preserves_previous_result_on_serialization_failure(cache):

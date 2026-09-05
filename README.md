@@ -5,7 +5,7 @@ SwiftUI iOS app for song chord charts, playback and instrument practice.
 ## Recognition and scoring
 
 - **Full-song charts and recorded practice:** one shared ISMIR2019 five-model ensemble and HMM decoder, supporting sevenths, suspended, diminished and augmented chords, selected extensions, and triad inversions.
-- **iTunes previews:** madmom's major/minor recognizer. Previews have an unknown position in the song and cannot be used as a practice reference. The ingest worker upgrades them to full-song charts.
+- **Unified song sheets:** chords above lyrics in Search, Library, Live and Practice. New requests analyze complete recordings; unknown-offset previews are never aligned to a song. Live follows Spotify automatically.
 - **Live drills:** on-device harmonic note analysis, competing chord hypotheses, explicit uncertainty and sample-timed change counting. Audio work runs in a bounded background queue.
 - **Practice scoring:** exact root/quality against rich charts, flexible bass voicing, measured recording duration, explicit silence, and signed chord-change timing. Legacy charts are scored at their major/minor resolution, disclosed in the report.
 
@@ -32,13 +32,13 @@ PYTHONPATH=. .venv/bin/uvicorn chordlyze_backend.main:app --port 8787
 # Release checks: missing model weights are a failure, never a silent skip.
 CHORDLYZE_REQUIRE_MODELS=1 PYTHONPATH=. .venv/bin/python -m pytest tests/ -q
 
-# Upgrade previews and stale analyses against a local API.
+# Legacy development-only batch against a local API (not production).
 CHORDLYZE_API_URL=http://127.0.0.1:8787 PYTHONPATH=. .venv/bin/python ingest_worker.py --jobs 3
 ```
 
-The ingest worker downloads matching full-track audio with yt-dlp and submits analyzed chords. Its default API is the deployed Fly service; set `CHORDLYZE_API_URL` explicitly for local work. Spotify's API supplies metadata and playback control, not downloadable audio or chord labels.
+The managed on-demand worker downloads matching full-track audio with yt-dlp and submits analyzed chords using authenticated job leases. See the [song-sheet and deployment guide](docs/unified-song-sheet.md) for installation, availability, timing limits and the explicit library reset. The legacy ingest utility below is restricted to development instances without worker authentication. Its default API is the deployed Fly service; set `CHORDLYZE_API_URL` explicitly for local work. Spotify's API supplies metadata and playback control, not downloadable audio or chord labels.
 
-Downloads overlap in at most three jobs by default, while the resident model serializes inference. A shared throttle limits iTunes lookups, and each job owns its temporary audio. Restarting a pass skips entries that are already current; the final summary distinguishes updates, skips and failures.
+Downloads overlap in at most three jobs by default, while the resident model serializes inference. A shared throttle limits iTunes lookups, including retries, and each job owns its temporary audio. Transient HTTP/DNS failures receive up to three attempts; long `Retry-After` delays leave the entry pending. Restarting a pass skips entries that are already current; the final summary distinguishes updates, skips and failures.
 
 ## iOS app
 
@@ -58,6 +58,7 @@ swiftc Chordlyze/Chord.swift Chordlyze/BackendClient.swift \
 /tmp/chordlyze-report-test
 
 bash scripts/test_drill.sh
+bash scripts/test_song_sheet.sh
 ```
 
 The repository is connected to Xcode Cloud's `Default` workflow. After merging into `main`, verify its iOS build and archive checks, then check the processed build in App Store Connect → TestFlight. Availability depends on the workflow's distribution settings and Apple's processing. Local distribution is also possible by archiving and distributing from Xcode with the configured Apple Developer team. The backend must remain reachable.
@@ -69,4 +70,4 @@ docker build -t chordlyze-backend backend
 docker run --rm -p 8787:8080 -v chordlyze-cache:/data chordlyze-backend
 ```
 
-The image includes both recognizers. Recognition loads lazily and the rich worker stays resident across requests. Cache files are saved by track ID and ISRC, with normalized PCM hashes, model revisions and analysis versions for traceability. Old entries remain readable and are queued for upgrade.
+The image includes both recognizers. Recognition loads lazily and the rich worker stays resident across requests. Cache files are saved by track ID and ISRC, with normalized PCM hashes, model revisions and analysis versions for traceability. New song requests use durable on-demand jobs; a library reset rotates its generation and prevents old jobs from restoring cleared analyses.

@@ -14,6 +14,8 @@ struct SearchView: View {
         let trackName: String
         let artistName: String
         let artworkUrl100: String?
+        let collectionName: String?
+        let trackTimeMillis: Int?
         var id: Int { trackId }
         var artworkURL: URL? { artworkUrl100.flatMap(URL.init) }
     }
@@ -97,34 +99,13 @@ struct SearchView: View {
     }
 }
 
-/// Analyzes a searched song (server fetches that exact iTunes track's
-/// preview) and shows the sheet.
+/// Search uses the same complete song sheet as library, live and practice.
 struct SearchAnalysisView: View {
     let song: SearchView.ITunesSong
-    @State private var analysis: ChordAnalysis?
-    @State private var failure: String?
-
     var body: some View {
-        Group {
-            if let analysis {
-                AnalysisTabsView(analysis: analysis, title: song.trackName, artist: song.artistName,
-                                 trackID: "itunes-\(song.trackId)")
-            } else {
-                WaitingView(title: song.trackName, subtitle: song.artistName.uppercased(),
-                            message: failure ?? "Analyzing chords…", spinning: failure == nil)
-            }
-        }
-        .task {
-            do {
-                analysis = try await BackendClient.retrying {
-                    try await BackendClient.analyzeTrack(trackID: "itunes-\(song.trackId)", isrc: nil,
-                                                         title: song.trackName, artist: song.artistName,
-                                                         itunesID: song.trackId)
-                }
-                if analysis == nil { failure = "Chords unavailable for this song." }
-            } catch {
-                failure = "Couldn't reach the chord service: \(error.localizedDescription)"
-            }
-        }
+        AnalysisTabsView(song: SongDescriptor(trackID: "itunes-\(song.trackId)",
+            title: song.trackName, artist: song.artistName, album: song.collectionName,
+            duration: song.trackTimeMillis.map { Double($0) / 1000 },
+            artwork: song.artworkUrl100, itunesID: song.trackId))
     }
 }

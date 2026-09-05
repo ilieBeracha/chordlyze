@@ -151,29 +151,10 @@ struct LibraryView: View {
 
 struct SavedAnalysisView: View {
     let item: BackendClient.LibraryItem
-    @State private var analysis: ChordAnalysis?
-    @State private var failure: String?
-
     var body: some View {
-        Group {
-            if let analysis {
-                AnalysisTabsView(analysis: analysis,
-                                 title: item.title ?? "Unknown song", artist: item.artist ?? "",
-                                 trackID: item.trackId)
-            } else {
-                WaitingView(title: item.title ?? "Unknown song", subtitle: (item.artist ?? "").uppercased(),
-                            message: failure ?? "Loading chords…", spinning: failure == nil)
-            }
-        }
-        .task {
-            do {
-                analysis = try await BackendClient.retrying {
-                    try await BackendClient.cachedAnalysis(trackID: item.trackId)
-                }
-                if analysis == nil { failure = "This analysis is no longer saved." }
-            } catch {
-                failure = "Couldn't load the chords: \(error.localizedDescription)"
-            }
-        }
+        AnalysisTabsView(song: SongDescriptor(trackID: item.trackId, title: item.title ?? "Unknown song",
+            artist: item.artist ?? "", album: item.album, duration: item.duration,
+            isrc: item.isrc, artwork: item.artwork,
+            itunesID: item.trackId.hasPrefix("itunes-") ? Int(item.trackId.dropFirst(7)) : nil))
     }
 }

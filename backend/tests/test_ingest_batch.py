@@ -87,3 +87,52 @@ def test_same_video_downloads_have_independent_files_and_clean_scratch(tmp_path,
 def test_bad_parallelism_is_rejected():
     with pytest.raises(ValueError):
         ingest_worker.run_once([], jobs=0)
+
+
+def test_transient_metadata_errors_retry_with_the_shared_throttle(monkeypatch):
+    import io
+    import urllib.error
+    calls, waits, sleeps = [], [], []
+    responses = [urllib.error.URLError('temporary DNS failure'),
+                 urllib.error.HTTPError('https://example.test', 503, 'busy', {}, None),
+                 io.BytesIO(b'{"results": [{"trackTimeMillis": 200000}]}')]
+    def open_url(url, timeout):
+        calls.append(url)
+        response = responses.pop(0)
+        if isinstance(response, Exception): raise response
+        return response
+    monkeypatch.setattr(ingest_worker.urllib.request, 'urlopen', open_url)
+    monkeypatch.setattr(ingest_worker._LOOKUP_THROTTLE, 'wait', lambda: waits.append(True))
+    monkeypatch.setattr(ingest_worker.time, 'sleep', sleeps.append)
+    assert ingest_worker.itunes_duration('Song', 'Artist') == 200
+    assert len(calls) == len(waits) == 3
+    assert sleeps == [2, 4]
+
+
+def test_submission_retry_preserves_identical_payload(monkeypatch):
+    import io
+    import urllib.error
+    payloads = []
+    def open_url(request, timeout):
+        payloads.append(request.data)
+        if len(payloads) == 1:
+            raise urllib.error.URLError('connection lost')
+        return io.BytesIO(b'{"saved": true}')
+    monkeypatch.setattr(ingest_worker.urllib.request, 'urlopen', open_url)
+    monkeypatch.setattr(ingest_worker.time, 'sleep', lambda _: None)
+    assert ingest_worker._post_json('/analysis/submit', {'track_id': 'song', 'analysis_version': 2}) == {'saved': True}
+    assert payloads[0] == payloads[1]
+
+
+@pytest.mark.parametrize('status,headers', [(401, {}), (403, {}), (429, {'Retry-After': '3600'})])
+def test_permanent_errors_and_long_retry_after_are_not_hammered(monkeypatch, status, headers):
+    import urllib.error
+    calls = []
+    def open_url(request, timeout):
+        calls.append(request)
+        raise urllib.error.HTTPError('https://example.test', status, 'unavailable', headers, None)
+    monkeypatch.setattr(ingest_worker.urllib.request, 'urlopen', open_url)
+    monkeypatch.setattr(ingest_worker.time, 'sleep', lambda _: pytest.fail('must not retry'))
+    with pytest.raises(urllib.error.HTTPError):
+        ingest_worker._read_json('https://example.test', timeout=1)
+    assert len(calls) == 1

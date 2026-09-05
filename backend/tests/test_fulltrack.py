@@ -36,3 +36,16 @@ def test_none_when_no_duration_within_tolerance():
     entries = [_e(215, "Song", "Band"), _e(190, "Song", "Band")]
     assert pick_candidate(entries, "Song", "Band", 200) is None
     assert pick_candidate(entries, "Song", "Band", 214)["duration"] == 215
+
+
+def test_wrong_artist_same_title_and_duration_is_rejected():
+    assert pick_candidate([_e(200, 'Song', 'Unrelated Artist - Topic')], 'Song', 'Band', 200) is None
+
+
+def test_unicode_titles_are_not_erased_into_match_anything():
+    entries = [_e(200, '无关歌曲', 'Artist', 'wrong'), _e(200, '轮回书', 'Artist', 'right')]
+    assert pick_candidate(entries, '轮回书', 'Artist', 200)['id'] == 'right'
+
+
+def test_all_variant_words_must_match_requested_edition():
+    assert pick_candidate([_e(200, 'Song (Acoustic Cover)', 'Band')], 'Song (Acoustic)', 'Band', 200) is None

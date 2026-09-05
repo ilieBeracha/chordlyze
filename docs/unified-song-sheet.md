@@ -1,0 +1,61 @@
+# Unified song sheets and live follow
+
+Search, saved songs, the home song sheet, Live and recorded Practice use one `SongSheetStore` and one `ChordSheetView`. Chords appear above lyric tokens. A chord that continues into the next lyric line is repeated there. Timestamped blank lines retain instrumental chord rows. A long lyric line remains intact instead of turning into empty eight-second continuation rows. Hebrew and Arabic use the same token layout in right-to-left order.
+
+Live follows Spotify playback automatically. Search and Library show the static sheet; Practice uses the same rows with the take's clock. This does not turn Spotify Live into microphone-based song identification. On-device chord drills remain a separate instrument exercise.
+
+## Loading and timing
+
+Opening a song posts its recording metadata to `/song/request`, then follows `/song/{track_id}`. Lyrics load independently while a complete chart is prepared. Reopening a ready song reuses the chart. Concurrent views share a document and subscriber count; the last departure cancels work. Reentry starts fresh requests. Old, canceled responses cannot replace the current song.
+
+Full song duration and album information travel from Spotify/iTunes through Search, Library and lyrics lookup. Both exact and search lyric matches are checked against title, artist and duration. A 30-second iTunes preview starts at an unknown offset and is never positioned against the whole song. The old `/analyze_track` route now queues a whole-song chart and returns HTTP 202 while pending.
+
+Known lyrics and known chords can load at different times. Missing data is shown explicitly. Instrumentals keep their chords. Unavailable lyrics are not invented. Enhanced LRC supplies word timestamps; ordinary synchronized LRC supplies line timestamps, so placement within a line is approximate and labeled. Unsynchronized lyrics use estimated line timing and are labeled accordingly. Matching source title, artist and duration reduces edition errors but does not prove sample-accurate alignment between services.
+
+Spotify polling starts immediately, runs separately from analysis, and honors rate-limit delays. A monotonic clock advances between polls, freezes on pause and resynchronizes on seeks or song changes. Connection failures retry automatically, and background/foreground transitions restart polling. Extrapolation stops after 15 seconds without a successful playback sample. A view-owned `TimelineView` redraws and scrolls Live; screens do not share a disconnectable timer.
+
+## Full-song worker
+
+The Fly API stores a durable request queue on its existing volume. A managed worker on the development Mac downloads a matching full recording and runs the pinned five-model recognizer. Fly's datacenter network cannot reliably fetch those recordings, so this deployment still requires the Mac to be online and logged in. LaunchAgent restart handles worker process exits; it cannot make an offline or sleeping Mac available. The app shows that condition and resumes when the worker reconnects.
+
+The worker only processes requested jobs. It does not sweep or repopulate the old library. It sends heartbeats, renews a three-minute lease while working, cleans downloaded audio, and publishes with a worker token, lease and library generation. Expired jobs can be reclaimed up to three times. Failed/unavailable jobs expose Retry. Requests are limited to 20-minute recordings; source availability and processing time mean a first analysis is not instant. Already analyzed songs load directly.
+
+Store these values in `backend/.env.worker` with mode 600: `CHORDLYZE_API_URL`, `CHORDLYZE_WORKER_TOKEN`, `CHORDLYZE_ISMIR_DIR`, `CHORDLYZE_TORCH_THREADS=2`, and an optional writable `NUMBA_CACHE_DIR`. Configure the same token as a Fly secret. Tokens are excluded from Git, Docker and worker status messages.
+
+```bash
+cd backend
+.venv/bin/python scripts/install_song_worker.py         # show installation paths
+.venv/bin/python scripts/install_song_worker.py --apply # install/restart this one LaunchAgent
+launchctl print gui/$(id -u)/com.chordlyze.song-worker
+```
+
+The LaunchAgent is `~/Library/LaunchAgents/com.chordlyze.song-worker.plist`. Logs are under ignored `backend/worker-logs/`. `GET /health` reports `api_version`, `release`, `analysis_version`, `library_generation`, and `song_worker_online`; no credentials are returned. The legacy batch ingestion utility is for development only: production requires a current on-demand lease.
+
+## Explicit fresh start
+
+Resetting removes active track analyses, ISRC aliases, lyric caches, request jobs and heartbeat state; it rotates the library generation under the same interprocess lock used for publication. Old job results then return HTTP 409. Old unauthenticated workers return HTTP 401. In-flight lyric lookups cannot restore the old cache. Credentials, recognition weights, benchmark fixtures and source code are untouched.
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/python scripts/reset_song_library.py         # dry run
+PYTHONPATH=. .venv/bin/python scripts/reset_song_library.py --apply # explicit local reset
+# On Fly, run /app/scripts/reset_song_library.py with PYTHONPATH=/app
+# and CHORDLYZE_CACHE=/data/analysis_cache using the installed container Python.
+```
+
+Verify `/library` is empty after reset. A currently visible sheet notices the changed generation and drops its old analysis; Retry or opening a song starts a new analysis. The managed worker does not enqueue anything itself. Historical Fly snapshots follow their existing retention policy and are not used to repopulate the active library.
+
+## Validation and release
+
+```bash
+bash scripts/test_song_sheet.sh
+bash scripts/test_drill.sh
+cd backend
+CHORDLYZE_REQUIRE_MODELS=1 PYTHONPATH=. .venv/bin/python -m pytest tests/ -q
+```
+
+Song-sheet tests cover held chords, lyric preservation, instrumental markers, word groups, unknown-offset preview rejection, interval boundaries, cancellation, shared subscriptions, generation reset, automatic chart arrival, playback progression/pause/track change and rate-limit recovery. Backend tests include real HTTP request → claim → heartbeat → publish → ready → reset, stale publication rejection, and installed-model inference.
+
+Build Debug for Simulator and launch with `--song-sheet-preview` for an offline visual fixture. It uses authored sample text and real production views. Check English and Hebrew ordering, chord diagrams, transposition, Live progression/pause/reentry and the Practice entry. The fixture is compiled out of Release builds and never requests a production song.
+
+Deploy the backend explicitly; merging GitHub does not deploy Fly. Include `--build-arg APP_REVISION=<git-commit>` and check `/health`. Push and merge the iOS change into `main`, check Xcode Cloud build and archive results, then confirm the processed build in App Store Connect → TestFlight. An archive succeeding is not itself proof that testers can install it. Version 0.5.0 contains the unified sheets and requires the matching song-request backend.
