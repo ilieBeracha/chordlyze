@@ -111,12 +111,17 @@ def attach_lyrics(client: WorkerClient, song: dict, audio: Path, generation: str
         client.post('/internal/jobs/lyrics', {'track_id': song['track_id'], 'library_generation': generation,
                                               'lines': lines, 'aligner': ALIGNER, 'source': 'transcribed'})
         return 'transcribed'
-    if found.get('synced') or found.get('instrumental'):
-        return 'synced'
+    if found.get('instrumental'):
+        return 'instrumental'
+    if found.get('synced') and any(line.get('words') for line in found.get('lines', [])):
+        return 'synced'  # already word-timed
+    # Catalog line times are not word times: align the words to the recording
+    # either way, and keep the catalog's lines when the recording disagrees.
     stats: dict = {}
     timed = align(audio, [line.get('text') or '' for line in found.get('lines', [])], stats=stats)
     if timed is None:
-        return 'unaligned ' + ' '.join(f'{key}={value}' for key, value in stats.items())
+        return ('synced unaligned ' if found.get('synced') else 'unaligned ') + \
+            ' '.join(f'{key}={value}' for key, value in stats.items())
     client.post('/internal/jobs/lyrics', {'track_id': song['track_id'], 'library_generation': generation,
                                           'lines': timed, 'aligner': ALIGNER})
     return 'aligned'
@@ -266,8 +271,9 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
             pass
         print('Recording provider: ' + error.code + (f' ({error.status})' if error.status else ''), flush=True)
         return 'limited' if error.code == 'provider_limit' else state
-    except Exception:
-        # Do not write track metadata, downloaded audio, tokens or lyrics to logs.
+    except Exception as error:
+        # Type and a short head only: never track metadata, audio, tokens or lyrics.
+        print(f'Song request error: {type(error).__name__}: {str(error)[:160]}', flush=True)
         try:
             client.post('/internal/jobs/finish', {**identity, 'state': 'failed'})
         except Exception:

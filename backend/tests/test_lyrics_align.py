@@ -101,12 +101,21 @@ def test_worker_times_only_untimed_catalog_lyrics(tmp_path):
     assert song_worker.attach_lyrics(client, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'aligned'
     assert client.posted == [('/internal/jobs/lyrics', {'track_id': 'song', 'library_generation': 'gen',
                                                          'lines': aligned, 'aligner': lyrics_align.ALIGNER})]
+    # Catalog line times are not word times: synced lines are aligned too.
     synced = Client({'synced': True, 'lines': plain['lines']})
-    assert song_worker.attach_lyrics(synced, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'synced'
+    assert song_worker.attach_lyrics(synced, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'aligned'
+    assert synced.posted and synced.posted[0][1]['lines'] == aligned
+    worded = Client({'synced': True, 'lines': [{'time': 12, 'text': 'Come up to meet you', 'words': [{'time': 12, 'text': 'Come'}]}]})
+    assert song_worker.attach_lyrics(worded, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'synced'
+    instrumental = Client({'synced': True, 'instrumental': True, 'lines': []})
+    assert song_worker.attach_lyrics(instrumental, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'instrumental'
     missing = Client(urllib.error.HTTPError('u', 404, 'not found', {}, None))
     assert song_worker.attach_lyrics(missing, SONG, tmp_path / 'a.mp3', 'gen', align=align,
                                      transcribe=lambda audio: None) == 'none'
-    assert not synced.posted and not missing.posted
+    assert not worded.posted and not instrumental.posted and not missing.posted
+    disagreeing = Client({'synced': True, 'lines': [{'time': 1, 'text': 'Other words'}]})
+    assert song_worker.attach_lyrics(disagreeing, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'synced unaligned matched_words=1 lyric_words=9'
+    assert not disagreeing.posted, 'catalog line times stay when the recording disagrees'
     stopping = threading.Event(); stopping.set()
     assert song_worker.attach_lyrics(Client(plain), SONG, tmp_path / 'a.mp3', 'gen', stopping, align=align) == 'skipped'
     poor = Client({'synced': False, 'lines': [{'time': 1, 'text': 'Other words'}]})
