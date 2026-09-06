@@ -41,7 +41,7 @@ Measured against the Spotify desktop client's own clock, the app's playhead
 agrees within about 0.1 s, so a chord that highlights late is a chart matter,
 not a polling one: recognized boundaries land slightly after the change and
 players read ahead of the beat. **Key & capo** therefore has a global
-"Show chords ahead" lead (`chordLead` in UserDefaults, default 0.3 s) applied
+"Show chords ahead" lead (`chordLead` in UserDefaults, default 0 s since word timing arrived) applied
 to the Live and Practice display only; the take stays anchored to Spotify's
 reported position so scoring remains in real song time.
 

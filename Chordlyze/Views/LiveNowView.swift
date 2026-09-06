@@ -12,7 +12,7 @@ struct LiveNowView: View {
     let chartPosition: () -> TimeInterval?
     /// Seconds the highlight runs ahead of Spotify audio. Recognized chord
     /// boundaries land a little late and players read ahead of the beat.
-    @AppStorage("chordLead") private var lead = 0.3
+    @AppStorage("chordLead") private var lead = 0.0
     @State private var lastPosition: Double = 0
     @State private var selectedChord: SelectedChord?
     @State private var seekDenied = false

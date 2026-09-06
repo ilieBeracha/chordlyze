@@ -62,15 +62,19 @@ enum LyricPlayhead {
         return points
     }
 
-    /// The runner at `time`, moving steadily between waypoints and wrapping
-    /// from the end of one visual line to the start of the next.
+    /// The runner at `time`. It lingers on the word being sung and moves
+    /// late: progress between two waypoints is eased in (cubic), so it stays
+    /// near the current word for most of the interval and arrives at the next
+    /// word exactly on its onset. Wraps from the end of one visual line to
+    /// the start of the next.
     static func position(at time: Double, along points: [Waypoint], rtl: Bool) -> Point? {
         guard let firstPoint = points.first else { return nil }
         let index = points.lastIndex { $0.time <= time } ?? 0
         let from = points[index]
         guard index + 1 < points.count else { return Point(x: from.x, y: from.line.midY, height: from.line.height) }
         let to = points[index + 1]
-        let share = max(0, min(1, (time - from.time) / max(to.time - from.time, 0.001)))
+        let linear = max(0, min(1, (time - from.time) / max(to.time - from.time, 0.001)))
+        let share = linear * linear * linear
         if from.line.minY == to.line.minY {
             return Point(x: from.x + (to.x - from.x) * share, y: from.line.midY, height: from.line.height)
         }
