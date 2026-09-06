@@ -10,7 +10,8 @@ final class TakeRecorder {
     typealias Listener = @Sendable (UnsafeBufferPointer<Float>, _ sampleTime: Int64, _ sampleRate: Double) -> Void
 
     private var engine: AVAudioEngine?
-    private var writer: Writer?
+    private let slot = WriterSlot()
+    private var writer: Writer? { slot.current }
     private var observers: [NSObjectProtocol] = []
     private(set) var fileURL: URL?
     private(set) var sampleRate: Double = 0
@@ -52,7 +53,12 @@ final class TakeRecorder {
         await AVAudioApplication.requestRecordPermission()
     }
 
-    func start(maxDuration: TimeInterval, at url: URL, listener: Listener? = nil) throws {
+    /// Opens the microphone without writing anything, so the recording route
+    /// is already live before Spotify starts. Starting input later, with
+    /// Bluetooth headphones, interrupts other audio for a moment; done here,
+    /// there is nothing to interrupt when the take begins. Idempotent.
+    func prime() throws {
+        if engine?.isRunning == true { return }
         let session = AVAudioSession.sharedInstance()
         // playAndRecord (not record) so a running metronome keeps clicking;
         // mixWithOthers so activating the session doesn't pause Spotify.
@@ -64,16 +70,9 @@ final class TakeRecorder {
         let format = input.outputFormat(forBus: 0)
         guard format.channelCount > 0, format.sampleRate > 0, format.commonFormat == .pcmFormatFloat32,
               !format.isInterleaved else { throw DrillConfigurationError.unsupportedSampleRate }
-        let mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: format.sampleRate, channels: 1, interleaved: false)!
-        let file = try AVAudioFile(forWriting: url, settings: [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: format.sampleRate,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
-        ], commonFormat: .pcmFormatFloat32, interleaved: false)
-        let writer = Writer(file: file, format: mono, limit: Int64(maxDuration * format.sampleRate), listener: listener)
+        let slot = self.slot
         input.installTap(onBus: 0, bufferSize: 2048, format: format) { buffer, _ in
-            writer.append(buffer)
+            slot.current?.append(buffer)
         }
         engine.prepare()
         do { try engine.start() } catch {
@@ -82,14 +81,28 @@ final class TakeRecorder {
             throw error
         }
         self.engine = engine
-        self.writer = writer
         sampleRate = format.sampleRate
-        fileURL = url
         for name in [AVAudioSession.interruptionNotification, Notification.Name.AVAudioEngineConfigurationChange] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor [weak self] in self?.writer?.finish() }
             })
         }
+    }
+
+    /// Begins writing the take. Primes the microphone first if needed; when
+    /// already primed, the first written frame is the next one captured.
+    func start(maxDuration: TimeInterval, at url: URL, listener: Listener? = nil) throws {
+        try prime()
+        guard slot.current == nil else { throw CocoaError(.fileWriteUnknown) }
+        let mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false)!
+        let file = try AVAudioFile(forWriting: url, settings: [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: sampleRate,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+        ], commonFormat: .pcmFormatFloat32, interleaved: false)
+        slot.current = Writer(file: file, format: mono, limit: Int64(maxDuration * sampleRate), listener: listener)
+        fileURL = url
     }
 
     /// Stops recording and returns the captured file; nil if nothing was
@@ -102,12 +115,24 @@ final class TakeRecorder {
             engine.stop()
         }
         engine = nil
+        let writer = slot.current
+        slot.current = nil
         writer?.finish()
         writer?.close()
-        writer = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         defer { fileURL = nil }
         return fileURL
+    }
+
+    /// The tap reads the current writer through this lock; nil while primed
+    /// but not yet recording.
+    private final class WriterSlot: @unchecked Sendable {
+        private let lock = NSLock()
+        private var writer: Writer?
+        var current: Writer? {
+            get { lock.lock(); defer { lock.unlock() }; return writer }
+            set { lock.lock(); writer = newValue; lock.unlock() }
+        }
     }
 
     /// Copies each tap buffer off the realtime thread, then encodes on a

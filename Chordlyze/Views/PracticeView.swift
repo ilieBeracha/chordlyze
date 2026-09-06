@@ -38,6 +38,7 @@ struct PracticeView: View {
     @State private var rate = 1.0
     @State private var initialized = false
     @State private var saveError: String?
+    @State private var pausedSince: ContinuousClock.Instant?
     @State private var feedback: PracticeFeedback?
     @State private var feedbackTap: FeedbackTap?
     @State private var lastJudged: String?
@@ -284,6 +285,9 @@ struct PracticeView: View {
         }
         guard !Task.isCancelled else { return }
         do {
+            // Microphone first, then Spotify: opening input later would
+            // interrupt playback for a moment right as the take begins.
+            try recorder.prime()
             let setup = try PracticePlan(start: rangeStart, end: rangeEnd, rate: rate,
                 transpose: songStore.manualShift, capo: songStore.capoMode ? songStore.capo : 0)
             let plan: PracticePlan
@@ -314,6 +318,7 @@ struct PracticeView: View {
             }
             startedAt = .now
             synced = spotify
+            pausedSince = nil
             phase = .recording
         } catch is CancellationError {
             metronome.stop()
@@ -374,10 +379,18 @@ struct PracticeView: View {
         guard synced, nowPlaying.connectionMessage == nil else { return }
         let reason: String
         if let playing = spotifyThisTrack, playing.isPlaying {
+            pausedSince = nil
             guard let live = spotifyChartPosition(), abs(live - (activeTake.plan.start + elapsed)) > 2.5 else { return }
             reason = "Spotify moved to another position. The partial take was saved."
+        } else if let playing = nowPlaying.playing, playing.track.id != trackID {
+            reason = "Spotify changed songs. The partial take was saved."
         } else {
-            reason = "Spotify paused or changed songs. The partial take was saved."
+            // iOS pauses other audio for a moment on some route changes and
+            // Spotify resumes on its own; only a real pause ends the take.
+            let since = pausedSince ?? .now
+            pausedSince = since
+            guard since.duration(to: .now) > .seconds(3) else { return }
+            reason = "Spotify paused. The partial take was saved."
         }
         finish(note: reason, score: false)
     }
