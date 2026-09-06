@@ -79,6 +79,20 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(SheetModel.activeRow(rows, at: 9)?.id == 8, "Live selects current row by interval")
         check(SheetModel.activeRow(rows, at: 20) == nil, "Live does not hold the last lyric forever past song end")
         check(SheetModel.activeRow(rows, at: 3)?.id == 2, "Backward seek selects the earlier line")
+        // Beat grid: 120 BPM, chord changes on beats 4, 8, 12 (index 3 mod 4 = 3) -> those are downbeats.
+        let beats = (0..<32).map { Double($0) * 0.5 }
+        let gridChart: ChordAnalysis = decode(["chords": [["start": 0, "end": 1.53, "label": "C:maj"], ["start": 1.53, "end": 3.48, "label": "G:maj"],
+                                                          ["start": 3.48, "end": 5.5, "label": "A:min"], ["start": 5.5, "end": 16, "label": "F:maj"]],
+                                               "source": "youtube", "audio_duration": 16, "tempo": ["bpm": 120, "beats": beats]])
+        let grid = BeatGrid(tempo: gridChart.tempo, chords: gridChart.chords)!
+        check(grid.period == 0.5 && grid.phase == 3, "Bar phase is the beat most chord changes land on")
+        check(grid.snap(1.53) == 1.5 && grid.snap(3.48) == 3.5 && grid.snap(1.3) == 1.3, "Boundaries within a third of a beat snap to it; others stay")
+        check(SheetModel.events(gridChart).map(\.start) == [0, 1.5, 3.5, 5.5], "Sheet events change on the beat")
+        check(grid.beatInBar(at: 1.5) == 1 && grid.beatInBar(at: 2.9) == 3 && grid.beatInBar(at: 3.5) == 1, "Beat within the bar counts from the inferred downbeat")
+        check(grid.downbeat(atOrBefore: 4.2) == 3.5 && grid.downbeat(atOrBefore: 0.2) == 1.5, "A take begins on the bar at or before its range, or the first bar")
+        let clicks = grid.clicks(from: 1.5, to: 4)
+        check(clicks.map(\.offset) == [0, 0.5, 1, 1.5, 2] && clicks.map(\.downbeat) == [true, false, false, false, true], "Clicks are offsets from the take start with beat 1 marked")
+        check(BeatGrid(tempo: nil, chords: []) == nil && BeatGrid(tempo: decode(["bpm": 100, "beats": [0, 0.6, 1.2]], as: ChordAnalysis.Tempo.self), chords: []) == nil, "Too few beats give no grid")
         // Line-timed lyrics: the words end before the next line starts, so a chord
         // halfway through the singing sits over the middle word, not an early one.
         let lineTimed = SheetModel.build(analysis: chart([["start": 0, "end": 2.4, "label": "C:maj"], ["start": 2.4, "end": 20, "label": "G:maj"]]),
