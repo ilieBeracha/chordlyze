@@ -28,7 +28,7 @@ def reference(cache, *, model="ismir2019", source="youtube", label="C:maj7"):
 
 def call(*, content=b"recording", offset=0):
     return asyncio.run(main.practice_take(
-        file=UploadFile(io.BytesIO(content), filename="take.wav"), track_id="song", offset=offset))
+        file=UploadFile(io.BytesIO(content), filename="take.wav"), track_id="song", offset=offset, user="tester"))
 
 
 def test_practice_uses_rich_recognizer_duration_and_metadata(cache, monkeypatch):
@@ -107,7 +107,7 @@ def test_practice_endpoint_applies_key_and_pace(cache, monkeypatch):
     monkeypatch.setattr(main, "recognize_audio", lambda *a, **k:
                         Recognition([ChordSegment(0, 4, "D:maj7")], 4, "a" * 64, "ismir2019"))
     out = asyncio.run(main.practice_take(file=UploadFile(io.BytesIO(b"recording"), filename="take.wav"),
-        track_id="song", offset=2, transpose=2, playback_rate=0.5))
+        track_id="song", offset=2, transpose=2, playback_rate=0.5, user="tester"))
     assert out["accuracy"] == 1
     assert (out["covered_start"], out["covered_end"]) == (2, 4)
     assert (out["transpose"], out["playback_rate"]) == (2, 0.5)

@@ -14,6 +14,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+
+from tests.fake_spotify import fake_spotify
 import soundfile as sf
 
 from chordlyze_backend.analysis.ismir import ismir_available
@@ -29,8 +31,9 @@ def server(tmp_path_factory):
         pytest.skip("ISMIR model not installed")
     temp = tmp_path_factory.mktemp("practice-http")
     backend = Path(__file__).resolve().parents[1]
-    env = {**os.environ, "CHORDLYZE_CACHE": str(temp / "cache"), "PYTHONPATH": str(backend)}
-    with socket.socket() as listener, (temp / "server.log").open("w+") as log:
+    with fake_spotify() as me_url, socket.socket() as listener, (temp / "server.log").open("w+") as log:
+        env = {**os.environ, "CHORDLYZE_CACHE": str(temp / "cache"), "PYTHONPATH": str(backend),
+               "CHORDLYZE_SPOTIFY_ME_URL": me_url}
         listener.bind(("127.0.0.1", 0))
         listener.listen()
         url = f"http://127.0.0.1:{listener.getsockname()[1]}"
@@ -77,7 +80,8 @@ def upload(url, wav, *, track="rich", offset="2", transpose="0", playback_rate="
     body.extend(wav.read_bytes())
     body.extend(f"\r\n--{boundary}--\r\n".encode())
     request = urllib.request.Request(url + "/practice_take", data=body,
-                                     headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+                                     headers={"Content-Type": f"multipart/form-data; boundary={boundary}",
+                                              "Authorization": "Bearer player"})
     with urllib.request.urlopen(request, timeout=600) as response:
         return json.load(response)
 

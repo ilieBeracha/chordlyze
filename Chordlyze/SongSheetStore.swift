@@ -13,6 +13,7 @@ final class SongSheetStore: ObservableObject {
         var lyrics: (SongDescriptor) async throws -> BackendClient.LyricsResult? = {
             try await BackendClient.lyrics(title: $0.title, artist: $0.artist, duration: $0.duration, album: $0.album)
         }
+        var save: (String, Bool) async throws -> Void = { try await BackendClient.setSaved(trackID: $0, $1) }
         var sleep: (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
     }
     private static var documents: [String: SongSheetStore] = [:]
@@ -34,6 +35,10 @@ final class SongSheetStore: ObservableObject {
     @Published private(set) var lyricsNote: String?
     @Published private(set) var lyricsLoading = true
     @Published private(set) var lyricsFailed = false
+    /// In the account's library. Requesting analysis saves; the sheet's
+    /// bookmark toggles it. The chart itself is shared by every account.
+    @Published private(set) var saved = false
+    @Published private(set) var saveError: String?
     /// Chord display shared by every surface, so the sheet, Live and Practice
     /// name the same chords: capo mode favors open shapes, manual shift transposes.
     @Published var capoMode = false
@@ -112,6 +117,17 @@ final class SongSheetStore: ObservableObject {
         loadLyrics(force: true)
     }
 
+    /// Bookmark: keep or drop this song in the account's library.
+    func setSaved(_ flag: Bool) async {
+        let previous = saved
+        saved = flag
+        saveError = nil
+        do { try await service.save(song.id, flag) } catch {
+            saved = previous
+            saveError = "Could not update your library: \(error.localizedDescription)"
+        }
+    }
+
     /// Pull to refresh: re-read status and lyrics, never request analysis.
     func refresh() {
         start()
@@ -183,6 +199,7 @@ final class SongSheetStore: ObservableObject {
             lyricsNote = aligned.matched == "transcribed" ? "Transcribed from the recording" : "Lyrics timed from the recording"
         }
         state = status.job.state
+        if let flag = status.saved { saved = flag }
         // Three states the user sees: not analyzed, analyzing, ready.
         switch state {
         case "ready": message = ""

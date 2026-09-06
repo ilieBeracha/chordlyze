@@ -28,8 +28,8 @@ def submission(*, versioned=True, **extra):
 
 def test_legacy_stays_readable_but_is_marked_stale(cache):
     submit_analysis(submission(versioned=False))
-    assert main.get_track_analysis("song")["analysis_stale"] is True
-    assert main.library()["items"][0]["analysis_stale"] is True
+    assert main.get_track_analysis("song", user="tester")["analysis_stale"] is True
+    assert main.catalog(user="tester")["items"][0]["analysis_stale"] is True
 
 
 def test_current_revision_upgrades_old_and_rejects_old_worker(cache):
@@ -40,7 +40,7 @@ def test_current_revision_upgrades_old_and_rejects_old_worker(cache):
     with pytest.raises(HTTPException) as exc:
         submit_analysis(submission(versioned=False))
     assert exc.value.status_code == 409
-    assert is_current(main.get_track_analysis("song"))
+    assert is_current(main.get_track_analysis("song", user="tester"))
 
 
 def test_current_revision_requires_verifiable_provenance(cache):
@@ -53,9 +53,9 @@ def test_current_revision_requires_verifiable_provenance(cache):
 
 def test_current_metadata_survives_isrc_alias_and_library(cache):
     submit_analysis(submission(isrc="ILTEST000001"))
-    alias = main.get_track_analysis("alias", isrc="ILTEST000001")
+    alias = main.get_track_analysis("alias", isrc="ILTEST000001", user="tester")
     assert alias["track_id"] == "alias" and is_current(alias)
-    rows = main.library()["items"]
+    rows = main.catalog(user="tester")["items"]
     assert len(rows) == 2
     assert all(is_current(row) and row["isrc"] == "ILTEST000001" for row in rows)
 

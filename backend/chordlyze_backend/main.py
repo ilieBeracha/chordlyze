@@ -5,9 +5,15 @@ GET  /song/{id}               — song metadata, chart and processing status.
 POST /analysis/submit         — authenticated, leased worker publication.
 GET  /analysis/track/{id}     — saved analysis for a track (or its ISRC twin).
 GET  /lyrics                  — time-synced lyrics from LRCLIB.
-GET  /library                 — every saved analysis.
+GET  /library                 — the caller's songs: requested, saved or practiced.
+POST/DELETE /library/{id}     — save or remove one song from the caller's list.
+GET  /catalog                 — every chart on the server (charts are global).
 POST /practice_take           — score a practice recording against the chart.
 GET  /health                  — liveness.
+
+Every endpoint except /health and the worker's /internal routes needs the
+caller's Spotify access token as a Bearer header; the backend verifies it
+with Spotify (see auth.py). Charts are shared; song lists are per user.
 
 Analyses are JSON files under CACHE_DIR: track-<id>.json, isrc-<ISRC>.json,
 lyrics5-<digest>.json and leased job records.
@@ -31,7 +37,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 import anyio.to_thread
-from fastapi import FastAPI, Form, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, Form, Header, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from .analysis.beats import track_beats
@@ -42,7 +48,9 @@ from .analysis.ismir import RecognitionUnavailable, close as close_recognizer
 from .analysis.provenance import (ANALYSIS_VERSION, MODEL_QUALITIES, MODEL_RANK,
                                   MODEL_REVISIONS, is_current, quality)
 from .analysis.keyfinder import analyze
+from .auth import current_user
 from .song_jobs import SongJobs, generation, library_lock
+from .users import UserLibrary
 
 CACHE_DIR = Path(os.environ.get("CHORDLYZE_CACHE",
                                 str(Path(__file__).resolve().parent.parent / "analysis_cache")))
@@ -250,7 +258,7 @@ class SongRequest(BaseModel):
     retry: bool = False
 
 
-def _song_status(track_id: str, isrc: str | None = None) -> dict:
+def _song_status(track_id: str, isrc: str | None = None, user: str | None = None) -> dict:
     jobs = SongJobs(CACHE_DIR)
     path = _track_cache_path(track_id)
     chart = _read_analysis(path) if path.exists() else _cached_by_isrc(track_id, isrc, None, None)
@@ -266,23 +274,26 @@ def _song_status(track_id: str, isrc: str | None = None) -> dict:
     return {"song": song, "analysis": chart if ready else None,
             "lyrics": chart.get("lyrics") if ready else None,
             "job": {"state": "ready", "worker_online": jobs.worker_online()} if ready else jobs.public(job),
-            "library_generation": generation(CACHE_DIR)}
+            "library_generation": generation(CACHE_DIR),
+            "saved": UserLibrary(CACHE_DIR, user).contains(track_id) if user else False}
 
 
 @app.post("/song/request")
-def request_song(body: SongRequest) -> dict:
+def request_song(body: SongRequest, user: str = Depends(current_user)) -> dict:
+    """Asking for a song puts it in the caller's library, ready or not."""
     with library_lock(CACHE_DIR):
-        status = _song_status(body.track_id, body.isrc)
+        UserLibrary(CACHE_DIR, user).add(body.track_id)
+        status = _song_status(body.track_id, body.isrc, user)
         if status["analysis"] is not None:
             return status
         SongJobs(CACHE_DIR).request(body.model_dump(exclude={"retry"}), retry=body.retry)
-        return _song_status(body.track_id)
+        return _song_status(body.track_id, user=user)
 
 
 @app.get("/song/{track_id}")
-def song_status(track_id: str) -> dict:
+def song_status(track_id: str, user: str = Depends(current_user)) -> dict:
     with library_lock(CACHE_DIR):
-        return _song_status(track_id)
+        return _song_status(track_id, user=user)
 
 
 def _worker_authorized(authorization: str | None) -> None:
@@ -535,7 +546,7 @@ def synthesize_lines(plain: str, duration: float | None) -> list[dict]:
 
 @app.get("/lyrics")
 def lyrics(title: str, artist: str = "", duration: float | None = None,
-           album: str | None = None) -> dict:
+           album: str | None = None, user: str = Depends(current_user)) -> dict:
     """Time-synced lyrics from LRCLIB, cached on disk. Duration/album narrow
     the match to the right version (not a cover/remix) when provided."""
     if duration is not None and (not math.isfinite(duration) or duration <= 0):
@@ -599,15 +610,42 @@ def lyrics(title: str, artist: str = "", duration: float | None = None,
 # MARK: - Library
 
 @app.get("/library")
-def library() -> dict:
+def library(user: str = Depends(current_user)) -> dict:
+    """The caller's songs that have a chart, newest addition first."""
     with library_lock(CACHE_DIR):
-        return _library()
+        paths = [_track_cache_path(track) for track in UserLibrary(CACHE_DIR, user).track_ids()]
+        return _library([path for path in paths if path.exists()])
 
 
-def _library() -> dict:
+@app.post("/library/{track_id}")
+def save_song(track_id: str, user: str = Depends(current_user)) -> dict:
+    """Keep a song whose chart already exists (analyzed by anyone)."""
+    with library_lock(CACHE_DIR):
+        if not _track_cache_path(track_id).exists() and SongJobs(CACHE_DIR).get(track_id) is None:
+            raise HTTPException(404, "no chart or analysis request for this track")
+        UserLibrary(CACHE_DIR, user).add(track_id)
+        return {"track_id": track_id, "saved": True}
+
+
+@app.delete("/library/{track_id}")
+def forget_song(track_id: str, user: str = Depends(current_user)) -> dict:
+    """Removes the song from the caller's list; the chart stays for everyone."""
+    with library_lock(CACHE_DIR):
+        UserLibrary(CACHE_DIR, user).remove(track_id)
+        return {"track_id": track_id, "saved": False}
+
+
+@app.get("/catalog")
+def catalog(user: str = Depends(current_user)) -> dict:
+    """Every chart on the server, newest first. Charts carry no user data."""
+    with library_lock(CACHE_DIR):
+        return _library(sorted(CACHE_DIR.glob("track-*.json"),
+                               key=lambda p: p.stat().st_mtime, reverse=True))
+
+
+def _library(paths: list[Path]) -> dict:
     items = []
-    for path in sorted(CACHE_DIR.glob("track-*.json"),
-                       key=lambda p: p.stat().st_mtime, reverse=True):
+    for path in paths:
         data = json.loads(path.read_text())
         items.append({
             "track_id": data.get("track_id", path.stem.removeprefix("track-")),
@@ -630,7 +668,7 @@ def _library() -> dict:
 
 
 @app.get("/analysis/track/{track_id}")
-def get_track_analysis(track_id: str, isrc: str | None = None) -> dict:
+def get_track_analysis(track_id: str, isrc: str | None = None, user: str = Depends(current_user)) -> dict:
     cached = _track_cache_path(track_id)
     if cached.exists():
         return _read_analysis(cached)
@@ -648,12 +686,16 @@ async def practice_take(
     offset: float = Form(default=0.0, allow_inf_nan=False),
     transpose: Annotated[int, Form(ge=-12, le=12)] = 0,
     playback_rate: Annotated[float, Form(ge=0.5, le=1, allow_inf_nan=False)] = 1.0,
+    user: str = Depends(current_user),
 ) -> dict:
     """Score a practice recording (instrument only, song in headphones)
-    against the track's reference chart."""
+    against the track's reference chart. A practiced song joins the
+    caller's library."""
     ref_path = _track_cache_path(track_id)
     if not ref_path.exists():
         raise HTTPException(404, "no analysis for this track yet")
+    with library_lock(CACHE_DIR):
+        UserLibrary(CACHE_DIR, user).add(track_id)
     reference = json.loads(ref_path.read_text())
     if reference.get("source") == "itunes_preview":
         raise HTTPException(409, "a full-song chart is required to score a recording")

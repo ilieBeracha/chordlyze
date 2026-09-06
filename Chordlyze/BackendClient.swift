@@ -40,8 +40,10 @@ struct SongStatus: Decodable {
     let lyrics: BackendClient.LyricsResult?
     let job: Job
     let libraryGeneration: String
+    /// Whether this song is in the signed-in account's library.
+    let saved: Bool?
     enum CodingKeys: String, CodingKey {
-        case song, analysis, lyrics, job, libraryGeneration = "library_generation"
+        case song, analysis, lyrics, job, saved, libraryGeneration = "library_generation"
     }
 }
 
@@ -148,12 +150,44 @@ enum BackendClient {
         }
     }
 
-    /// All analyses ever saved, newest first.
+    /// Every backend call carries the account's Spotify access token; the
+    /// backend verifies it with Spotify and scopes libraries to that account.
+    /// Set once at launch. nil means signed out: calls fail explicitly.
+    static var tokenProvider: (() async throws -> String)?
+
+    private static func authorized(_ request: URLRequest) async throws -> URLRequest {
+        guard let tokenProvider else { throw BackendError(status: 401, detail: "Sign in with Spotify to use Chordlyze.") }
+        var request = request
+        request.setValue("Bearer \(try await tokenProvider())", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
+    private struct LibraryPage: Decodable { let items: [LibraryItem] }
+
+    /// The account's songs: requested, saved or practiced. Newest first.
     static func library() async throws -> [LibraryItem] {
-        struct Page: Decodable { let items: [LibraryItem] }
         let url = Config.backendBaseURL.appendingPathComponent("library")
-        let page: Page? = try await fetch(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
+        let page: LibraryPage? = try await fetch(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
         return page?.items ?? []
+    }
+
+    /// Every chart on the server, from any account. Charts are per song, so
+    /// a song someone else analyzed is ready for everyone.
+    static func catalog() async throws -> [LibraryItem] {
+        let url = Config.backendBaseURL.appendingPathComponent("catalog")
+        let page: LibraryPage? = try await fetch(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
+        return page?.items ?? []
+    }
+
+    /// Adds or removes one song in the account's library; the chart itself stays.
+    static func setSaved(trackID: String, _ saved: Bool) async throws {
+        struct Result: Decodable { let saved: Bool }
+        var request = URLRequest(url: Config.backendBaseURL.appendingPathComponent("library/\(trackID)"),
+                                 cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+        request.httpMethod = saved ? "POST" : "DELETE"
+        guard let result: Result = try await fetch(request), result.saved == saved else {
+            throw BackendError(status: 404, detail: "This song has no chart to save yet.")
+        }
     }
 
     struct LyricsResult: Decodable, Equatable {
@@ -192,7 +226,7 @@ enum BackendClient {
 
     /// nil on 404; throws BackendError on any other non-200 response.
     private static func fetch<T: Decodable>(_ request: URLRequest) async throws -> T? {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: authorized(request))
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         if status == 404 { return nil }
         guard status == 200 else {
@@ -289,8 +323,8 @@ enum BackendClient {
     /// Upload a practice recording; the backend scores it against the track's chart.
     /// `offset`: song second that take second 0 corresponds to (Spotify sync).
     static func submitPracticeTake(fileURL: URL, trackID: String, offset: Double, transpose: Int = 0, playbackRate: Double = 1) async throws -> PracticeReport {
-        let request = try practiceTakeRequest(fileURL: fileURL, trackID: trackID, offset: offset,
-            transpose: transpose, playbackRate: playbackRate)
+        let request = try await authorized(practiceTakeRequest(fileURL: fileURL, trackID: trackID, offset: offset,
+            transpose: transpose, playbackRate: playbackRate))
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             let detail = String(data: data, encoding: .utf8) ?? ""
