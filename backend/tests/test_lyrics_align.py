@@ -69,6 +69,53 @@ def test_transcript_process_failure_is_explicit(monkeypatch, tmp_path):
         stderr = 'boom'
     monkeypatch.setattr(lyrics_align.subprocess, 'run', lambda *a, **kw: Failed())
     with pytest.raises(lyrics_align.AlignmentUnavailable, match='transcription failed'):
+        lyrics_align.transcribe_words_local(tmp_path / 'song.mp3', None)
+
+
+def test_groq_transcription_maps_words_and_waits_out_a_rate_limit(monkeypatch, tmp_path):
+    audio = tmp_path / 'song.mp3'; audio.write_bytes(b'x')
+    compact = tmp_path / 'song-speech.mp3'
+    def fake_ffmpeg(command, **kw):
+        Path(command[-1]).write_bytes(b'small')
+        class Done: returncode = 0; stderr = ''
+        return Done()
+    monkeypatch.setattr(lyrics_align.subprocess, 'run', fake_ffmpeg)
+    monkeypatch.setenv('GROQ_API_KEY', 'k')
+    calls, waits = [], []
+    class Response:
+        def __init__(self, status, body=None, retry=None):
+            self.status_code, self._body, self.headers = status, body, {'Retry-After': retry} if retry else {}
+        def json(self): return self._body
+    body = {'words': [{'word': ' Come', 'start': 27.4, 'end': 27.6}, {'word': 'up', 'start': 27.7, 'end': 27.9},
+                      {'word': 'later', 'start': 40.0, 'end': 40.3}],
+            'segments': [{'id': 0, 'start': 27.0, 'end': 30.0, 'avg_logprob': -0.1},
+                         {'id': 1, 'start': 39.0, 'end': 42.0, 'avg_logprob': -2.0}]}
+    responses = [Response(429, retry='2'), Response(200, body)]
+    def post(url, headers, data, files, timeout):
+        calls.append((url, headers['Authorization'], dict(data), files['file'][0]))
+        return responses.pop(0)
+    words = lyrics_align.transcribe_words_groq(audio, 'he', post=post, sleep=waits.append)
+    assert waits == [2.0] and len(calls) == 2
+    assert calls[0][1] == 'Bearer k' and calls[0][2]['language'] == 'he' and calls[0][3] == 'song-speech.mp3'
+    assert words[0] == {'start': 27.4, 'text': 'Come', 'segment': 0, 'p': 0.905}
+    assert words[2]['segment'] == 1 and words[2]['p'] == 0.135
+    assert not compact.exists(), 'the compact upload copy is removed'
+    monkeypatch.delenv('GROQ_API_KEY')
+    with pytest.raises(lyrics_align.AlignmentUnavailable, match='GROQ_API_KEY'):
+        lyrics_align.transcribe_words_groq(audio, None, post=post)
+    monkeypatch.setenv('GROQ_API_KEY', 'k')
+    responses[:] = [Response(401)]
+    with pytest.raises(lyrics_align.AlignmentUnavailable, match='API key'):
+        lyrics_align.transcribe_words_groq(audio, None, post=post)
+
+
+def test_transcriber_selection(monkeypatch, tmp_path):
+    monkeypatch.setattr(lyrics_align, 'TRANSCRIBER', 'nowhere')
+    with pytest.raises(lyrics_align.AlignmentUnavailable, match='unknown transcriber'):
+        lyrics_align.transcribe_words(tmp_path / 'song.mp3', None)
+    monkeypatch.setattr(lyrics_align, 'TRANSCRIBER', 'groq')
+    monkeypatch.delenv('GROQ_API_KEY', raising=False)
+    with pytest.raises(lyrics_align.AlignmentUnavailable, match='GROQ_API_KEY'):
         lyrics_align.transcribe_words(tmp_path / 'song.mp3', None)
 
 
