@@ -78,13 +78,14 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(points.map(\.time) == [8, 9, 10, 11, 12, 22, 23, 24, 30], "Edge, one second before the first word, each word, a one-second tail, the row end")
         check(!points.contains { [14, 16, 18, 20].contains($0.time) }, "Chord changes above a held word add no waypoints")
         let held = LyricPlayhead.position(at: 17, along: points, rtl: false)!
-        check(held.x == 120 + (180 - 120) * 0.5, "During a held word the runner moves steadily toward the next word, not to a chord")
+        check(held.x == 120 + (180 - 120) * 0.125, "Halfway through a held word the runner has moved only an eighth of the way: it lingers, then arrives on the onset")
+        check(LyricPlayhead.position(at: 22, along: points, rtl: false)!.x == 180, "It reaches the next word exactly at its onset")
         check(LyricPlayhead.position(at: 8.5, along: points, rtl: false)!.x == 0, "Before the lead-in it waits at the leading edge")
         check(LyricPlayhead.position(at: 26, along: points, rtl: false)!.x == 290, "After the tail it rests at the trailing edge")
         check(LyricPlayhead.currentWord(at: 17, wordTimes: times) == 2 && LyricPlayhead.currentWord(at: 9.9, wordTimes: times) == nil
               && LyricPlayhead.currentWord(at: 23, wordTimes: times) == 4, "The highlighted word is the last one begun")
         // Seeking: any time resolves without state.
-        check(LyricPlayhead.position(at: 22.5, along: points, rtl: false)!.x == 210, "Halfway between words 3 and 4")
+        check(LyricPlayhead.position(at: 22.5, along: points, rtl: false)!.x == 180 + 60 * 0.125, "Seeking to any time resolves without state")
         // A wrapped line: words 3 and 4 sit on a second visual line.
         var wrapped = words
         wrapped[3] = CGRect(x: 0, y: 40, width: 50, height: 20); wrapped[4] = CGRect(x: 60, y: 40, width: 50, height: 20)
@@ -92,7 +93,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         let crossing = LyricPlayhead.position(at: 17, along: wrapPoints, rtl: false)!
         check(crossing.y == 10 && crossing.x > 120, "Halfway from word 2 to a wrapped word 3 the runner is still on the first line, moving right")
         let nearEnd = LyricPlayhead.position(at: 21.9, along: wrapPoints, rtl: false)!
-        check(nearEnd.y == 10 && nearEnd.x > 160, "Just before a wrapped word it has run to the end of the first line")
+        check(nearEnd.y == 10 && nearEnd.x > 165, "Just before a wrapped word it has run to the end of the first line")
         let arrived = LyricPlayhead.position(at: 22, along: wrapPoints, rtl: false)!
         check(arrived.y == 50 && arrived.x == 0, "At the word's onset it is on the second line at that word")
         // Line-timed rows: chords are the only fixed points.

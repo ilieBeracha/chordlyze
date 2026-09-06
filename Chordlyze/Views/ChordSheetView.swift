@@ -212,7 +212,7 @@ struct SongPlayingSettings: View {
     @ObservedObject var store: SongSheetStore
     var nowPlaying: SpotifyNowPlaying = .shared
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("chordLead") private var lead = 0.3
+    @AppStorage("chordLead") private var lead = 0.0
     private var soundingKey: String {
         guard let key = store.analysis?.key else { return "Not available" }
         let parts = key.split(separator: " ", maxSplits: 1)
@@ -240,7 +240,7 @@ struct SongPlayingSettings: View {
                 Section("Timing against Spotify") {
                     Stepper(String(format: "Show chords ahead by %.1f s", lead), value: $lead, in: -1...2, step: 0.1)
                         .accessibilityIdentifier("chord-lead")
-                    Text("Every song, Live and Practice. Raise it if chords highlight after you hear them change.")
+                    Text("Every song, Live and Practice. Off by default; raise it only if chords light after you hear them change.")
                         .font(.footnote).foregroundStyle(.secondary)
                     NavigationLink {
                         TimingCalibrationView(store: store, nowPlaying: nowPlaying)
