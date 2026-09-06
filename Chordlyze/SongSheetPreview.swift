@@ -78,7 +78,8 @@ struct SongSheetPreview: View {
                        ["start": 6, "end": 12, "label": "G:7"],
                        ["start": 12, "end": 20, "label": "A:min"],
                        ["start": 20, "end": 40, "label": "F:maj7"]],
-            "source": "youtube", "audio_duration": 40, "song_duration": 40, "key": "C major"
+            "source": "youtube", "audio_duration": 40, "song_duration": 40, "key": "C major",
+            "tempo": ["bpm": 120, "beats": (0..<80).map { Double($0) * 0.5 }]
         ])
         let status: SongStatus = decode([
             "job": ["state": "ready", "worker_online": true], "library_generation": "preview",
@@ -86,7 +87,8 @@ struct SongSheetPreview: View {
                                      ["start": 6, "end": 12, "label": "G:7"],
                                      ["start": 12, "end": 20, "label": "A:min"],
                                      ["start": 20, "end": 40, "label": "F:maj7"]],
-                         "source": "youtube", "audio_duration": 40, "song_duration": 40, "key": "C major"]
+                         "source": "youtube", "audio_duration": 40, "song_duration": 40, "key": "C major",
+                         "tempo": ["bpm": 120, "beats": (0..<80).map { Double($0) * 0.5 }]]
         ])
         let arguments = ProcessInfo.processInfo.arguments
         // "estimated": catalog lyrics without timing, spread over the song as the backend does.

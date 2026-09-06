@@ -18,9 +18,11 @@ final class Metronome {
     }
 
     /// Starts clicking immediately: `countIn` beats `period` apart, then one
-    /// click per entry of `beats` (seconds after the count-in ends). Returns
-    /// the instant the count-in ends; the recorder should start then.
-    func start(countIn: Int, period: Double, beats: [Double]) throws -> ContinuousClock.Instant {
+    /// click per entry of `beats` (seconds after the count-in ends), accented
+    /// where `downbeats` says so. The count-in is the bar before the take,
+    /// so its last click leads straight into beat 1. Returns the instant the
+    /// count-in ends; the recorder should start then.
+    func start(countIn: Int, period: Double, beats: [Double], downbeats: Set<Int> = []) throws -> ContinuousClock.Instant {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playAndRecord, mode: .default,
                                 options: [.defaultToSpeaker, .allowBluetoothA2DP, .mixWithOthers])
@@ -38,8 +40,8 @@ final class Metronome {
             player.scheduleBuffer(i == 0 ? accent : click, at: at(Double(i) * period))
         }
         let countInLength = Double(countIn) * period
-        for beat in beats {
-            player.scheduleBuffer(click, at: at(countInLength + beat))
+        for (index, beat) in beats.enumerated() {
+            player.scheduleBuffer(downbeats.contains(index) ? accent : click, at: at(countInLength + beat))
         }
         return started + .seconds(lead + countInLength)
     }

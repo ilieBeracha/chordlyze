@@ -52,12 +52,18 @@ enum SheetModel {
         return min(interval, max(secondsPerWord * Double(words), minimumSungShare * interval))
     }
 
+    /// Chord events on the beat grid when the chart has one: a boundary the
+    /// recognizer put within a third of a beat of a beat moves onto it, so
+    /// chords change where the click lands and where a player expects.
     static func events(_ analysis: ChordAnalysis?) -> [Event] {
         guard let analysis, !analysis.isPreview else { return [] }
+        let grid = BeatGrid(tempo: analysis.tempo, chords: analysis.chords)
+        let snap: (Double) -> Double = { grid?.snap($0) ?? $0 }
         return analysis.chords.compactMap { segment in
-            let end = min(segment.end, analysis.coverageEnd)
-            guard segment.start.isFinite, end.isFinite, segment.start >= 0, end > segment.start else { return nil }
-            return Event(start: segment.start, end: end, chord: segment.chord)
+            let start = snap(segment.start)
+            let end = min(snap(segment.end), analysis.coverageEnd)
+            guard start.isFinite, end.isFinite, start >= 0, end > start else { return nil }
+            return Event(start: start, end: end, chord: segment.chord)
         }.sorted { $0.start < $1.start }
     }
     static func activeEvent(_ events: [Event], at time: Double) -> Event? {
@@ -147,5 +153,89 @@ enum SheetModel {
             return Placed(event: event, position: position, wordIndex: wordIndex)
         }
         return Row(start: start, end: end, kind: kind, text: text, words: words, chords: placed, held: held)
+    }
+}
+
+/// The chart's beat times with bars inferred on top. The backend tracks
+/// beats but not downbeats; in 4/4, chord changes land on beat 1 far more
+/// than elsewhere, so the beat phase most changes fall on is taken as the
+/// downbeat. Everything the metronome and the sheet do with beats goes
+/// through here so they agree.
+struct BeatGrid: Equatable {
+    static let beatsPerBar = 4
+    /// How far off a beat a chord boundary may be and still count as on it.
+    static let snapShare = 0.34
+
+    let beats: [Double]
+    /// Median beat spacing, in seconds.
+    let period: Double
+    /// Index into `beats` of a downbeat; every fourth beat from it is one.
+    let phase: Int
+
+    init?(tempo: ChordAnalysis.Tempo?, chords: [ChordSegment]) {
+        guard let tempo, tempo.beats.count >= Self.beatsPerBar * 2 else { return nil }
+        let beats = tempo.beats.filter(\.isFinite).sorted()
+        let gaps = zip(beats, beats.dropFirst()).map { $1 - $0 }.filter { $0 > 0 }.sorted()
+        guard gaps.count >= Self.beatsPerBar, gaps[gaps.count / 2] > 0.15 else { return nil }
+        self.beats = beats
+        period = gaps[gaps.count / 2]
+        var votes = [Int](repeating: 0, count: Self.beatsPerBar)
+        for chord in chords where chord.label != "N" {
+            guard let index = Self.nearestIndex(beats, to: chord.start),
+                  abs(beats[index] - chord.start) <= period * Self.snapShare else { continue }
+            votes[index % Self.beatsPerBar] += 1
+        }
+        phase = votes.indices.max { votes[$0] < votes[$1] || (votes[$0] == votes[$1] && $0 > $1) } ?? 0
+    }
+
+    static func nearestIndex(_ beats: [Double], to time: Double) -> Int? {
+        guard !beats.isEmpty else { return nil }
+        var low = 0, high = beats.count
+        while low < high {
+            let mid = (low + high) / 2
+            if beats[mid] < time { low = mid + 1 } else { high = mid }
+        }
+        if low == 0 { return 0 }
+        if low == beats.count { return beats.count - 1 }
+        return time - beats[low - 1] <= beats[low] - time ? low - 1 : low
+    }
+
+    func isDownbeat(_ index: Int) -> Bool { (index - phase) % Self.beatsPerBar == 0 }
+
+    /// The nearest beat when the time is within a third of a beat of it.
+    func snap(_ time: Double) -> Double {
+        guard let index = Self.nearestIndex(beats, to: time), abs(beats[index] - time) <= period * Self.snapShare else { return time }
+        return beats[index]
+    }
+
+    /// Index of the last beat at or before `time`; nil before the first beat.
+    func beatIndex(at time: Double) -> Int? {
+        var low = 0, high = beats.count
+        while low < high {
+            let mid = (low + high) / 2
+            if beats[mid] <= time { low = mid + 1 } else { high = mid }
+        }
+        return low == 0 ? nil : low - 1
+    }
+
+    /// 1...4 within the bar at `time`; nil before the first beat.
+    func beatInBar(at time: Double) -> Int? {
+        beatIndex(at: time).map { ((($0 - phase) % Self.beatsPerBar) + Self.beatsPerBar) % Self.beatsPerBar + 1 }
+    }
+
+    /// The downbeat at or just before `time`, so a take begins on beat 1.
+    /// Before the first downbeat, the first downbeat.
+    func downbeat(atOrBefore time: Double) -> Double {
+        if let index = beatIndex(at: time) {
+            var k = index
+            while k >= 0 { if isDownbeat(k) { return beats[k] }; k -= 1 }
+        }
+        return beats[beats.indices.first(where: isDownbeat) ?? 0]
+    }
+
+    /// Beats in [start, end) as offsets from `start`, with which are downbeats.
+    func clicks(from start: Double, to end: Double) -> [(offset: Double, downbeat: Bool)] {
+        beats.indices.filter { beats[$0] >= start && beats[$0] < end }
+            .map { (beats[$0] - start, isDownbeat($0)) }
     }
 }

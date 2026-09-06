@@ -52,9 +52,16 @@ capo** offers a timing offset (±5 s in 0.25 s steps) that Live and Practice add
 to Spotify's position before reading the chart. Like transpose and capo, the
 offset lives on the in-memory song document.
 
-**Record with metronome** requires pausing Spotify. Changing pace never
-modifies Spotify playback speed. Each take is limited to 600 real seconds.
-Charts without beat data use a visual count-in.
+**Record with metronome** requires pausing Spotify. The backend tracks beats
+but not bars, so the app infers them (`BeatGrid`): in 4/4 the beat phase that
+most chord changes land on is taken as beat 1. Chord boundaries within a
+third of a beat of a beat are drawn on the beat, on every surface, so chords
+change where the click lands; scoring still uses the recognized boundaries.
+The take begins on the downbeat at or before the chosen start, four clicks
+at the song's own spacing count in the bar before it, beat 1 is accented, and
+the recording bar shows four beat dots. Changing pace scales the clicks and
+never modifies Spotify playback speed. Each take is limited to 600 real
+seconds. Charts without beat data use a visual count-in and no click.
 
 ## Headphones and live feedback
 

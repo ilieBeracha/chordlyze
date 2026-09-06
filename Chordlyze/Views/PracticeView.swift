@@ -44,7 +44,10 @@ struct PracticeView: View {
     @State private var lastJudged: String?
 
     private var songEnd: Double { max(1, analysis.coverageEnd) }
+    private var grid: BeatGrid? { BeatGrid(tempo: analysis.tempo, chords: analysis.chords) }
     private var rangeStart: Double { sectionOnly ? sectionStart : 0 }
+    /// Metronome takes begin on a bar: the downbeat at or before the range.
+    private var barStart: Double { grid.map { min($0.downbeat(atOrBefore: rangeStart), rangeStart) } ?? rangeStart }
     private var rangeEnd: Double { sectionOnly ? sectionEnd : songEnd }
     private var spotifyThisTrack: SpotifyNowPlaying.Playing? {
         guard let playing = nowPlaying.playing, playing.track.id == trackID else { return nil }
@@ -219,8 +222,10 @@ struct PracticeView: View {
     }
 
     private var metronomeNote: String {
-        let bpm = analysis.tempo.map { " at \(Int(($0.bpm * rate).rounded())) BPM" } ?? ""
-        return "Pause Spotify first. After the count-in, play from \(mmss(rangeStart))\(bpm).\(analysis.tempo == nil ? " This chart has no beat grid, so the count-in is visual." : "")"
+        guard let grid else { return "Pause Spotify first. This chart has no beat grid, so the count-in is visual and there is no click." }
+        let bpm = Int((60 / grid.period * rate).rounded())
+        let bar = barStart < rangeStart ? " (the bar at \(mmss(barStart)))" : ""
+        return "Pause Spotify first. Four clicks count in the bar before, then the take starts on beat 1 at \(mmss(barStart))\(bar), \(bpm) BPM, beat 1 accented."
     }
 
     private var recordingView: some View {
@@ -243,6 +248,9 @@ struct PracticeView: View {
                         Label(synced ? "Recording · Spotify on \(nowPlaying.playbackDevice ?? "phone")" : "Recording · \(Int(rate * 100))%", systemImage: "record.circle")
                             .font(.subheadline).foregroundStyle(Palette.destructive)
                         Spacer()
+                        if !synced, let grid {
+                            BeatDots(grid: grid) { position() }
+                        }
                         Button("Finish take") { finish() }.buttonStyle(.borderedProminent).tint(.spotifyGreen)
                     }
                 }.padding().background(Palette.card)
@@ -288,15 +296,20 @@ struct PracticeView: View {
             // Microphone first, then Spotify: opening input later would
             // interrupt playback for a moment right as the take begins.
             try recorder.prime()
-            let setup = try PracticePlan(start: rangeStart, end: rangeEnd, rate: rate,
+            let setup = try PracticePlan(start: spotify ? rangeStart : barStart, end: rangeEnd, rate: rate,
                 transpose: songStore.manualShift, capo: songStore.capoMode ? songStore.capo : 0)
             let plan: PracticePlan
             if spotify {
                 plan = try await startWithSpotify(setup)
             } else {
-                if let tempo = analysis.tempo, tempo.bpm > 0 {
-                    let period = 60 / (tempo.bpm * rate)
-                    let recordAt = try metronome.start(countIn: 4, period: period, beats: setup.beats(tempo.beats))
+                if let grid {
+                    // Count in the bar before the take at the song's own spacing,
+                    // then click every beat of the range, beat 1 accented.
+                    let period = grid.period / rate
+                    let clicks = grid.clicks(from: setup.start, to: setup.end)
+                    let recordAt = try metronome.start(countIn: BeatGrid.beatsPerBar, period: period,
+                        beats: clicks.map { $0.offset / rate },
+                        downbeats: Set(clicks.indices.filter { clicks[$0].downbeat }))
                     for n in [4, 3, 2, 1] {
                         phase = .countdown(n)
                         try await Task.sleep(until: recordAt - .seconds(Double(n - 1) * period), clock: .continuous)
@@ -445,5 +458,26 @@ private final class FeedbackTap: @unchecked Sendable {
     func cancel() {
         lock.lock(); let worker = worker; failed = true; lock.unlock()
         worker?.cancel()
+    }
+}
+
+/// Where the bar is right now: four dots, the current beat lit, beat 1 larger.
+struct BeatDots: View {
+    let grid: BeatGrid
+    let position: () -> Double?
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.05)) { _ in
+            let current = position().flatMap { grid.beatInBar(at: $0) }
+            HStack(spacing: 6) {
+                ForEach(1...BeatGrid.beatsPerBar, id: \.self) { beat in
+                    Circle()
+                        .fill(beat == current ? Color.spotifyGreen : Palette.faint)
+                        .frame(width: beat == 1 ? 10 : 7, height: beat == 1 ? 10 : 7)
+                }
+            }
+            .accessibilityLabel(current.map { "Beat \($0)" } ?? "Waiting for the first beat")
+        }
+        .padding(.trailing, 6)
     }
 }
