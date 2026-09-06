@@ -222,3 +222,28 @@ def test_worker_keeps_the_transcript_when_the_catalog_has_nothing(tmp_path):
     assert song_worker.attach_lyrics(quiet, SONG, tmp_path / 'a.mp3', 'gen', align=lambda *a, **k: None,
                                      transcribe=lambda audio: None) == 'none'
     assert not quiet.posted
+
+
+def test_lyrics_job_times_words_without_re_analyzing(monkeypatch, tmp_path, capsys):
+    """A lyrics job fetches the recording, aligns, finishes; it never recognizes chords."""
+    audio = tmp_path / 'song.mp3'; audio.write_bytes(b'x')
+    monkeypatch.setattr(song_worker, 'fetch_full_track', lambda *a, **kw: audio)
+    monkeypatch.setattr(song_worker, 'recognize_audio', lambda *a, **kw: (_ for _ in ()).throw(AssertionError('no recognition')))
+    posted = []
+    class Client:
+        def post(self, path, payload=None):
+            posted.append((path, payload)); return {}
+        def get(self, path, params):
+            return {'synced': False, 'lines': [{'time': 1, 'text': 'Some words'}]}
+    monkeypatch.setattr(song_worker, 'align_lyrics', lambda audio, lines, stats=None: [{'time': 1.2, 'text': 'Some words',
+                                                                                        'words': [{'time': 1.2, 'text': 'Some'}, {'time': 1.7, 'text': 'words'}]}])
+    job = {'id': 'job', 'lease': 'lease', 'generation': 'gen', 'kind': 'lyrics', 'song': dict(SONG)}
+    assert song_worker.process_job(Client(), job) == 'ready'
+    lyrics = [p for path, p in posted if path == '/internal/jobs/lyrics']
+    assert len(lyrics) == 1 and lyrics[0]['lines'][0]['words'][1]['text'] == 'words'
+    finish = [p for path, p in posted if path == '/internal/jobs/finish']
+    assert finish == [{'track_id': 'song', 'job_id': 'job', 'lease': 'lease', 'library_generation': 'gen',
+                       'state': 'ready', 'message': 'Lyrics aligned'}]
+    assert not any(path == '/analysis/submit' for path, _ in posted), 'the chart is not re-published'
+    assert not audio.exists()
+    assert 'Lyrics job aligned' in capsys.readouterr().out

@@ -210,6 +210,13 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
             return 'unavailable'
         stage[0] = 'analyzing'
         client.post('/internal/jobs/heartbeat', {**identity, 'stage': stage[0]})
+        if job.get('kind') == 'lyrics':
+            # The chart exists; only its lyrics need timing from the recording.
+            outcome = attach_lyrics(client, song, audio, job['generation'], stopping, align=align_lyrics)
+            phase('lyrics')
+            client.post('/internal/jobs/finish', {**identity, 'state': 'ready', 'message': 'Lyrics ' + outcome})
+            print('Lyrics job ' + outcome.split(' ')[0] + ' ' + ' '.join(f'{name}={seconds}s' for name, seconds in phases.items()), flush=True)
+            return 'ready'
         recognition = recognize_audio(audio, model='ismir2019', max_duration=1200)
         phase('recognize')
         # Reject an incomplete download or a different edit before publishing.
