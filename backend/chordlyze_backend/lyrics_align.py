@@ -51,6 +51,67 @@ def _norm(word: str) -> str:
     return re.sub(r"[^\w']+", '', word).replace("'", '')
 
 
+MATCH = 2.0        # identical normalized words
+NEAR_MATCH = 1.2   # close spelling (transcript slips like "meat" for "meet")
+GAP = -0.5         # a lyric word not heard, or a transcript word not in the lyrics
+NEAR_RATIO = 0.75
+
+
+def _similar(a: str, b: str, cache: dict) -> float:
+    """Score for pairing lyric word `a` with transcript word `b`."""
+    if a == b:
+        return MATCH
+    if len(a) < 3 or len(b) < 3 or a[0] != b[0] and abs(len(a) - len(b)) > 2:
+        return 0.0
+    key = (a, b)
+    if key not in cache:
+        cache[key] = NEAR_MATCH if SequenceMatcher(None, a, b).ratio() >= NEAR_RATIO else 0.0
+    return cache[key]
+
+
+def align_words(a: list[str], b: list[str]) -> list[int | None]:
+    """Transcript index for each lyric word, or None, by a global monotonic
+    alignment that maximizes match score minus gap costs. A repeated line
+    therefore lands on its own occurrence: reaching a later repetition would
+    mean skipping every transcript word in between, and each skip costs."""
+    n, m = len(a), len(b)
+    cache: dict = {}
+    score = [[0.0] * (m + 1) for _ in range(n + 1)]
+    move = [[0] * (m + 1) for _ in range(n + 1)]  # 1 diagonal, 2 up (skip lyric), 3 left (skip transcript)
+    for i in range(1, n + 1):
+        score[i][0] = i * GAP
+        move[i][0] = 2
+    for j in range(1, m + 1):
+        score[0][j] = j * GAP
+        move[0][j] = 3
+    for i in range(1, n + 1):
+        row, above = score[i], score[i - 1]
+        for j in range(1, m + 1):
+            pair = _similar(a[i - 1], b[j - 1], cache)
+            best, how = above[j] + GAP, 2
+            left = row[j - 1] + GAP
+            if left > best:
+                best, how = left, 3
+            if pair > 0:
+                diag = above[j - 1] + pair
+                if diag >= best:
+                    best, how = diag, 1
+            row[j] = best
+            move[i][j] = how
+    result: list[int | None] = [None] * n
+    i, j = n, m
+    while i > 0 or j > 0:
+        how = move[i][j]
+        if how == 1:
+            result[i - 1] = j - 1
+            i, j = i - 1, j - 1
+        elif how == 2:
+            i -= 1
+        else:
+            j -= 1
+    return result
+
+
 def time_lines(lines: list[str], transcript: list[dict]) -> tuple[list[dict], int, int]:
     """Match lyric words to transcript words (in order) and time each line by
     its first word. Unmatched words between matched neighbours are
@@ -60,11 +121,8 @@ def time_lines(lines: list[str], transcript: list[dict]) -> tuple[list[dict], in
     spoken = [entry for entry in transcript if _norm(entry['text'])]
     a = [_norm(word) for _, word in lyric]
     b = [_norm(entry['text']) for entry in spoken]
-    times: list[float | None] = [None] * len(lyric)
-    for tag, i1, i2, j1, j2 in SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
-        if tag == 'equal':
-            for offset in range(i2 - i1):
-                times[i1 + offset] = float(spoken[j1 + offset]['start'])
+    times: list[float | None] = [float(spoken[j]['start']) if j is not None else None
+                                 for j in align_words(a, b)]
     matched = sum(time is not None for time in times)
     known = [index for index, time in enumerate(times) if time is not None]
     for index in range(len(times)):

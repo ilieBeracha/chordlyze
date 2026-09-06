@@ -37,6 +37,26 @@ def test_punctuation_case_and_transcript_errors_do_not_break_matching():
     assert unmatched and 29.9 <= unmatched[0]['time'] <= 80.1, 'unmatched words are interpolated between neighbours'
 
 
+def test_repeated_lines_land_on_their_own_occurrence():
+    """The greedy matcher used to time "gonna" from the first chorus and
+    "give" from the second, eight seconds later, because the longest common
+    block won. In-order alignment with gap costs keeps each line together."""
+    lines = ["I'm gonna give you my heart", 'Cause you light up the path', "I'm gonna give you my heart"]
+    transcript = words("i'm gonna give you my heart", 17.4) + words('cause you light up the path', 37.6) \
+        + words("i'm gonna give you my heart", 122.2)
+    timed, matched, total = time_lines(lines, transcript)
+    assert matched == total
+    first = [w['time'] for w in timed[0]['words']]
+    assert first == [17.4, 17.9, 18.4, 18.9, 19.4, 19.9], 'the first chorus stays within its own two seconds'
+    assert [w['time'] for w in timed[2]['words']][0] == 122.2
+    # A transcript that misses a word in the middle still keeps the line together.
+    gappy = words("i'm gonna you my heart", 17.4) + words('cause you light up the path', 37.6) \
+        + words("i'm gonna give you my heart", 122.2)
+    timed, _, _ = time_lines(lines, gappy)
+    give = next(w for w in timed[0]['words'] if w['text'] == 'give')
+    assert 17.9 < give['time'] < 18.5, 'the missing word is interpolated inside its line, not fetched from the later chorus'
+
+
 def test_lines_never_go_backwards_and_unplaced_edges_are_dropped():
     transcript = words('nobody said it was easy', 80.1) + words('nobody said it was easy', 93.1)
     timed, _, _ = time_lines(LINES, transcript)
