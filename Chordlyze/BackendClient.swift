@@ -138,9 +138,15 @@ enum BackendClient {
         let album: String?
         let duration: Double?
         let isrc: String?
+        /// iTunes primary genre, when the catalog matched the recording.
+        let genre: String?
+        let tempoBpm: Double?
+        /// Distinct chords in the chart.
+        let chordCount: Int?
         var id: String { trackId }
         enum CodingKeys: String, CodingKey {
-            case trackId = "track_id", title, artist, key, artwork, difficulty, album, duration, isrc
+            case trackId = "track_id", title, artist, key, artwork, difficulty, album, duration, isrc, genre
+            case tempoBpm = "tempo_bpm", chordCount = "chord_count"
         }
 
         /// iTunes thumb upscaled for retina 46pt rows.

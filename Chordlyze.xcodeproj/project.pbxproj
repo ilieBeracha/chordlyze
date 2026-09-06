@@ -12,6 +12,7 @@
 		16944B0A1CCA81BDCF36660A /* ReportCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0F811F0C5F3043C10F537F8 /* ReportCardView.swift */; };
 		217111167168D9268C97AA0C /* SpotifyAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E4FF07B614A2CF0ABCC7DAC /* SpotifyAPI.swift */; };
 		24DE81A87DC2572BF3FBFA64 /* SongSheetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E5D5C8A6FF9A44586E99A20 /* SongSheetStore.swift */; };
+		2561978840E1914843B8F733 /* CatalogBrowseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AD4733C8A8B5EB4A0653594 /* CatalogBrowseView.swift */; };
 		2B0B316D24CDEEE7AD0A48C8 /* Metronome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1649CD4213D38B91DD970BB /* Metronome.swift */; };
 		2BA907A328198DD7AD731B7C /* BackendClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1243AB5316165B94E89C1FE /* BackendClient.swift */; };
 		335DE6B244A15F9E1B74E91F /* ChordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1876BBFA097772E3C9CF64D3 /* ChordView.swift */; };
@@ -50,6 +51,7 @@
 /* Begin PBXFileReference section */
 		04726B3D35A67D70A04F5F98 /* ChordRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordRowView.swift; sourceTree = "<group>"; };
 		084B36CA9E995C690A1D8FEE /* ChordDiagramSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordDiagramSheet.swift; sourceTree = "<group>"; };
+		0AD4733C8A8B5EB4A0653594 /* CatalogBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogBrowseView.swift; sourceTree = "<group>"; };
 		1876BBFA097772E3C9CF64D3 /* ChordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordView.swift; sourceTree = "<group>"; };
 		229879235E591BEFFB136C65 /* ArtworkColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkColor.swift; sourceTree = "<group>"; };
 		23F4EBD18FDE26AB8F0E18A2 /* TakeRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakeRecorder.swift; sourceTree = "<group>"; };
@@ -102,6 +104,7 @@
 		255DC2666B1934F783BE7DE2 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				0AD4733C8A8B5EB4A0653594 /* CatalogBrowseView.swift */,
 				084B36CA9E995C690A1D8FEE /* ChordDiagramSheet.swift */,
 				C984E0CBEB1E577640330B5A /* ChordLyricLine.swift */,
 				04726B3D35A67D70A04F5F98 /* ChordRowView.swift */,
@@ -234,6 +237,7 @@
 			files = (
 				D4D4778DF0881A4E1A722B5A /* ArtworkColor.swift in Sources */,
 				2BA907A328198DD7AD731B7C /* BackendClient.swift in Sources */,
+				2561978840E1914843B8F733 /* CatalogBrowseView.swift in Sources */,
 				D605C782FCDBB01014D9E663 /* Chord.swift in Sources */,
 				C3DA1E6478B27FDDD14302A9 /* ChordDiagramSheet.swift in Sources */,
 				62E9C95B1136B16F247C1E0D /* ChordDrillDetector.swift in Sources */,

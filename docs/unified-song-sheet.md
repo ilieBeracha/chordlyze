@@ -23,6 +23,15 @@ that have charts; `/catalog` lists every chart. The app uses the library for
 Home stats and "Saved songs", the catalog for "has a chart" badges, Search
 browse and the Library tab's "All charts". Charts carry no account data.
 
+The Library tab's Browse scope arranges the catalog by difficulty, genre, key,
+tempo band and chord count, with a search field and the newest charts. Genre
+comes from the iTunes catalog's `primaryGenreName` (`chordlyze_backend/genre.py`):
+an ISRC lookup when exact, otherwise the best title/artist/duration match with
+the same scoring as song search. The worker records it at publish time;
+`python scripts/backfill_genres.py` fills earlier charts on the server, at
+iTunes' rate limit. `/catalog` and `/library` items carry `genre`, `tempo_bpm`
+and `chord_count` alongside the recomputed difficulty.
+
 Charts that predate accounts belong to nobody until
 `python scripts/claim_library.py <spotify-user-id>` is run once on the server.
 Tests stand in for Spotify with `tests/fake_spotify.py` through

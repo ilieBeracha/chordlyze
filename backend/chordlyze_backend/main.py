@@ -179,6 +179,7 @@ class SubmittedAnalysis(BaseModel):
     isrc: str | None = None
     artwork: str | None = None
     tempo: dict | None = None
+    genre: str | None = Field(default=None, max_length=100)
     analysis_version: int = Field(default=0, ge=0, le=ANALYSIS_VERSION)
     model_revision: str | None = None
     audio_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
@@ -230,6 +231,8 @@ def _submit_analysis(body: SubmittedAnalysis, require_lease: bool = False) -> di
         segments.append(ChordSegment(seg.start, seg.end, chord.label if chord else "N"))
     result = analyze(merge_adjacent(segments))
     result["tempo"] = body.tempo
+    if body.genre:
+        result["genre"] = body.genre
     result["source"] = body.source
     result["model"] = body.model
     result.update(analysis_version=body.analysis_version, model_revision=body.model_revision,
@@ -655,6 +658,9 @@ def _library(paths: list[Path]) -> dict:
             "artwork": data.get("artwork"),
             # Recomputed on read so the scale can change without re-analysis.
             "difficulty": difficulty(data.get("chords") or []),
+            "genre": data.get("genre"),
+            "tempo_bpm": (data.get("tempo") or {}).get("bpm"),
+            "chord_count": len({c["label"] for c in data.get("chords") or [] if c.get("label") and c["label"] != "N"}),
             "source": data.get("source"),
             "model": data.get("model", "madmom"),
             "isrc": data.get("isrc"),

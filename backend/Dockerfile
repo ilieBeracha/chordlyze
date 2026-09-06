@@ -24,7 +24,7 @@ RUN PYTHON=python3.11 bash scripts/setup_ismir.sh "$CHORDLYZE_ISMIR_DIR"
 
 COPY chordlyze_backend ./chordlyze_backend
 COPY song_worker.py ./song_worker.py
-COPY scripts/reset_song_library.py ./scripts/reset_song_library.py
+COPY scripts/reset_song_library.py scripts/claim_library.py scripts/backfill_genres.py ./scripts/
 
 ARG APP_REVISION=unknown
 ENV CHORDLYZE_RELEASE=$APP_REVISION

@@ -17,6 +17,7 @@ import urllib.request
 from dotenv import load_dotenv
 import numpy as np
 import soundfile as sf
+from chordlyze_backend.genre import lookup_genre
 from chordlyze_backend.analysis.beats import track_beats
 from chordlyze_backend.analysis.engine import recognize_audio
 from chordlyze_backend.analysis.ismir import close, ismir_available, warm
@@ -219,13 +220,18 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
             return 'abandoned'
         tempo = track_beats(audio)
         phase('beats')
+        try:
+            genre = lookup_genre(song['title'], song.get('artist'), song['duration'], song.get('isrc'))
+        except Exception as error:  # noqa: BLE001 - a missing genre must not lose the chart
+            print(f'Genre lookup failed: {error}', flush=True)
+            genre = None
         client.post('/analysis/submit', {
             **identity, **recognition.metadata(), 'title': song['title'],
             'artist': song.get('artist'), 'album': song.get('album'),
             'artwork': song.get('artwork'), 'isrc': song.get('isrc'),
             'song_duration': song['duration'], 'source': 'youtube', 'audio_source': source_info,
             'segments': [segment.to_dict() for segment in recognition.segments],
-            'tempo': tempo,
+            'tempo': tempo, 'genre': genre,
         })
         # Timings only; never track metadata.
         print('Song phases ' + ' '.join(f'{name}={seconds}s' for name, seconds in phases.items()), flush=True)
