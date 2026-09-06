@@ -128,7 +128,7 @@ struct PracticeView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)) { _ in
             // Headphones pulled mid-take: the microphone would record Spotify from here on.
-            guard phase == .recording, synced, !TakeRecorder.headphonesConnected else { return }
+            guard phase == .recording, synced, let route = try? TakeRecorder.recordingRoute(), !route.headphones else { return }
             finish(note: "Headphones disconnected. The partial take was saved.", score: false)
         }
         .onDisappear { abandon() }
@@ -267,8 +267,12 @@ struct PracticeView: View {
         }
         if spotify {
             guard canSync else { phase = .failed("Spotify playback needs 100% pace and the original key."); return }
-            guard TakeRecorder.headphonesConnected else {
-                phase = .failed("Plug in headphones first. On the speaker the microphone records Spotify instead of your playing."); return
+            let route: TakeRecorder.Route
+            do { route = try TakeRecorder.recordingRoute() } catch {
+                phase = .failed("The audio session could not start: \(error.localizedDescription)"); return
+            }
+            guard route.headphones else {
+                phase = .failed("Connect headphones first. On the speaker the microphone records Spotify instead of your playing. Current output: \(route.outputs.joined(separator: ", "))."); return
             }
         } else {
             guard nowPlaying.playing?.isPlaying != true else {

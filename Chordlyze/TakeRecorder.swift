@@ -18,14 +18,33 @@ final class TakeRecorder {
     /// False once the take reached `maxDuration` or the engine stopped.
     var isRecording: Bool { engine?.isRunning == true && writer?.finished == false }
 
-    /// Outputs other than the phone's own speaker or earpiece. Spotify
-    /// practice needs this, or the microphone records the song itself.
-    static var headphonesConnected: Bool {
+    private static let sessionOptions: AVAudioSession.CategoryOptions = [.defaultToSpeaker, .allowBluetoothA2DP, .mixWithOthers]
+
+    /// The route the take will actually use. Spotify practice needs an
+    /// output other than the phone's own speaker or earpiece, or the
+    /// microphone records the song itself.
+    ///
+    /// The session is configured and activated exactly as recording will
+    /// use it before the route is read: an inactive session, or one left in
+    /// the drill's record-only category, reports a route that has nothing
+    /// to do with where a take would play.
+    struct Route {
+        let outputs: [String]
+        let headphones: Bool
+    }
+
+    static func recordingRoute() throws -> Route {
         #if targetEnvironment(simulator)
-        return true  // The simulator has no real audio routes.
+        return Route(outputs: ["Simulator"], headphones: true)  // No real audio routes.
         #else
-        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
-        return !outputs.isEmpty && outputs.allSatisfy { $0.portType != .builtInSpeaker && $0.portType != .builtInReceiver }
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playAndRecord, mode: .default, options: sessionOptions)
+        try session.setActive(true)
+        let outputs = session.currentRoute.outputs
+        let headphones = !outputs.isEmpty && outputs.allSatisfy {
+            $0.portType != .builtInSpeaker && $0.portType != .builtInReceiver
+        }
+        return Route(outputs: outputs.map(\.portName), headphones: headphones)
         #endif
     }
 
@@ -37,8 +56,7 @@ final class TakeRecorder {
         let session = AVAudioSession.sharedInstance()
         // playAndRecord (not record) so a running metronome keeps clicking;
         // mixWithOthers so activating the session doesn't pause Spotify.
-        try session.setCategory(.playAndRecord, mode: .default,
-                                options: [.defaultToSpeaker, .allowBluetoothA2DP, .mixWithOthers])
+        try session.setCategory(.playAndRecord, mode: .default, options: Self.sessionOptions)
         try session.setActive(true)
 
         let engine = AVAudioEngine()

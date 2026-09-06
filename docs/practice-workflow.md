@@ -56,9 +56,14 @@ Charts without beat data use a visual count-in.
 
 Spotify practice requires headphones: on the speaker the microphone records
 the song, and both live feedback and scoring would grade Spotify's playing.
-`TakeRecorder.headphonesConnected` accepts any output other than the built-in
-speaker or earpiece; the check runs at start, and a route change that removes
-the headphones mid-take saves the partial recording without scoring. The
+`TakeRecorder.recordingRoute()` first configures and activates the audio
+session exactly as the take will use it (play-and-record, Bluetooth A2DP
+allowed), then reads the route: an inactive session, or one left in the
+drill's record-only category, reports outputs that have nothing to do with
+where a take would play, which is how connected AirPods once read as
+"speaker". Any output other than the built-in speaker or earpiece passes; the
+failure message names the current output. A route change that removes the
+headphones mid-take saves the partial recording without scoring. The
 simulator has no real routes and passes the check.
 
 The take is captured through one `AVAudioEngine` tap. Each buffer is written to
