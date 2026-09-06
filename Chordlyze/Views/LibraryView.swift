@@ -16,10 +16,19 @@ struct LibraryView: View {
         }
     }
 
+    enum Scope: String, CaseIterable, Identifiable {
+        case mine, everyone
+        var id: String { rawValue }
+        var label: String { self == .mine ? "My songs" : "All charts" }
+    }
+
     @State private var items: [BackendClient.LibraryItem] = []
     @State private var error: String?
     @State private var loading = true
     @AppStorage("librarySort") private var sortRaw = SortMode.recent.rawValue
+    /// Mine: songs this account requested, saved or practiced. Everyone:
+    /// every chart on the server, ready to open and save.
+    @State private var scope: Scope = .mine
 
     private var sortMode: SortMode { SortMode(rawValue: sortRaw) ?? .recent }
     private var sorted: [BackendClient.LibraryItem] {
@@ -41,6 +50,12 @@ struct LibraryView: View {
             VStack(alignment: .leading, spacing: 0) {
                 header
                     .padding(.horizontal, 20)
+                Picker("Library", selection: $scope) {
+                    ForEach(Scope.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 20).padding(.top, 12)
+                .onChange(of: scope) { _, _ in Task { loading = true; await load() } }
 
                 if loading {
                     ProgressView()
@@ -49,8 +64,10 @@ struct LibraryView: View {
                 } else if let error {
                     errorView(error)
                 } else if items.isEmpty {
-                    ContentUnavailableView("No saved songs yet", systemImage: "music.note",
-                                           description: Text("Search for a song and prepare its chord sheet to find it here."))
+                    ContentUnavailableView(scope == .mine ? "No saved songs yet" : "No charts yet", systemImage: "music.note",
+                                           description: Text(scope == .mine
+                                               ? "Analyze a song, or save one from All charts, to find it here."
+                                               : "Every song anyone analyzes shows up here."))
                         .padding(.top, 40)
                 } else {
                     VStack(spacing: 0) {
@@ -86,7 +103,7 @@ struct LibraryView: View {
         HStack(spacing: 14) {
             if !isRoot { BackCircle() }
             VStack(alignment: .leading, spacing: 1) {
-                Text("Saved songs")
+                Text(scope == .mine ? "Saved songs" : "All charts")
                     .font(.system(size: 26, weight: .bold))
                     .tracking(-0.3)
                     .foregroundStyle(.white)
@@ -141,7 +158,7 @@ struct LibraryView: View {
 
     private func load() async {
         do {
-            items = try await BackendClient.library()
+            items = try await (scope == .mine ? BackendClient.library() : BackendClient.catalog())
             error = nil
         } catch {
             self.error = "Could not load library: \(error.localizedDescription)"

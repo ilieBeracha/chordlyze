@@ -31,10 +31,10 @@ def payload(job):
 
 def test_request_is_fast_deduplicated_and_never_creates_preview(cache):
     with ThreadPoolExecutor(max_workers=8) as pool:
-        results = list(pool.map(lambda _: main.request_song(request()), range(20)))
+        results = list(pool.map(lambda _: main.request_song(request(), user="tester"), range(20)))
     assert all(result['analysis'] is None and result['job']['state'] == 'queued' for result in results)
     assert len(list(cache.glob('job-*.json'))) == 1
-    assert main.library()['items'] == []
+    assert main.catalog(user="tester")['items'] == []
     job = SongJobs(cache).claim()
     assert job['song']['album'] == 'Album' and job['song']['duration'] == 200
     assert SongJobs(cache).claim() is None
@@ -53,19 +53,19 @@ def test_worker_requires_token(cache, monkeypatch):
 
 
 def test_completed_chart_updates_same_song_and_preserves_recording_metadata(cache, monkeypatch):
-    main.request_song(request())
+    main.request_song(request(), user="tester")
     job = SongJobs(cache).claim()
     monkeypatch.setenv('CHORDLYZE_WORKER_TOKEN', 'token')
     main.submit_analysis(payload(job), 'Bearer token')
-    result = main.song_status('song')
+    result = main.song_status('song', user="tester")
     assert result['job']['state'] == 'ready'
     assert result['analysis']['chords'][0]['label'] == 'C:maj7'
     assert result['song']['duration'] == 200 and result['song']['album'] == 'Album'
-    assert main.library()['items'][0]['duration'] == 200
+    assert main.catalog(user="tester")['items'][0]['duration'] == 200
 
 
 def test_reset_rejects_old_leases_and_removes_analyses_aliases_lyrics_jobs(cache, monkeypatch):
-    main.request_song(request())
+    main.request_song(request(), user="tester")
     job = SongJobs(cache).claim()
     for name in ['track-old', 'isrc-old', 'lyrics4-old', 'lyrics5-old']:
         (cache / f'{name}.json').write_text('{}')
@@ -81,18 +81,18 @@ def test_reset_rejects_old_leases_and_removes_analyses_aliases_lyrics_jobs(cache
     with pytest.raises(HTTPException) as error:
         main.submit_analysis(payload(job), 'Bearer token')
     assert error.value.status_code == 409
-    assert main.library()['items'] == []
-    assert main.song_status('song')['job']['state'] == 'missing'
+    assert main.catalog(user="tester")['items'] == []
+    assert main.song_status('song', user="tester")['job']['state'] == 'missing'
 
 
 def test_legacy_worker_cannot_restore_library_in_production(cache, monkeypatch):
-    main.request_song(request())
+    main.request_song(request(), user="tester")
     job = SongJobs(cache).claim()
     monkeypatch.setenv('CHORDLYZE_WORKER_TOKEN', 'token')
     with pytest.raises(HTTPException) as error:
         main.submit_analysis(payload(job), None)
     assert error.value.status_code == 401
-    assert main.library()['items'] == []
+    assert main.catalog(user="tester")['items'] == []
 
 
 def test_expired_lease_requeues_and_stale_worker_cannot_complete(cache, monkeypatch):
@@ -134,7 +134,7 @@ def test_worker_uses_lease_and_cleans_audio_on_success_and_failure(cache, monkey
         return Recognition([ChordSegment(0, 200, 'C:maj7')], 200, 'a' * 64, 'ismir2019')
     monkeypatch.setattr(song_worker, 'recognize_audio', recognize)
     monkeypatch.setattr(song_worker, 'track_beats', lambda _: None)
-    main.request_song(request())
+    main.request_song(request(), user="tester")
     job = SongJobs(cache).claim()
     class Client:
         def __init__(self): self.calls = []
@@ -149,7 +149,7 @@ def test_worker_uses_lease_and_cleans_audio_on_success_and_failure(cache, monkey
 
 def test_missing_audio_is_reported_as_unavailable(cache, monkeypatch):
     monkeypatch.setattr(song_worker, 'fetch_full_track', lambda *args, **kwargs: None)
-    main.request_song(request())
+    main.request_song(request(), user="tester")
     job = SongJobs(cache).claim()
     class Client:
         def post(self, path, body):

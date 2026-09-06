@@ -204,7 +204,8 @@ struct SearchView: View {
     }
 
     private func loadLibrary() async {
-        guard let items = try? await BackendClient.library() else { return }
+        // Every chart counts here: a song anyone analyzed is ready to play.
+        guard let items = try? await BackendClient.catalog() else { return }
         library = Dictionary(items.map { ($0.trackId, $0) }, uniquingKeysWith: { a, _ in a })
         easyItems = items.filter { $0.difficulty?.level == "easy" }
     }

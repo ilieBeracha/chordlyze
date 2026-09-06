@@ -60,6 +60,20 @@ struct AnalysisTabsView: View {
                         .font(.subheadline).frame(minHeight: 44)
                 }
                 Divider()
+                Button {
+                    Task { await store.setSaved(!store.saved) }
+                } label: {
+                    HStack {
+                        Label(store.saved ? "In your library" : "Save to library",
+                              systemImage: store.saved ? "bookmark.fill" : "bookmark")
+                        Spacer()
+                        if let error = store.saveError {
+                            Text(error).font(.caption).foregroundStyle(Palette.warning).lineLimit(1)
+                        }
+                    }.font(.subheadline).frame(minHeight: 44)
+                }.buttonStyle(.plain)
+                    .accessibilityIdentifier("save-toggle")
+                Divider()
             }
             Button { showSettings = true } label: {
                 HStack {

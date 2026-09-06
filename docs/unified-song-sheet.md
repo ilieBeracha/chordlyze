@@ -4,6 +4,30 @@ Search, saved songs, the home song sheet, Live and recorded Practice use one `So
 
 Live follows Spotify playback automatically. Search and Library show the static sheet; Practice uses the same rows with the take's clock. This does not turn Spotify Live into microphone-based song identification. On-device chord drills remain a separate instrument exercise.
 
+## Accounts and libraries
+
+Every app request to the backend carries the account's Spotify access token as
+a Bearer header. The backend verifies it once with Spotify's `/v1/me`
+(`chordlyze_backend/auth.py`), caches the verified id per token for ten minutes,
+and rejects anything else with 401; `/health` and the worker's `/internal`
+routes are the only exceptions. The app sets `BackendClient.tokenProvider`
+whenever the Spotify session changes; signed out, backend calls fail explicitly.
+
+Charts are global: one per track, because a song's chords are the same for
+everyone, and the second account that opens a song gets the chart instantly.
+Which songs belong to an account is separate (`chordlyze_backend/users.py`,
+one JSON file per account under `users/`): requesting analysis, saving from a
+sheet's bookmark, or uploading a practice take adds the song; the bookmark
+removes it without touching the chart. `/library` lists the account's songs
+that have charts; `/catalog` lists every chart. The app uses the library for
+Home stats and "Saved songs", the catalog for "has a chart" badges, Search
+browse and the Library tab's "All charts". Charts carry no account data.
+
+Charts that predate accounts belong to nobody until
+`python scripts/claim_library.py <spotify-user-id>` is run once on the server.
+Tests stand in for Spotify with `tests/fake_spotify.py` through
+`CHORDLYZE_SPOTIFY_ME_URL`.
+
 ## Loading and timing
 
 Opening a song posts its recording metadata to `/song/request`, then follows `/song/{track_id}`. Lyrics load independently while a complete chart is prepared. Reopening a ready song reuses the chart. Concurrent views share a document and subscriber count; the last departure cancels work. Reentry starts fresh requests. Old, canceled responses cannot replace the current song.

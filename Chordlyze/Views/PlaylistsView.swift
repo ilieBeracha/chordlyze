@@ -7,7 +7,9 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject var auth: SpotifyAuth
     @ObservedObject private var nowPlaying = SpotifyNowPlaying.shared
+    /// This account's songs. Charts anyone made are joined separately.
     @State private var library: [BackendClient.LibraryItem] = []
+    @State private var catalog: [BackendClient.LibraryItem] = []
     @State private var plays: [RecentPlays.Song] = []
     @State private var recent: [SpotifyAPI.RecentPlay] = []
     @State private var playCount = 0
@@ -18,8 +20,9 @@ struct HomeView: View {
     @State private var loaded = false
     @State private var error: String?
 
+    /// Any chart on the server: a played song with a chart is ready to follow.
     private var analyzedByTrack: [String: BackendClient.LibraryItem] {
-        Dictionary(library.map { ($0.trackId, $0) }, uniquingKeysWith: { a, _ in a })
+        Dictionary(catalog.map { ($0.trackId, $0) }, uniquingKeysWith: { a, _ in a })
     }
 
     var body: some View {
@@ -68,6 +71,7 @@ struct HomeView: View {
     private func reload() async {
         let api = SpotifyAPI(auth: auth)
         async let saved = try? BackendClient.library()
+        async let charts = try? BackendClient.catalog()
         async let liked = try? api.savedTracksTotal()
         async let top = try? api.topTracksTotal()
         do {
@@ -86,6 +90,7 @@ struct HomeView: View {
             }
         }
         library = (await saved) ?? []
+        catalog = (await charts) ?? []
         likedCount = await liked
         topCount = await top
         loaded = true
@@ -649,7 +654,7 @@ struct TracksView: View {
         .toolbar(.hidden, for: .navigationBar)
         .task {
             defer { loading = false }
-            async let lib = try? BackendClient.library()
+            async let lib = try? BackendClient.catalog()
             do {
                 switch source {
                 case .liked: tracks = try await api.likedTracks()

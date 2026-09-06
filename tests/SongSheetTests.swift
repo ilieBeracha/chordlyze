@@ -22,8 +22,9 @@ private func decode<T: Decodable>(_ object: Any, as: T.Type = T.self) -> T {
 private func chart(_ segments: [[String: Any]] = [["start": 0, "end": 20, "label": "C:maj"]], preview: Bool = false) -> ChordAnalysis {
     decode(["chords": segments, "source": preview ? "itunes_preview" : "youtube", "audio_duration": 20, "song_duration": 20])
 }
-private func status(_ state: String, epoch: String = "fresh", ready: Bool = false) -> SongStatus {
+private func status(_ state: String, epoch: String = "fresh", ready: Bool = false, saved: Bool? = nil) -> SongStatus {
     var result: [String: Any] = ["job": ["state": state, "worker_online": true], "library_generation": epoch]
+    if let saved { result["saved"] = saved }
     if ready { result["analysis"] = ["chords": [["start": 0, "end": 20, "label": "C:maj"]], "source": "youtube", "audio_duration": 20] }
     return decode(result)
 }
@@ -78,6 +79,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(SheetModel.activeRow(rows, at: 9)?.id == 8, "Live selects current row by interval")
         check(SheetModel.activeRow(rows, at: 20) == nil, "Live does not hold the last lyric forever past song end")
         check(SheetModel.activeRow(rows, at: 3)?.id == 2, "Backward seek selects the earlier line")
+        check(status("ready", saved: true).saved == true && status("ready").saved == nil, "The saved flag is optional in the status")
         let other = SongSheetStore(song: SongDescriptor(trackID: "x", title: "T", artist: "A", duration: 200), analysis: chart())
         check(other.editionGap == -180 && other.editionNote?.contains("180 s shorter") == true, "A chart from a different-length recording reports the gap")
         let same = SongSheetStore(song: SongDescriptor(trackID: "x", title: "T", artist: "A", duration: 20.5), analysis: chart())
