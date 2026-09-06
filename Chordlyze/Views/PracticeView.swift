@@ -63,7 +63,7 @@ struct PracticeView: View {
             case .intro: intro
             case .starting:
                 VStack(spacing: 30) {
-                    ProgressView("Starting Spotify…").tint(.white)
+                    ProgressView(nowPlaying.playbackDevice.map { "Starting Spotify on \($0)…" } ?? "Finding Spotify on this phone…").tint(.white)
                     Button("Cancel") { abandon(); phase = .intro }.frame(minHeight: 44)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             case .countdown(let n):
@@ -214,7 +214,7 @@ struct PracticeView: View {
     private var spotifyNote: String {
         guard canSync else { return "Spotify playback needs 100% pace and the original key." }
         let lead = min(3, rangeStart)
-        return "Headphones required, so the microphone hears you and not the song. Spotify starts \(lead > 0 ? "\(Int(lead)) seconds before " : "at ")\(mmss(rangeStart)) on your active device; recording begins when the song reaches \(mmss(rangeStart)). Needs Spotify Premium. Pausing or seeking ends and saves the take."
+        return "Headphones required, so the microphone hears you and not the song. Spotify plays on this phone, not on another device. It starts \(lead > 0 ? "\(Int(lead)) seconds before " : "at ")\(mmss(rangeStart)); recording begins when the song reaches \(mmss(rangeStart)). Needs Spotify Premium. Pausing or seeking ends and saves the take."
     }
 
     private var metronomeNote: String {
@@ -239,7 +239,7 @@ struct PracticeView: View {
                         .accessibilityIdentifier("live-feedback")
                     }
                     HStack {
-                        Label(synced ? "Recording · Spotify" : "Recording · \(Int(rate * 100))%", systemImage: "record.circle")
+                        Label(synced ? "Recording · Spotify on \(nowPlaying.playbackDevice ?? "phone")" : "Recording · \(Int(rate * 100))%", systemImage: "record.circle")
                             .font(.subheadline).foregroundStyle(Palette.destructive)
                         Spacer()
                         Button("Finish take") { finish() }.buttonStyle(.borderedProminent).tint(.spotifyGreen)

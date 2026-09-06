@@ -65,7 +65,8 @@ struct SongSheetPreview: View {
                 return decode(["progress_ms": Int(position * 1000), "is_playing": device.playing, "item": item])
             },
             seek: { device = (.now, $0, true) },
-            play: { _, at, _ in device = (.now, at, true) }),
+            play: { _, at, _ in device = (.now, at, true) },
+            devices: { [decode(["id": "sim", "name": "Simulator", "type": "Smartphone", "is_active": true])] }),
             sheetProvider: { _ in sheet })
         player.resume()
         return player
