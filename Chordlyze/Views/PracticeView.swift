@@ -36,6 +36,9 @@ struct PracticeView: View {
     @State private var sectionStart = 0.0
     @State private var sectionEnd = 30.0
     @State private var rate = 1.0
+    /// Slower practice: the song does not play; the metronome clicks the
+    /// chart at the chosen pace. Off by default so the primary path is the song.
+    @State private var slower = false
     @State private var initialized = false
     @State private var saveError: String?
     @State private var pausedSince: ContinuousClock.Instant?
@@ -177,14 +180,6 @@ struct PracticeView: View {
                     Text("Start on \(ChordMath.transpose(first.displayName, by: songStore.shift))")
                         .font(.title2.bold()).foregroundStyle(Color.spotifyGreen)
                 }
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Practice pace").font(.headline)
-                    Picker("Practice pace", selection: $rate) {
-                        Text("50%").tag(0.5); Text("75%").tag(0.75); Text("100%").tag(1.0)
-                    }.pickerStyle(.segmented)
-                    Text("Slower practice uses the metronome; Spotify always plays at full speed.")
-                        .font(.footnote).foregroundStyle(Palette.secondary)
-                }
                 if let note = songStore.editionNote {
                     Label(note, systemImage: "exclamationmark.triangle")
                         .font(.footnote).foregroundStyle(Palette.warning)
@@ -196,23 +191,34 @@ struct PracticeView: View {
                         .font(.subheadline)
                 }
                 VStack(alignment: .leading, spacing: 12) {
-                    Button {
-                        start(spotify: true)
-                    } label: {
-                        Label("Play from Spotify and record", systemImage: "play.fill").font(.headline)
-                            .foregroundStyle(.black).frame(maxWidth: .infinity, minHeight: 52)
-                            .background(Color.spotifyGreen.opacity(canSync ? 1 : 0.35), in: Capsule())
-                    }.buttonStyle(.plain).disabled(!canSync)
-                    Text(spotifyNote).font(.footnote).foregroundStyle(Palette.secondary)
-                    Button {
-                        start(spotify: false)
-                    } label: {
-                        Label(analysis.tempo == nil ? "Record without Spotify" : "Record with metronome",
-                              systemImage: "metronome").font(.headline)
-                            .foregroundStyle(.white).frame(maxWidth: .infinity, minHeight: 48)
-                            .background(Palette.card, in: Capsule())
-                    }.buttonStyle(.plain)
-                    Text(metronomeNote).font(.footnote).foregroundStyle(Palette.secondary)
+                    if slower {
+                        Text("Practice pace").font(.headline)
+                        Picker("Practice pace", selection: $rate) {
+                            Text("50%").tag(0.5); Text("75%").tag(0.75)
+                        }.pickerStyle(.segmented)
+                        Button {
+                            start(spotify: false)
+                        } label: {
+                            Label(analysis.tempo == nil ? "Record without the song" : "Record to the metronome",
+                                  systemImage: "metronome").font(.headline)
+                                .foregroundStyle(.black).frame(maxWidth: .infinity, minHeight: 52)
+                                .background(Color.spotifyGreen, in: Capsule())
+                        }.buttonStyle(.plain)
+                        Text(metronomeNote).font(.footnote).foregroundStyle(Palette.secondary)
+                        Button("Play along with the song instead") { slower = false; rate = 1 }
+                            .font(.subheadline).frame(minHeight: 44)
+                    } else {
+                        Button {
+                            start(spotify: true)
+                        } label: {
+                            Label("Play from Spotify and record", systemImage: "play.fill").font(.headline)
+                                .foregroundStyle(.black).frame(maxWidth: .infinity, minHeight: 52)
+                                .background(Color.spotifyGreen.opacity(canSync ? 1 : 0.35), in: Capsule())
+                        }.buttonStyle(.plain).disabled(!canSync)
+                        Text(spotifyNote).font(.footnote).foregroundStyle(Palette.secondary)
+                        Button("Practice slower, without the song") { slower = true; rate = 0.75 }
+                            .font(.subheadline).frame(minHeight: 44)
+                    }
                 }
                 Text("Up to 10 minutes per take. Recordings stay on this device until you delete them; scoring uploads the selected take.")
                     .font(.footnote).foregroundStyle(Palette.secondary)
@@ -221,16 +227,16 @@ struct PracticeView: View {
     }
 
     private var spotifyNote: String {
-        guard canSync else { return "Spotify playback needs 100% pace and the original key." }
+        guard canSync else { return "Playing along needs the original key: set Transpose back to 0 in Key & capo, or use capo shapes instead." }
         let lead = min(3, rangeStart)
         return "Headphones required, so the microphone hears you and not the song. Spotify plays on this phone, not on another device. It starts \(lead > 0 ? "\(Int(lead)) seconds before " : "at ")\(mmss(rangeStart)); recording begins when the song reaches \(mmss(rangeStart)). Needs Spotify Premium. Pausing or seeking ends and saves the take."
     }
 
     private var metronomeNote: String {
-        guard let grid else { return "Pause Spotify first. This chart has no beat grid, so the count-in is visual and there is no click." }
+        guard let grid else { return "The song does not play; pause Spotify first. This chart has no beat grid, so the count-in is visual and there is no click." }
         let bpm = Int((60 / grid.period * rate).rounded())
         let bar = barStart < rangeStart ? " (the bar at \(mmss(barStart)))" : ""
-        return "Pause Spotify first. Four clicks count in the bar before, then the take starts on beat 1 at \(mmss(barStart))\(bar), \(bpm) BPM, beat 1 accented."
+        return "The song does not play; pause Spotify first. Four clicks count in the bar before, then the take starts on beat 1 at \(mmss(barStart))\(bar) at \(bpm) BPM, beat 1 accented. Chords change on the click."
     }
 
     private var recordingView: some View {
