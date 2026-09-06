@@ -36,7 +36,7 @@ struct SongSheetPreview: View {
                     PracticeView(analysis: chart, title: store.song.title, artist: store.song.artist,
                                  trackID: store.song.id, songStore: store, nowPlaying: player)
                 } else {
-                    AnalysisTabsView(song: store.song, store: store)
+                    AnalysisTabsView(song: store.song, store: store, nowPlaying: player)
                 }
             }.background(.black)
                 .onChange(of: mode) { _, value in
@@ -128,7 +128,8 @@ struct SongSheetPreview: View {
                 lyrics: { _ in words }))
         }
         return SongSheetStore(song: song, analysis: chart,
-                              service: .init(request: { _ in status }, status: { _ in status }, lyrics: { _ in words }))
+                              service: .init(request: { _ in status }, status: { _ in status }, lyrics: { _ in words },
+                                             save: { _, _ in }, saveTiming: { _, _ in }))
     }
 }
 #endif

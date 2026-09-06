@@ -18,7 +18,13 @@ import sys
 import unicodedata
 
 WHISPER_MODEL = os.environ.get('CHORDLYZE_WHISPER_MODEL', 'small')
-ALIGNER = f'faster-whisper-{WHISPER_MODEL}+text-match-v1'
+# "groq": hosted whisper-large-v3-turbo, seconds per song, needs GROQ_API_KEY.
+# "local": faster-whisper in a subprocess, minutes per song on shared CPUs.
+TRANSCRIBER = os.environ.get('CHORDLYZE_TRANSCRIBER', 'local')
+GROQ_MODEL = os.environ.get('CHORDLYZE_GROQ_MODEL', 'whisper-large-v3-turbo')
+GROQ_URL = os.environ.get('CHORDLYZE_GROQ_URL', 'https://api.groq.com/openai/v1/audio/transcriptions')
+ALIGNER = (f'groq-{GROQ_MODEL}+text-match-v1' if TRANSCRIBER == 'groq'
+           else f'faster-whisper-{WHISPER_MODEL}+text-match-v1')
 MIN_MATCHED_WORDS = 0.5   # share of lyric words found in the transcript
 MIN_PLACED_LINES = 0.6    # share of lyric lines that received a time
 MIN_TRANSCRIBED_WORDS = 12       # a transcript kept as the lyrics needs this many words
@@ -82,6 +88,76 @@ def time_lines(lines: list[str], transcript: list[dict]) -> tuple[list[dict], in
 
 
 def transcribe_words(audio: Path, language: str | None) -> list[dict]:
+    """Word-timed transcript: [{'start', 'text', 'p', 'segment'}, ...] from the
+    configured transcriber."""
+    if TRANSCRIBER == 'groq':
+        return transcribe_words_groq(audio, language)
+    if TRANSCRIBER != 'local':
+        raise AlignmentUnavailable(f'unknown transcriber {TRANSCRIBER!r}')
+    return transcribe_words_local(audio, language)
+
+
+def _compact_audio(audio: Path) -> Path:
+    """16 kHz mono at a low bitrate: what a speech model wants, a few MB to
+    upload instead of a full-quality download."""
+    compact = audio.with_name(audio.stem + '-speech.mp3')
+    completed = subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', str(audio), '-vn', '-ac', '1',
+                                '-ar', '16000', '-b:a', '48k', str(compact)], capture_output=True, text=True, timeout=300)
+    if completed.returncode != 0 or not compact.exists():
+        raise AlignmentUnavailable(f'audio conversion failed: {completed.stderr.strip()[-200:]}')
+    return compact
+
+
+def transcribe_words_groq(audio: Path, language: str | None, post=None, sleep=None) -> list[dict]:
+    """Hosted transcription. Word times come from the response's words; each
+    word's confidence is its segment's average log probability, exponentiated,
+    which is what the local path reports too. A rate limit is waited out once
+    or twice, then reported."""
+    import math
+    import time as clock
+
+    import requests
+
+    key = os.environ.get('GROQ_API_KEY')
+    if not key:
+        raise AlignmentUnavailable('GROQ_API_KEY is not configured')
+    post = post or requests.post
+    sleep = sleep or clock.sleep
+    compact = _compact_audio(audio)
+    try:
+        data = [('model', GROQ_MODEL), ('response_format', 'verbose_json'),
+                ('timestamp_granularities[]', 'word'), ('timestamp_granularities[]', 'segment')]
+        if language:
+            data.append(('language', language))
+        for attempt in range(3):
+            with compact.open('rb') as handle:
+                response = post(GROQ_URL, headers={'Authorization': 'Bearer ' + key}, data=data,
+                                files={'file': (compact.name, handle, 'audio/mpeg')}, timeout=(10, 180))
+            if response.status_code == 429 and attempt < 2:
+                sleep(float(response.headers.get('Retry-After') or 15))
+                continue
+            break
+    finally:
+        compact.unlink(missing_ok=True)
+    if response.status_code in (401, 403):
+        raise AlignmentUnavailable('transcriber rejected the API key')
+    if response.status_code != 200:
+        raise AlignmentUnavailable(f'transcriber returned {response.status_code}')
+    body = response.json()
+    segments = body.get('segments') or []
+    words: list[dict] = []
+    for entry in body.get('words') or []:
+        start = float(entry['start'])
+        segment = next((seg for seg in segments if float(seg.get('start', 0)) - 0.01 <= start <= float(seg.get('end', 1e9)) + 0.01), None)
+        word = {'start': start, 'text': str(entry.get('word', '')).strip(),
+                'segment': int(segment['id']) if segment and 'id' in segment else None}
+        if segment is not None and segment.get('avg_logprob') is not None:
+            word['p'] = round(math.exp(float(segment['avg_logprob'])), 3)
+        words.append(word)
+    return words
+
+
+def transcribe_words_local(audio: Path, language: str | None) -> list[dict]:
     """Word-timed transcript from a separate process, so the speech model's
     memory is released before the next song."""
     command = [sys.executable, '-m', 'chordlyze_backend.lyrics_align_worker', str(audio)]

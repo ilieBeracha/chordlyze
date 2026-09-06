@@ -24,8 +24,9 @@ _TERMINAL = {'SUCCEEDED', 'FAILED', 'ABORTED', 'TIMED-OUT'}
 
 
 class AudioProviderError(Exception):
-    def __init__(self, code: str):
+    def __init__(self, code: str, status: int | None = None):
         self.code = code
+        self.status = status  # HTTP status from the provider, for the log line only
         super().__init__(code)  # Never include URLs, response bodies, or credentials.
 
 
@@ -76,7 +77,8 @@ class ApifyAudio:
             if response.status_code in (401, 403):
                 raise AudioProviderError('provider_authentication')
             if response.status_code in (402, 429):
-                raise AudioProviderError('provider_limit')
+                # 402: the account's usage limit or credit; 429: too many run starts.
+                raise AudioProviderError('provider_limit', response.status_code)
             if response.status_code >= 500:
                 raise AudioProviderError('provider_connection')
             if not 200 <= response.status_code < 300:

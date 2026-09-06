@@ -19,8 +19,8 @@ struct LiveNowView: View {
         ScrollViewReader { proxy in
             TimelineView(.periodic(from: .now, by: 0.1)) { _ in
                 let duration = store.song.duration ?? store.analysis?.coverageEnd ?? 0
-                // Chart time: Spotify's position, the song's timing offset, and the display lead.
-                let position = max(0, min(livePosition().map { $0 + store.timingOffset + lead } ?? lastPosition, duration > 0 ? duration : .infinity))
+                // Chart time: Spotify's position through the song's calibration, plus the display lead.
+                let position = max(0, min(livePosition().map { store.timing.chartTime($0) + lead } ?? lastPosition, duration > 0 ? duration : .infinity))
                 let activeID = SheetModel.activeRow(store.rows, at: position)?.id
                 VStack(spacing: 0) {
                     SongSheetHeader(store: store)
@@ -43,7 +43,7 @@ struct LiveNowView: View {
                                        onChordTap: { selectedChord = SelectedChord(name: $0) },
                                        onRowTap: { row in
                                            guard let onSeek else { return }
-                                           Task { seekDenied = !(await onSeek(row.start - store.timingOffset)) }
+                                           Task { seekDenied = !(await onSeek(store.timing.spotifyTime(row.start))) }
                                        }, verdict: verdict)
                             .padding(.horizontal, 24).padding(.vertical, 32)
                             .padding(.bottom, 90)

@@ -9,8 +9,12 @@ struct AnalysisTabsView: View {
     @State private var showSettings = false
     @State private var practiceRange: ClosedRange<Double>?
 
-    init(song: SongDescriptor, store: SongSheetStore? = nil) {
+    /// The Spotify poller behind Live seeks and calibration; the offline fixture passes its own.
+    var nowPlaying: SpotifyNowPlaying = .shared
+
+    init(song: SongDescriptor, store: SongSheetStore? = nil, nowPlaying: SpotifyNowPlaying = .shared) {
         _store = StateObject(wrappedValue: store ?? SongSheetStore.shared(for: song))
+        self.nowPlaying = nowPlaying
     }
 
     var body: some View {
@@ -33,7 +37,7 @@ struct AnalysisTabsView: View {
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .chordDiagram($selectedChord)
-        .sheet(isPresented: $showSettings) { SongPlayingSettings(store: store) }
+        .sheet(isPresented: $showSettings) { SongPlayingSettings(store: store, nowPlaying: nowPlaying) }
         .navigationDestination(isPresented: Binding(get: { practiceRange != nil },
             set: { if !$0 { practiceRange = nil } })) {
             if let range = practiceRange, let chart = store.analysis {
@@ -203,6 +207,7 @@ struct ChordSheetView: View {
 
 struct SongPlayingSettings: View {
     @ObservedObject var store: SongSheetStore
+    var nowPlaying: SpotifyNowPlaying = .shared
     @Environment(\.dismiss) private var dismiss
     @AppStorage("chordLead") private var lead = 0.3
     private var soundingKey: String {
@@ -234,13 +239,28 @@ struct SongPlayingSettings: View {
                         .accessibilityIdentifier("chord-lead")
                     Text("Every song, Live and Practice. Raise it if chords highlight after you hear them change.")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Stepper(String(format: "This song only: %@ by %.2f s", store.timingOffset < 0 ? "later" : "earlier", abs(store.timingOffset)),
-                            value: $store.timingOffset, in: -5...5, step: 0.25)
-                        .accessibilityIdentifier("timing-offset")
-                    Text(store.editionNote ?? "For a chart whose recording starts earlier or later than the Spotify track.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                    NavigationLink {
+                        TimingCalibrationView(store: store, nowPlaying: nowPlaying)
+                    } label: {
+                        LabeledContent("Calibrate by ear", value: store.timing.isIdentity ? "Not calibrated" : "Calibrated")
+                    }
+                    .disabled(!store.canPractice)
+                    .accessibilityIdentifier("calibrate")
+                    HStack {
+                        Text(String(format: "This song: chords %@ by %.2f s", store.timing.offset > 0 ? "later" : "earlier", abs(store.timing.offset)))
+                        Spacer()
+                        Button("−") { Task { await store.nudgeTiming(chordsEarlierBy: -0.05) } }.buttonStyle(.bordered)
+                        Button("+") { Task { await store.nudgeTiming(chordsEarlierBy: 0.05) } }.buttonStyle(.bordered)
+                    }
+                    .accessibilityIdentifier("timing-offset")
+                    Text(store.timingError ?? store.timingNote ?? store.editionNote
+                         ?? "Calibration aligns the chart's recording with the one Spotify plays, for this account.")
+                        .font(.footnote).foregroundStyle(store.timingError == nil ? .secondary : Color(Palette.warning))
                 }
-                Button("Reset to original") { store.manualShift = 0; store.capoMode = false; store.timingOffset = 0; lead = 0.3 }
+                Button("Reset to original") {
+                    store.manualShift = 0; store.capoMode = false; lead = 0.3
+                    Task { await store.setTiming(nil) }
+                }
             }
             .navigationTitle("Key & capo").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }

@@ -41,7 +41,20 @@ In Live and Practice a playhead sweeps every row, not only instrumental ones:
 on a lyric row it enters at the leading edge when the row starts, reaches each
 chord's word exactly when that chord starts, and leaves at the trailing edge
 when the row ends, moving steadily in between and wrapping across visual lines
-(`LyricPlayhead`, driven by the same position as the chord highlight). When the
+(`LyricPlayhead`, driven by the same position as the chord highlight). Chart
+time comes from Spotify's position through the song's timing calibration
+(`TimingMap`, spotify = scale × chart + offset). The chart was measured on a
+different recording, so the two can start at different moments or run at
+slightly different speeds; no playback engine can know by how much. **Calibrate
+by ear** in Key & capo replays two chord changes far apart, the listener taps
+Now and nudges until the highlight and the sound coincide, the map is fitted
+(offset only when the anchors are under twenty seconds apart), then a third
+change not used for the fit is replayed as a check and its remaining nudge is
+saved as the verified error. The calibration is saved per account with the
+chart's audio hash and the Spotify track that played, since it absorbs the
+listener's own output delay; the sheet marks it stale when the chart changes.
+Spotify's audio-analysis endpoint, which would have given beat times on its
+master, returns 403 for this app. When the
 lyrics are word-timed, every word onset is a waypoint too, so the line follows
 the voice; with line times only it moves steadily between chords.
 
@@ -58,7 +71,7 @@ Opening a song posts its recording metadata to `/song/request`, then follows `/s
 
 Full song duration and album information travel from Spotify/iTunes through Search, Library and lyrics lookup. Both exact and search lyric matches are checked against title, artist and duration. A 30-second iTunes preview starts at an unknown offset and is never positioned against the whole song.
 
-Known lyrics and known chords can load at different times. Missing data is shown explicitly. Instrumentals keep their chords. Unavailable lyrics are not invented. Enhanced LRC supplies word timestamps; ordinary synchronized LRC supplies line timestamps, so placement within a line is approximate and labeled: the words are assumed to take about half a second each, and at least 60% of the gap to the next line, so the breath before the next line does not drag chords left. Capo mode and manual transpose live on the song document, so the sheet, Live and Practice name the same chords and show the same "Capo N / +N" note in the header. Lyrics without timestamps get estimated line times from the backend (spread over the song by line length) so chords still sit above the words, labeled "Estimated lyric timing". After a chart is published, the worker transcribes the recording with word timestamps (faster-whisper, `CHORDLYZE_WHISPER_MODEL`, default `small`), matches the catalog text to the transcript, and attaches the timed lines to the chart through `/internal/jobs/lyrics`; `/song/{track_id}` then returns them as `lyrics` and the app prefers them over the catalog lookup. Too few matched words leaves the estimated times in place. Matching source title, artist and duration reduces edition errors but does not prove sample-accurate alignment between services.
+Known lyrics and known chords can load at different times. Missing data is shown explicitly. Instrumentals keep their chords. Unavailable lyrics are not invented. Enhanced LRC supplies word timestamps; ordinary synchronized LRC supplies line timestamps, so placement within a line is approximate and labeled: the words are assumed to take about half a second each, and at least 60% of the gap to the next line, so the breath before the next line does not drag chords left. Capo mode and manual transpose live on the song document, so the sheet, Live and Practice name the same chords and show the same "Capo N / +N" note in the header. Lyrics without timestamps get estimated line times from the backend (spread over the song by line length) so chords still sit above the words, labeled "Estimated lyric timing". After a chart is published, the worker transcribes the recording with word timestamps (`CHORDLYZE_TRANSCRIBER`: `groq` sends a 16 kHz mono copy to Groq's hosted whisper-large-v3-turbo, seconds per song, needing the `GROQ_API_KEY` secret; `local` runs faster-whisper, `CHORDLYZE_WHISPER_MODEL`, minutes per song on shared CPUs), matches the catalog text to the transcript, and attaches the timed lines to the chart through `/internal/jobs/lyrics`; `/song/{track_id}` then returns them as `lyrics` and the app prefers them over the catalog lookup. Too few matched words leaves the estimated times in place. Matching source title, artist and duration reduces edition errors but does not prove sample-accurate alignment between services.
 
 Spotify polling starts immediately, runs separately from analysis, and honors rate-limit delays. A monotonic clock advances between polls, freezes on pause and resynchronizes on seeks or song changes. Connection failures retry automatically, and background/foreground transitions restart polling. Extrapolation stops after 15 seconds without a successful playback sample. A view-owned `TimelineView` redraws and scrolls Live; screens do not share a disconnectable timer.
 

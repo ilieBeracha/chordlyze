@@ -186,3 +186,26 @@ def test_lyrics_job_replaces_a_finished_record_but_not_a_running_one(tmp_path, m
     assert lyrics['kind'] == 'lyrics' and lyrics['state'] == 'queued' and lyrics['id'] != done['id']
     assert jobs.request({'track_id': 'song', 'title': 'Song', 'duration': 200}, kind='lyrics')['id'] == lyrics['id']
     assert jobs.claim()['kind'] == 'lyrics'
+
+
+def test_finish_results_depend_on_the_job_kind(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, 'CACHE_DIR', tmp_path)
+    monkeypatch.setenv('CHORDLYZE_WORKER_TOKEN', 'token')
+    jobs = song_jobs.SongJobs(tmp_path)
+    jobs.request({'track_id': 'song', 'title': 'Song', 'duration': 200})
+    job = jobs.claim()
+    ident = dict(track_id='song', job_id=job['id'], lease=job['lease'], library_generation=job['generation'])
+    with pytest.raises(HTTPException) as no_ready:
+        main.finish_song(main.WorkerUpdate(**ident, state='ready'), 'Bearer token')
+    assert no_ready.value.status_code == 422, 'an analysis becomes ready only by being published'
+    assert main.finish_song(main.WorkerUpdate(**ident, state='queued', error_code='provider_limit'), 'Bearer token') == {'ok': True}
+    requeued = jobs.get('song')
+    assert requeued['state'] == 'queued' and 'usage limit' in requeued['message'] and 'lease' not in requeued
+    job = jobs.claim()
+    assert job['attempts'] == 2
+    assert jobs.finish('song', job['id'], job['lease'], job['generation'], 'ready')
+    lyrics = jobs.request({'track_id': 'song', 'title': 'Song', 'duration': 200}, kind='lyrics')
+    job = jobs.claim()
+    ident = dict(track_id='song', job_id=job['id'], lease=job['lease'], library_generation=job['generation'])
+    assert main.finish_song(main.WorkerUpdate(**ident, state='ready', message='Lyrics aligned'), 'Bearer token') == {'ok': True}
+    assert jobs.get('song')['state'] == 'ready' and jobs.get('song')['message'] == 'Lyrics aligned'

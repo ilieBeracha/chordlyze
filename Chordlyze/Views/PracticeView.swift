@@ -57,6 +57,9 @@ struct PracticeView: View {
     /// needs the original key and 100% pace. Sections are fine: playback
     /// starts at the section.
     private var canSync: Bool { rate == 1 && songStore.manualShift == 0 }
+    private var calibrationNote: String {
+        songStore.timingNote ?? "Not calibrated: chords follow the chart's recording. Calibrate by ear in Key & capo if they sound early or late."
+    }
     private var savedTake: PracticeTake? {
         activeTake.flatMap { active in takes.takes.first { $0.id == active.id } ?? active }
     }
@@ -186,6 +189,8 @@ struct PracticeView: View {
                     Label(note, systemImage: "exclamationmark.triangle")
                         .font(.footnote).foregroundStyle(Palette.warning)
                 }
+                Label(calibrationNote, systemImage: songStore.timingIsStale ? "exclamationmark.triangle" : "ear")
+                    .font(.footnote).foregroundStyle(songStore.timingIsStale ? Palette.warning : Palette.secondary)
                 if songStore.manualShift != 0 || songStore.capoMode {
                     Text("Sounding key shift: \(songStore.manualShift > 0 ? "+" : "")\(songStore.manualShift) semitones. \(songStore.capoMode ? "Use capo fret \(songStore.capo) with the displayed shapes." : "No capo.")")
                         .font(.subheadline)
@@ -266,7 +271,7 @@ struct PracticeView: View {
     /// Spotify is not playing it or its position is unknown.
     private func spotifyChartPosition() -> Double? {
         guard spotifyThisTrack?.isPlaying == true, let live = nowPlaying.livePosition() else { return nil }
-        return live + songStore.timingOffset
+        return songStore.timing.chartTime(live)
     }
 
     private func begin(spotify: Bool) async {
@@ -349,7 +354,7 @@ struct PracticeView: View {
     private func startWithSpotify(_ setup: PracticePlan) async throws -> PracticePlan {
         phase = .starting
         let lead = min(3, setup.start)
-        try await nowPlaying.play(trackID: trackID, at: setup.start - lead - songStore.timingOffset)
+        try await nowPlaying.play(trackID: trackID, at: songStore.timing.spotifyTime(setup.start - lead))
         try Task.checkCancellation()
         while true {
             guard let position = spotifyChartPosition() else {

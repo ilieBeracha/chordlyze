@@ -69,6 +69,53 @@ def test_transcript_process_failure_is_explicit(monkeypatch, tmp_path):
         stderr = 'boom'
     monkeypatch.setattr(lyrics_align.subprocess, 'run', lambda *a, **kw: Failed())
     with pytest.raises(lyrics_align.AlignmentUnavailable, match='transcription failed'):
+        lyrics_align.transcribe_words_local(tmp_path / 'song.mp3', None)
+
+
+def test_groq_transcription_maps_words_and_waits_out_a_rate_limit(monkeypatch, tmp_path):
+    audio = tmp_path / 'song.mp3'; audio.write_bytes(b'x')
+    compact = tmp_path / 'song-speech.mp3'
+    def fake_ffmpeg(command, **kw):
+        Path(command[-1]).write_bytes(b'small')
+        class Done: returncode = 0; stderr = ''
+        return Done()
+    monkeypatch.setattr(lyrics_align.subprocess, 'run', fake_ffmpeg)
+    monkeypatch.setenv('GROQ_API_KEY', 'k')
+    calls, waits = [], []
+    class Response:
+        def __init__(self, status, body=None, retry=None):
+            self.status_code, self._body, self.headers = status, body, {'Retry-After': retry} if retry else {}
+        def json(self): return self._body
+    body = {'words': [{'word': ' Come', 'start': 27.4, 'end': 27.6}, {'word': 'up', 'start': 27.7, 'end': 27.9},
+                      {'word': 'later', 'start': 40.0, 'end': 40.3}],
+            'segments': [{'id': 0, 'start': 27.0, 'end': 30.0, 'avg_logprob': -0.1},
+                         {'id': 1, 'start': 39.0, 'end': 42.0, 'avg_logprob': -2.0}]}
+    responses = [Response(429, retry='2'), Response(200, body)]
+    def post(url, headers, data, files, timeout):
+        calls.append((url, headers['Authorization'], dict(data), files['file'][0]))
+        return responses.pop(0)
+    words = lyrics_align.transcribe_words_groq(audio, 'he', post=post, sleep=waits.append)
+    assert waits == [2.0] and len(calls) == 2
+    assert calls[0][1] == 'Bearer k' and calls[0][2]['language'] == 'he' and calls[0][3] == 'song-speech.mp3'
+    assert words[0] == {'start': 27.4, 'text': 'Come', 'segment': 0, 'p': 0.905}
+    assert words[2]['segment'] == 1 and words[2]['p'] == 0.135
+    assert not compact.exists(), 'the compact upload copy is removed'
+    monkeypatch.delenv('GROQ_API_KEY')
+    with pytest.raises(lyrics_align.AlignmentUnavailable, match='GROQ_API_KEY'):
+        lyrics_align.transcribe_words_groq(audio, None, post=post)
+    monkeypatch.setenv('GROQ_API_KEY', 'k')
+    responses[:] = [Response(401)]
+    with pytest.raises(lyrics_align.AlignmentUnavailable, match='API key'):
+        lyrics_align.transcribe_words_groq(audio, None, post=post)
+
+
+def test_transcriber_selection(monkeypatch, tmp_path):
+    monkeypatch.setattr(lyrics_align, 'TRANSCRIBER', 'nowhere')
+    with pytest.raises(lyrics_align.AlignmentUnavailable, match='unknown transcriber'):
+        lyrics_align.transcribe_words(tmp_path / 'song.mp3', None)
+    monkeypatch.setattr(lyrics_align, 'TRANSCRIBER', 'groq')
+    monkeypatch.delenv('GROQ_API_KEY', raising=False)
+    with pytest.raises(lyrics_align.AlignmentUnavailable, match='GROQ_API_KEY'):
         lyrics_align.transcribe_words(tmp_path / 'song.mp3', None)
 
 
@@ -101,12 +148,21 @@ def test_worker_times_only_untimed_catalog_lyrics(tmp_path):
     assert song_worker.attach_lyrics(client, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'aligned'
     assert client.posted == [('/internal/jobs/lyrics', {'track_id': 'song', 'library_generation': 'gen',
                                                          'lines': aligned, 'aligner': lyrics_align.ALIGNER})]
+    # Catalog line times are not word times: synced lines are aligned too.
     synced = Client({'synced': True, 'lines': plain['lines']})
-    assert song_worker.attach_lyrics(synced, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'synced'
+    assert song_worker.attach_lyrics(synced, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'aligned'
+    assert synced.posted and synced.posted[0][1]['lines'] == aligned
+    worded = Client({'synced': True, 'lines': [{'time': 12, 'text': 'Come up to meet you', 'words': [{'time': 12, 'text': 'Come'}]}]})
+    assert song_worker.attach_lyrics(worded, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'synced'
+    instrumental = Client({'synced': True, 'instrumental': True, 'lines': []})
+    assert song_worker.attach_lyrics(instrumental, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'instrumental'
     missing = Client(urllib.error.HTTPError('u', 404, 'not found', {}, None))
     assert song_worker.attach_lyrics(missing, SONG, tmp_path / 'a.mp3', 'gen', align=align,
                                      transcribe=lambda audio: None) == 'none'
-    assert not synced.posted and not missing.posted
+    assert not worded.posted and not instrumental.posted and not missing.posted
+    disagreeing = Client({'synced': True, 'lines': [{'time': 1, 'text': 'Other words'}]})
+    assert song_worker.attach_lyrics(disagreeing, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'synced unaligned matched_words=1 lyric_words=9'
+    assert not disagreeing.posted, 'catalog line times stay when the recording disagrees'
     stopping = threading.Event(); stopping.set()
     assert song_worker.attach_lyrics(Client(plain), SONG, tmp_path / 'a.mp3', 'gen', stopping, align=align) == 'skipped'
     poor = Client({'synced': False, 'lines': [{'time': 1, 'text': 'Other words'}]})
@@ -247,3 +303,32 @@ def test_lyrics_job_times_words_without_re_analyzing(monkeypatch, tmp_path, caps
     assert not any(path == '/analysis/submit' for path, _ in posted), 'the chart is not re-published'
     assert not audio.exists()
     assert 'Lyrics job aligned' in capsys.readouterr().out
+
+
+def test_lyrics_lookup_retries_a_503_and_lines_are_made_publishable(tmp_path):
+    aligned = [{'time': 40, 'text': 'Second', 'words': [{'time': 40, 'text': 'Second'}]},
+               {'time': 27.4, 'text': 'Come up', 'words': [{'time': 27.4, 'text': 'Come'}, {'time': 27.9, 'text': ''}]},
+               {'time': 30, 'text': '   ', 'words': []}]
+    answers = [urllib.error.HTTPError('u', 503, 'down', {}, None), urllib.error.HTTPError('u', 503, 'down', {}, None),
+               {'synced': False, 'lines': [{'time': 12, 'text': 'Come up'}, {'time': 40, 'text': 'Second'}]}]
+    class Flaky(Client):
+        def get(self, path, params):
+            answer = answers.pop(0)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+    client = Flaky(None)
+    waits = []
+    outcome = song_worker.attach_lyrics(client, SONG, tmp_path / 'a.mp3', 'gen',
+                                        align=lambda audio, lines, stats=None: aligned, sleep=waits.append)
+    assert outcome == 'aligned' and waits == [song_worker.LYRICS_LOOKUP_PAUSE] * 2
+    posted = client.posted[0][1]['lines']
+    assert [line['time'] for line in posted] == [27.4, 40], 'lines are in time order and blank lines dropped'
+    assert posted[0]['words'] == [{'time': 27.4, 'text': 'Come'}], 'empty words are dropped'
+    assert 'words' not in posted[1] or posted[1]['words'] == [{'time': 40.0, 'text': 'Second'}]
+    always_down = Flaky(None)
+    answers[:] = [urllib.error.HTTPError('u', 503, 'down', {}, None)] * 3
+    with pytest.raises(urllib.error.HTTPError):
+        song_worker.attach_lyrics(always_down, SONG, tmp_path / 'a.mp3', 'gen',
+                                  align=lambda *a, **k: aligned, sleep=waits.append)
+    assert len(waits) == 4, 'three attempts, then the error surfaces'

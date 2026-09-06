@@ -101,6 +101,21 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
               "Singing is estimated at half a second a word, at least 60% of the gap, never past it")
         check(lineTimed.first?.chords.map(\.wordIndex) == [0, 2], "A chord 2.4 s into an 8 s gap sits over the third word, not the second")
         check(status("ready", saved: true).saved == true && status("ready").saved == nil, "The saved flag is optional in the status")
+        // Timing calibration: spotify = scale * chart + offset, fitted from listened anchors.
+        let one = TimingMap.fit([.init(chart: 12, spotify: 12.4)], chartAudioSha256: "h", spotifyTrackID: "one")!
+        check(abs(one.offset - 0.4) < 1e-9 && one.scale == 1 && abs(one.chartTime(30.4) - 30) < 1e-9 && abs(one.spotifyTime(30) - 30.4) < 1e-9,
+              "One anchor gives an offset at scale 1")
+        let two = TimingMap.fit([.init(chart: 10, spotify: 10.3), .init(chart: 190, spotify: 192.1)], chartAudioSha256: "h", spotifyTrackID: "one")!
+        check(abs(two.scale - 1.01) < 1e-9 && abs(two.offset - 0.2) < 1e-9, "Two anchors far apart give offset and scale")
+        check(abs(two.chartTime(two.spotifyTime(100)) - 100) < 1e-9, "The map inverts exactly")
+        let close = TimingMap.fit([.init(chart: 10, spotify: 10.3), .init(chart: 15, spotify: 15.1)], chartAudioSha256: nil, spotifyTrackID: nil)!
+        check(close.scale == 1 && abs(close.offset - 0.2) < 1e-9, "Anchors under twenty seconds apart cannot measure speed: offset only")
+        check(TimingMap.fit([], chartAudioSha256: nil, spotifyTrackID: nil) == nil, "No anchors, no map")
+        check(one.matches(chartAudioSha256: "h", spotifyTrackID: "one") && !one.matches(chartAudioSha256: "changed", spotifyTrackID: "one")
+              && !one.matches(chartAudioSha256: "h", spotifyTrackID: "relinked") && one.matches(chartAudioSha256: "h", spotifyTrackID: nil),
+              "A calibration is tied to the chart and the Spotify recording it was made on")
+        let decoded: TimingMap = decode(["offset": 0.25, "scale": 1.0, "anchors": [["chart": 1, "spotify": 1.25]], "verified_error": 0.05])
+        check(decoded.offset == 0.25 && decoded.verifiedError == 0.05 && decoded.anchors.count == 1, "Calibration decodes from the server")
         let other = SongSheetStore(song: SongDescriptor(trackID: "x", title: "T", artist: "A", duration: 200), analysis: chart())
         check(other.editionGap == -180 && other.editionNote?.contains("180 s shorter") == true, "A chart from a different-length recording reports the gap")
         let same = SongSheetStore(song: SongDescriptor(trackID: "x", title: "T", artist: "A", duration: 20.5), analysis: chart())

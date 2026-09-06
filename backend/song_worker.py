@@ -91,34 +91,72 @@ def recording_metadata(song: dict) -> dict:
             'artwork': song.get('artwork') or match.get('artworkUrl100')}
 
 
+LYRICS_LOOKUP_RETRIES = 3
+LYRICS_LOOKUP_PAUSE = 10
+
+
+def publishable_lines(lines: list[dict]) -> list[dict]:
+    """What the API accepts: non-empty texts within its length limits, at most
+    200 words a line, lines in time order. A transcript can hand back an
+    empty token or a run-on segment; the recording was paid for, so the
+    lines are trimmed rather than the whole result thrown away."""
+    cleaned = []
+    for line in sorted(lines, key=lambda entry: float(entry['time'])):
+        text = str(line.get('text') or '').strip()[:1000]
+        if not text:
+            continue
+        entry = {'time': max(0.0, float(line['time'])), 'text': text}
+        words = [{'time': max(0.0, float(w['time'])), 'text': str(w.get('text') or '').strip()[:200]}
+                 for w in line.get('words') or []]
+        words = [w for w in words if w['text']][:200]
+        if words:
+            entry['words'] = words
+        cleaned.append(entry)
+    return cleaned
+
+
 def attach_lyrics(client: WorkerClient, song: dict, audio: Path, generation: str,
                   stopping: threading.Event | None = None, align=align_lyrics,
-                  transcribe=transcribe_lyrics) -> str:
+                  transcribe=transcribe_lyrics, sleep=time.sleep) -> str:
     """After a chart is published: when the catalog has only untimed lyrics,
     time them from the recording; when it has none, keep the transcript as
     the lyrics, labeled as transcribed."""
     if stopping and stopping.is_set():
         return 'skipped'
-    try:
-        found = client.get('/lyrics', {'title': song['title'], 'artist': song.get('artist') or '',
-                                       'duration': song.get('duration'), 'album': song.get('album')})
-    except urllib.error.HTTPError as error:
-        if error.code != 404:
-            raise
-        lines = transcribe(audio)
-        if lines is None:
-            return 'none'
-        client.post('/internal/jobs/lyrics', {'track_id': song['track_id'], 'library_generation': generation,
-                                              'lines': lines, 'aligner': ALIGNER, 'source': 'transcribed'})
-        return 'transcribed'
-    if found.get('synced') or found.get('instrumental'):
-        return 'synced'
+    params = {'title': song['title'], 'artist': song.get('artist') or '',
+              'duration': song.get('duration'), 'album': song.get('album')}
+    found = None
+    for attempt in range(LYRICS_LOOKUP_RETRIES):
+        try:
+            found = client.get('/lyrics', params)
+            break
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                lines = transcribe(audio)
+                if lines is None:
+                    return 'none'
+                client.post('/internal/jobs/lyrics', {'track_id': song['track_id'], 'library_generation': generation,
+                                                      'lines': publishable_lines(lines), 'aligner': ALIGNER,
+                                                      'source': 'transcribed'})
+                return 'transcribed'
+            # The catalog behind /lyrics answers 503 now and then; the recording is
+            # already downloaded, so wait and ask again before giving up.
+            if error.code != 503 or attempt == LYRICS_LOOKUP_RETRIES - 1:
+                raise
+            sleep(LYRICS_LOOKUP_PAUSE)
+    if found.get('instrumental'):
+        return 'instrumental'
+    if found.get('synced') and any(line.get('words') for line in found.get('lines', [])):
+        return 'synced'  # already word-timed
+    # Catalog line times are not word times: align the words to the recording
+    # either way, and keep the catalog's lines when the recording disagrees.
     stats: dict = {}
     timed = align(audio, [line.get('text') or '' for line in found.get('lines', [])], stats=stats)
     if timed is None:
-        return 'unaligned ' + ' '.join(f'{key}={value}' for key, value in stats.items())
+        return ('synced unaligned ' if found.get('synced') else 'unaligned ') + \
+            ' '.join(f'{key}={value}' for key, value in stats.items())
     client.post('/internal/jobs/lyrics', {'track_id': song['track_id'], 'library_generation': generation,
-                                          'lines': timed, 'aligner': ALIGNER})
+                                          'lines': publishable_lines(timed), 'aligner': ALIGNER})
     return 'aligned'
 
 
@@ -253,14 +291,22 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
         return 'abandoned'
     except AudioProviderError as error:
         try:
-            state = 'unavailable' if error.code == 'recording_mismatch' else 'failed'
-            client.post('/internal/jobs/finish', {**identity, 'state': state, 'error_code': error.code})
+            if error.code == 'provider_limit':
+                # The provider is out of budget or rate: put the job back and let the
+                # loop pause rather than fail every queued song within seconds.
+                state = 'queued'
+                client.post('/internal/jobs/finish', {**identity, 'state': state, 'error_code': error.code,
+                                                      'message': 'Waiting for the recording provider.'})
+            else:
+                state = 'unavailable' if error.code == 'recording_mismatch' else 'failed'
+                client.post('/internal/jobs/finish', {**identity, 'state': state, 'error_code': error.code})
         except Exception:
             pass
-        print('Recording provider: ' + error.code, flush=True)
-        return state
-    except Exception:
-        # Do not write track metadata, downloaded audio, tokens or lyrics to logs.
+        print('Recording provider: ' + error.code + (f' ({error.status})' if error.status else ''), flush=True)
+        return 'limited' if error.code == 'provider_limit' else state
+    except Exception as error:
+        # Type and a short head only: never track metadata, audio, tokens or lyrics.
+        print(f'Song request error: {type(error).__name__}: {str(error)[:160]}', flush=True)
         try:
             client.post('/internal/jobs/finish', {**identity, 'state': 'failed'})
         except Exception:
@@ -273,6 +319,9 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
             audio.unlink(missing_ok=True)
 
 
+PROVIDER_LIMIT_PAUSE = 600
+
+
 def claim_loop(client: WorkerClient, stopping: threading.Event, aligner: LyricsAligner | None,
                *, once: bool = False, process=None) -> None:
     process = process or process_job
@@ -283,6 +332,9 @@ def claim_loop(client: WorkerClient, stopping: threading.Event, aligner: LyricsA
                 started = time.monotonic()
                 result = process(client, job, stopping, aligner)
                 print(f'Song request {result} ({time.monotonic() - started:.0f}s)', flush=True)
+                if result == 'limited':
+                    print('Recording provider limited; pausing this worker for ten minutes.', flush=True)
+                    stopping.wait(PROVIDER_LIMIT_PAUSE)
             elif not once:
                 stopping.wait(3)
         except Exception as error:

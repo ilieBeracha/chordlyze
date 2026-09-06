@@ -1,12 +1,17 @@
 """Queue lyric-timing jobs for charts whose lyrics are not word-timed.
 
-    python scripts/refresh_lyrics.py [--limit N] [--dry-run]
+    python scripts/refresh_lyrics.py [--limit N] [--dry-run] [--retry-unaligned]
 
 Charts analyzed before the worker transcribed recordings have only catalog
 line times, or no timed lyrics at all. Each job re-fetches the recording
-(yt-dlp first, the paid provider only as fallback) and runs the same
-alignment new charts get; the chart itself is untouched. Jobs queue behind
-analysis requests and run at the worker's usual pace.
+(every download is billed by the provider) and runs the same alignment new
+charts get; the chart itself is untouched. Jobs queue behind analysis
+requests and run at the worker's usual pace.
+
+A chart whose last lyrics job ran but could not match the words is skipped:
+the same transcription model gives the same answer, and the download would
+be paid again for nothing. --retry-unaligned includes them, for use after
+the transcription model changes.
 """
 import json
 import os
@@ -31,6 +36,7 @@ def main() -> None:
     args = sys.argv[1:]
     limit = int(args[args.index("--limit") + 1]) if "--limit" in args else None
     dry = "--dry-run" in args
+    retry_unaligned = "--retry-unaligned" in args
     cache = Path(os.environ.get("CHORDLYZE_CACHE",
                                 str(Path(__file__).resolve().parents[1] / "analysis_cache")))
     jobs = SongJobs(cache)
@@ -40,9 +46,18 @@ def main() -> None:
         if chart.get("source") == "itunes_preview" or not needs_timing(chart):
             skipped += 1
             continue
+        track_id = chart.get("track_id", path.stem.removeprefix("track-"))
+        last = jobs.get(track_id)
+        if last and last.get("kind") == "lyrics" and last.get("state") in ("queued", "processing"):
+            skipped += 1
+            continue
+        if (not retry_unaligned and last and last.get("kind") == "lyrics" and last.get("state") == "ready"
+                and "unaligned" in (last.get("message") or "")):
+            skipped += 1
+            continue
         if limit is not None and queued >= limit:
             break
-        song = {"track_id": chart.get("track_id", path.stem.removeprefix("track-")), "title": chart.get("title"),
+        song = {"track_id": track_id, "title": chart.get("title"),
                 "artist": chart.get("artist"), "album": chart.get("album"), "isrc": chart.get("isrc"),
                 "artwork": chart.get("artwork"),
                 "duration": chart.get("song_duration") or chart.get("audio_duration")}
