@@ -37,8 +37,10 @@ Charts that predate accounts belong to nobody until
 Tests stand in for Spotify with `tests/fake_spotify.py` through
 `CHORDLYZE_SPOTIFY_ME_URL`.
 
-In Live and Practice a word-timed row shows no moving line: the word being
-sung turns green, chords light on their own time above their words, and
+In Live and Practice a word-timed row shows no moving line: a soft white
+cloud of light sits on the voice, the sung word full white, its neighbours
+partly lit, fading out two words away; chords light on their own time above
+their words, and
 several chords can change above one held word while the voice stays on it. A
 moving line there only made players chase it. The thin runner remains on rows
 without word timing, instrumental stretches and line-timed lyrics, where it
