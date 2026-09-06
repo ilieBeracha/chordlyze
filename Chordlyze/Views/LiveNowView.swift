@@ -6,7 +6,11 @@ struct LiveNowView: View {
     @ObservedObject var store: SongSheetStore
     var onSeek: ((Double) async -> Bool)? = nil
     var playbackNote: String? = nil
+    var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
     let livePosition: () -> TimeInterval?
+    /// Seconds the highlight runs ahead of Spotify audio. Recognized chord
+    /// boundaries land a little late and players read ahead of the beat.
+    @AppStorage("chordLead") private var lead = 0.3
     @State private var lastPosition: Double = 0
     @State private var selectedChord: SelectedChord?
     @State private var seekDenied = false
@@ -15,7 +19,8 @@ struct LiveNowView: View {
         ScrollViewReader { proxy in
             TimelineView(.periodic(from: .now, by: 0.1)) { _ in
                 let duration = store.song.duration ?? store.analysis?.coverageEnd ?? 0
-                let position = max(0, min(livePosition() ?? lastPosition, duration > 0 ? duration : .infinity))
+                // Chart time: Spotify's position, the song's timing offset, and the display lead.
+                let position = max(0, min(livePosition().map { $0 + store.timingOffset + lead } ?? lastPosition, duration > 0 ? duration : .infinity))
                 let activeID = SheetModel.activeRow(store.rows, at: position)?.id
                 VStack(spacing: 0) {
                     SongSheetHeader(store: store)
@@ -24,6 +29,10 @@ struct LiveNowView: View {
                             Text(playbackNote).font(.system(size: 13)).foregroundStyle(Palette.secondary)
                         }
                         if seekDenied { Text("Spotify could not seek. Check playback permissions or Premium.").font(.caption).foregroundStyle(Palette.secondary) }
+                        if let note = store.editionNote {
+                            Label(note, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(Palette.warning)
+                                .accessibilityIdentifier("edition-note")
+                        }
                         if let note = store.lyricsNote {
                             Label(note, systemImage: "clock").font(.system(size: 12)).foregroundStyle(Palette.tertiary)
                                 .accessibilityIdentifier("lyrics-detail")
@@ -34,8 +43,8 @@ struct LiveNowView: View {
                                        onChordTap: { selectedChord = SelectedChord(name: $0) },
                                        onRowTap: { row in
                                            guard let onSeek else { return }
-                                           Task { seekDenied = !(await onSeek(row.start)) }
-                                       })
+                                           Task { seekDenied = !(await onSeek(row.start - store.timingOffset)) }
+                                       }, verdict: verdict)
                             .padding(.horizontal, 24).padding(.vertical, 32)
                             .padding(.bottom, 90)
                     }

@@ -127,6 +127,10 @@ struct SongSheetStatus: View {
             } else if !store.message.isEmpty {
                 note(store.message, icon: "exclamationmark.circle", spinning: store.busy) { EmptyView() }
             }
+            if let text = store.editionNote {
+                note(text, icon: "exclamationmark.triangle") { EmptyView() }
+                    .accessibilityIdentifier("edition-note")
+            }
             if store.lyricsLoading {
                 note("Loading lyrics…", icon: nil, spinning: true) { EmptyView() }
             } else if let text = store.lyricsNote {
@@ -163,12 +167,13 @@ struct ChordSheetView: View {
     var onChordTap: ((String) -> Void)? = nil
     var onRowTap: ((SheetModel.Row) -> Void)? = nil
     var onPracticeRow: ((SheetModel.Row) -> Void)? = nil
+    var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: style == .live ? 30 : 20) {
             ForEach(store.rows) { row in
                 ChordRowView(row: row, transposeBy: store.shift, playhead: playhead,
-                             style: style, onChordTap: onChordTap, onLyricTap: { onRowTap?(row) })
+                             style: style, onChordTap: onChordTap, onLyricTap: { onRowTap?(row) }, verdict: verdict)
                     .padding(.vertical, 8)
                     .id(row.id)
                     .accessibilityIdentifier("song-row-\(row.start)")
@@ -185,6 +190,7 @@ struct ChordSheetView: View {
 struct SongPlayingSettings: View {
     @ObservedObject var store: SongSheetStore
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("chordLead") private var lead = 0.3
     private var soundingKey: String {
         guard let key = store.analysis?.key else { return "Not available" }
         let parts = key.split(separator: " ", maxSplits: 1)
@@ -209,7 +215,18 @@ struct SongPlayingSettings: View {
                     Text("With the capo at this fret, the displayed shapes produce the sounding key above. Capo shapes do not change the scoring key.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-                Button("Reset to original") { store.manualShift = 0; store.capoMode = false }
+                Section("Timing against Spotify") {
+                    Stepper(String(format: "Show chords ahead by %.1f s", lead), value: $lead, in: -1...2, step: 0.1)
+                        .accessibilityIdentifier("chord-lead")
+                    Text("Every song, Live and Practice. Raise it if chords highlight after you hear them change.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Stepper(String(format: "This song only: %@ by %.2f s", store.timingOffset < 0 ? "later" : "earlier", abs(store.timingOffset)),
+                            value: $store.timingOffset, in: -5...5, step: 0.25)
+                        .accessibilityIdentifier("timing-offset")
+                    Text(store.editionNote ?? "For a chart whose recording starts earlier or later than the Spotify track.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                Button("Reset to original") { store.manualShift = 0; store.capoMode = false; store.timingOffset = 0; lead = 0.3 }
             }
             .navigationTitle("Key & capo").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }

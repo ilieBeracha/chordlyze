@@ -197,6 +197,42 @@ final class SpotifyAPI: ObservableObject {
         }
     }
 
+    struct Device: Decodable {
+        let id: String?
+        let name: String
+        let isActive: Bool
+        enum CodingKeys: String, CodingKey { case id, name, isActive = "is_active" }
+    }
+
+    /// Devices Spotify can start playback on, including an idle phone app.
+    func devices() async throws -> [Device] {
+        struct Page: Decodable { let devices: [Device] }
+        let page: Page = try await get("me/player/devices")
+        return page.devices
+    }
+
+    /// Start one track from `positionMs` on `deviceID`, or on the active
+    /// device when nil. Needs Premium (403); 404 means no active device.
+    func play(trackID: String, positionMs: Int, deviceID: String? = nil) async throws {
+        let token = try await auth.validToken()
+        var components = URLComponents(string: "https://api.spotify.com/v1/me/player/play")!
+        if let deviceID { components.queryItems = [.init(name: "device_id", value: deviceID)] }
+        var req = URLRequest(url: components.url!)
+        req.httpMethod = "PUT"
+        req.timeoutInterval = 12
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: [
+            "uris": ["spotify:track:\(trackID)"], "position_ms": max(0, positionMs)])
+        let (data, response) = try await URLSession.shared.data(for: req)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 || status == 204 else {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw NSError(domain: "SpotifyAPI", code: status,
+                          userInfo: [NSLocalizedDescriptionKey: "Spotify returned \(status): \(body)"])
+        }
+    }
+
     private func get<T: Decodable>(_ path: String) async throws -> T {
         let token = try await auth.validToken()
         var req = URLRequest(url: URL(string: "https://api.spotify.com/v1/\(path)")!)
@@ -218,6 +254,25 @@ enum RecentPlays {
         let lastPlayed: Date
         let count: Int
         var id: String { track.id }
+    }
+
+    /// Plays per calendar day for the last `days` days, oldest first, with
+    /// how many were of analyzed songs. Spotify returns at most 50 plays, so
+    /// earlier days may be partial; the caller labels the window honestly.
+    struct Day: Equatable {
+        let date: Date
+        let total: Int
+        let analyzed: Int
+    }
+
+    static func daily(_ plays: [SpotifyAPI.RecentPlay], analyzed: Set<String>, days: Int = 7,
+                      calendar: Calendar = .current, now: Date = .now) -> [Day] {
+        let today = calendar.startOfDay(for: now)
+        return (0..<days).reversed().map { back in
+            let date = calendar.date(byAdding: .day, value: -back, to: today)!
+            let inDay = plays.filter { calendar.isDate($0.playedAt, inSameDayAs: date) }
+            return Day(date: date, total: inDay.count, analyzed: inDay.filter { analyzed.contains($0.track.id) }.count)
+        }
     }
 
     static func songs(_ plays: [SpotifyAPI.RecentPlay]) -> [Song] {

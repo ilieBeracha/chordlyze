@@ -56,6 +56,11 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         let songs = RecentPlays.songs(plays)
         check(songs.map(\.id) == ["a", "b"], "One row per song, most recent play first")
         check(songs[0].count == 2 && songs[1].count == 1 && songs[0].lastPlayed == now.addingTimeInterval(-30), "Repeat plays are counted and dated by the latest")
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let days = RecentPlays.daily(plays, analyzed: ["a"], days: 3, calendar: calendar, now: now)
+        check(days.count == 3 && days.map(\.total) == [0, 0, 3] && days.map(\.analyzed) == [0, 0, 2], "Plays are bucketed by day, oldest first, with analyzed counts")
+        check(days.last?.date == calendar.startOfDay(for: now), "The last bucket is today")
         check(RecentPlays.relativeTime(now.addingTimeInterval(-30), now: now) == "now", "Under a minute reads as now")
         check(RecentPlays.relativeTime(now.addingTimeInterval(-600), now: now) == "10m ago", "Minutes ago")
         check(RecentPlays.relativeTime(now.addingTimeInterval(-7200), now: now) == "2h ago", "Hours ago")
@@ -73,6 +78,11 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(SheetModel.activeRow(rows, at: 9)?.id == 8, "Live selects current row by interval")
         check(SheetModel.activeRow(rows, at: 20) == nil, "Live does not hold the last lyric forever past song end")
         check(SheetModel.activeRow(rows, at: 3)?.id == 2, "Backward seek selects the earlier line")
+        let other = SongSheetStore(song: SongDescriptor(trackID: "x", title: "T", artist: "A", duration: 200), analysis: chart())
+        check(other.editionGap == -180 && other.editionNote?.contains("180 s shorter") == true, "A chart from a different-length recording reports the gap")
+        let same = SongSheetStore(song: SongDescriptor(trackID: "x", title: "T", artist: "A", duration: 20.5), analysis: chart())
+        check(same.editionGap == nil && same.editionNote == nil, "Lengths within a second are the same edition")
+        check(SongSheetStore(song: SongDescriptor(trackID: "x", title: "T", artist: "A"), analysis: chart()).editionGap == nil, "An unknown track length claims nothing")
         let pending = SheetModel.build(analysis: nil, lines: lines, duration: 20)
         check(pending.filter { !$0.text.isEmpty }.map(\.text) == lines.map(\.text), "Lyrics appear while analysis is pending")
         check(pending.allSatisfy { $0.chords.isEmpty }, "Pending analysis never invents chords")
@@ -307,6 +317,49 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(delays.first == 37, "Retry-After is respected instead of hammering Spotify")
         check(limited.connectionMessage == nil, "A recovered Spotify request clears the error in place")
         limited.reset()
+
+        // Practice "Play from Spotify": start the track, then trust only Spotify's own report.
+        var device: (offset: Double, playing: Bool)?
+        var started: [(String, Double)] = []
+        var playFailure: Int?
+        var stall = false
+        var listed: [SpotifyAPI.Device] = []
+        var targeted: [String?] = []
+        let starter = SpotifyNowPlaying(service: .init(
+            current: { device.map { playback(id: "one", milliseconds: Int($0.offset * 1000), playing: $0.playing) } },
+            seek: { _ in },
+            play: { id, at, deviceID in
+                targeted.append(deviceID)
+                if let playFailure, deviceID == nil { throw NSError(domain: "SpotifyAPI", code: playFailure) }
+                started.append((id, at)); device = (at, !stall)
+            },
+            devices: { listed },
+            sleep: { _ in try await Task.sleep(for: .milliseconds(10)) }), sheetProvider: provider)
+        starter.resume()
+        try await starter.play(trackID: "one", at: 30)
+        check(started.count == 1 && started[0].0 == "one" && started[0].1 == 30, "Play starts the requested track at the requested position")
+        check(starter.playing?.track.id == "one" && starter.playing?.isPlaying == true, "Play returns only after Spotify reports the track playing")
+        check(abs((starter.livePosition() ?? -1) - 30) < 1, "The playhead after play comes from Spotify's report")
+        playFailure = 404
+        do { try await starter.play(trackID: "one", at: 0); fatalError("A missing device must fail") }
+        catch let error as SpotifyNowPlaying.PlayError { check(error == .noDevice, "404 means no active device") }
+        listed = [decode(["id": "phone", "name": "Phone", "is_active": false], as: SpotifyAPI.Device.self)]
+        try await starter.play(trackID: "one", at: 8)
+        check(targeted.suffix(2).map { $0 } == [nil, "phone"] && started.count == 2, "No active device: the listed phone is targeted explicitly")
+        check(abs((starter.livePosition() ?? -1) - 8) < 1, "Playback on the targeted device is confirmed the same way")
+        listed = []
+        playFailure = 403
+        do { try await starter.play(trackID: "one", at: 0); fatalError("A Premium failure must surface") }
+        catch let error as SpotifyNowPlaying.PlayError { check(error == .premiumRequired, "403 means Premium is required") }
+        playFailure = nil
+        stall = true
+        do { try await starter.play(trackID: "one", at: 5); fatalError("An unconfirmed start must fail") }
+        catch let error as SpotifyNowPlaying.PlayError { check(error == .notConfirmed, "Play never assumes playback Spotify did not report") }
+        check(started.count == 3, "Failed requests never reach Spotify twice")
+        starter.reset()
+        let unconnected = SpotifyNowPlaying(sheetProvider: provider)
+        do { try await unconnected.play(trackID: "one", at: 0); fatalError("Signed out cannot start playback") }
+        catch let error as SpotifyNowPlaying.PlayError { check(error == .notConnected, "Play without a Spotify session is an explicit error") }
 
         check(requested == 0, "Playing a song never requests its analysis")
         try await liveFlowTests()
