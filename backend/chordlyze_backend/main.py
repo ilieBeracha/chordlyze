@@ -336,6 +336,7 @@ class WorkerUpdate(BaseModel):
     state: str | None = None
     download_checkpoint: DownloadCheckpoint | None = None
     error_code: str | None = None
+    message: str | None = Field(default=None, max_length=300)
 
 
 @app.post("/internal/jobs/heartbeat")
@@ -350,17 +351,29 @@ def heartbeat_song(body: WorkerUpdate, authorization: str | None = Header(defaul
 @app.post("/internal/jobs/finish")
 def finish_song(body: WorkerUpdate, authorization: str | None = Header(default=None)) -> dict:
     _worker_authorized(authorization)
-    if body.state not in ("failed", "unavailable"):
+    jobs = SongJobs(CACHE_DIR)
+    current = jobs.get(body.track_id or "")
+    # "queued" only hands a provider-limited job back to the queue; "ready" only
+    # completes a lyrics job, since an analysis becomes ready by being published.
+    allowed = {"failed", "unavailable"}
+    if body.error_code == "provider_limit":
+        allowed.add("queued")
+    if current and current.get("kind") == "lyrics":
+        allowed.add("ready")
+    if body.state not in allowed:
         raise HTTPException(422, "invalid job result")
     message = ("A matching full recording could not be found. Try another edition of this song."
                if body.state == "unavailable" else "Could not finish analyzing this song. Retry to try again.")
+    if body.state == "ready":
+        message = body.message or "Lyrics timed."
     if body.error_code in ('provider_authentication', 'provider_configuration'):
         message = 'The recording service needs attention. Please try again later.'
     elif body.error_code == 'provider_limit':
-        message = 'The recording service has reached its usage limit. Please try again later.'
+        message = ('Waiting for the recording service; it has reached its usage limit.' if body.state == "queued"
+                   else 'The recording service has reached its usage limit. Please try again later.')
     elif body.error_code == 'provider_timeout':
         message = 'The recording download took too long. Retry this song.'
-    if not SongJobs(CACHE_DIR).finish(body.track_id or "", body.job_id or "", body.lease or "",
+    if not jobs.finish(body.track_id or "", body.job_id or "", body.lease or "",
                                     body.library_generation or "", body.state, message):
         raise HTTPException(409, "job lease is no longer active")
     return {"ok": True}

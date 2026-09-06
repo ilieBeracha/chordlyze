@@ -269,3 +269,26 @@ def test_checkpoint_api_schema_rejects_urls_as_run_ids():
 def test_invalid_spending_limits_fail_before_any_job(value, monkeypatch):
     monkeypatch.setenv('CHORDLYZE_APIFY_MAX_CHARGE_USD', value)
     with pytest.raises(AudioProviderError, match='provider_configuration'): ApifyAudio('token')
+
+
+def test_provider_limit_returns_the_job_to_the_queue_and_pauses(monkeypatch):
+    monkeypatch.setattr(song_worker, 'fetch_full_track',
+                        lambda *a, **kw: (_ for _ in ()).throw(AudioProviderError('provider_limit', 402)))
+    posted = []
+    class Client:
+        def post(self, path, payload=None):
+            posted.append((path, payload)); return {'job': None}
+    job = {'id': 'job', 'lease': 'lease', 'generation': 'gen', 'song':
+           {'track_id': 'song', 'title': 'Song', 'artist': 'Band', 'duration': 200}}
+    assert song_worker.process_job(Client(), job) == 'limited'
+    finish = [p for path, p in posted if path == '/internal/jobs/finish']
+    assert finish[0]['state'] == 'queued' and finish[0]['error_code'] == 'provider_limit'
+
+    waits = []
+    class Stopping:
+        def is_set(self): return False
+        def wait(self, seconds): waits.append(seconds); return False
+    class Claiming:
+        def post(self, path, payload=None): return {'job': job} if path == '/internal/jobs/claim' else {}
+    song_worker.claim_loop(Claiming(), Stopping(), None, once=True, process=lambda *a, **k: 'limited')
+    assert waits == [song_worker.PROVIDER_LIMIT_PAUSE], 'the worker pauses instead of draining the queue'

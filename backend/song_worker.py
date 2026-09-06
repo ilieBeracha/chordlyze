@@ -253,12 +253,19 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
         return 'abandoned'
     except AudioProviderError as error:
         try:
-            state = 'unavailable' if error.code == 'recording_mismatch' else 'failed'
-            client.post('/internal/jobs/finish', {**identity, 'state': state, 'error_code': error.code})
+            if error.code == 'provider_limit':
+                # The provider is out of budget or rate: put the job back and let the
+                # loop pause rather than fail every queued song within seconds.
+                state = 'queued'
+                client.post('/internal/jobs/finish', {**identity, 'state': state, 'error_code': error.code,
+                                                      'message': 'Waiting for the recording provider.'})
+            else:
+                state = 'unavailable' if error.code == 'recording_mismatch' else 'failed'
+                client.post('/internal/jobs/finish', {**identity, 'state': state, 'error_code': error.code})
         except Exception:
             pass
-        print('Recording provider: ' + error.code, flush=True)
-        return state
+        print('Recording provider: ' + error.code + (f' ({error.status})' if error.status else ''), flush=True)
+        return 'limited' if error.code == 'provider_limit' else state
     except Exception:
         # Do not write track metadata, downloaded audio, tokens or lyrics to logs.
         try:
@@ -273,6 +280,9 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
             audio.unlink(missing_ok=True)
 
 
+PROVIDER_LIMIT_PAUSE = 600
+
+
 def claim_loop(client: WorkerClient, stopping: threading.Event, aligner: LyricsAligner | None,
                *, once: bool = False, process=None) -> None:
     process = process or process_job
@@ -283,6 +293,9 @@ def claim_loop(client: WorkerClient, stopping: threading.Event, aligner: LyricsA
                 started = time.monotonic()
                 result = process(client, job, stopping, aligner)
                 print(f'Song request {result} ({time.monotonic() - started:.0f}s)', flush=True)
+                if result == 'limited':
+                    print('Recording provider limited; pausing this worker for ten minutes.', flush=True)
+                    stopping.wait(PROVIDER_LIMIT_PAUSE)
             elif not once:
                 stopping.wait(3)
         except Exception as error:
