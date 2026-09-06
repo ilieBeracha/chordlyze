@@ -84,14 +84,19 @@ class SongJobs:
             path = self.path(track_id)
             return json.loads(path.read_text()) if path.exists() else None
 
-    def request(self, song: dict, *, retry: bool = False) -> dict:
+    def request(self, song: dict, *, retry: bool = False, kind: str = 'analysis') -> dict:
+        """kind 'analysis' makes a chart; 'lyrics' re-fetches the recording of
+        an existing chart only to time its lyrics. A lyrics job replaces a
+        finished record for the track, never one still queued or running."""
         with library_lock(self.directory):
             previous = self.get(song['track_id'])
-            if previous and not (retry and previous['state'] in ('failed', 'unavailable')):
+            if previous and kind == 'analysis' and not (retry and previous['state'] in ('failed', 'unavailable')):
                 return previous
-            job = {'id': uuid.uuid4().hex, 'generation': generation(self.directory),
-                   'song': song, 'state': 'queued', 'created_at': time.time(),
-                   'attempts': 0, 'message': 'Waiting to analyze the full song.'}
+            if previous and kind == 'lyrics' and previous['state'] in ('queued', 'processing'):
+                return previous
+            job = {'id': uuid.uuid4().hex, 'generation': generation(self.directory), 'kind': kind,
+                   'song': song, 'state': 'queued', 'created_at': time.time(), 'attempts': 0,
+                   'message': 'Waiting to analyze the full song.' if kind == 'analysis' else 'Waiting to time the lyrics.'}
             write_json(self.path(song['track_id']), job)
             return job
 

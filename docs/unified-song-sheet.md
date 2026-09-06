@@ -41,7 +41,16 @@ In Live and Practice a playhead sweeps every row, not only instrumental ones:
 on a lyric row it enters at the leading edge when the row starts, reaches each
 chord's word exactly when that chord starts, and leaves at the trailing edge
 when the row ends, moving steadily in between and wrapping across visual lines
-(`LyricPlayhead`, driven by the same position as the chord highlight).
+(`LyricPlayhead`, driven by the same position as the chord highlight). When the
+lyrics are word-timed, every word onset is a waypoint too, so the line follows
+the voice; with line times only it moves steadily between chords.
+
+Charts analyzed before the worker transcribed recordings have no word timing.
+`python scripts/refresh_lyrics.py` on the server queues a `lyrics` job for each
+such chart: the worker re-fetches the recording (yt-dlp first, the paid
+provider only as fallback), runs the same alignment new charts get, attaches
+the timed lines, and never re-recognizes chords. Jobs queue behind analysis
+requests.
 
 ## Loading and timing
 

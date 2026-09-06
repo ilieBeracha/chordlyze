@@ -25,6 +25,9 @@ struct ChordLyricLine: View {
     /// The row's span in song time, for the sweeping playhead in Live.
     var rowStart: Double = 0
     var rowEnd: Double = 0
+    /// Onset of each word when the lyrics are word-timed (same order as
+    /// `words`); the playhead then follows the voice instead of guessing.
+    var wordTimes: [Double]? = nil
 
     var body: some View {
         let tokens = Self.tokens(text: text, chords: chords, words: words)
@@ -56,7 +59,8 @@ struct ChordLyricLine: View {
             if style == .live, let playhead, rowEnd > rowStart, playhead >= rowStart, playhead < rowEnd {
                 GeometryReader { geo in
                     if let point = LyricPlayhead.position(at: playhead, rowStart: rowStart, rowEnd: rowEnd,
-                                                          chords: chords, tokens: anchors.mapValues { geo[$0] },
+                                                          chords: chords, wordTimes: wordTimes,
+                                                          tokens: anchors.mapValues { geo[$0] },
                                                           width: geo.size.width, rtl: rtl) {
                         RoundedRectangle(cornerRadius: 1)
                             .fill(Color.spotifyGreen.opacity(0.7))
@@ -110,9 +114,10 @@ struct ChordLyricLine: View {
 
 /// Where the playhead sits on a lyric row: it enters at the row's leading
 /// edge when the row starts, reaches each chord's word exactly when that
-/// chord starts, and leaves at the trailing edge when the row ends. Between
-/// those points it moves at a steady rate through the words, wrapping from
-/// one visual line to the next. Pure geometry, so it can be reasoned about.
+/// chord starts, reaches each timed word when it is sung, and leaves at the
+/// trailing edge when the row ends. Between those points it moves at a
+/// steady rate through the words, wrapping from one visual line to the
+/// next. Pure geometry, so it can be reasoned about.
 enum LyricPlayhead {
     struct Point: Equatable {
         let x: CGFloat
@@ -126,7 +131,7 @@ enum LyricPlayhead {
     }
 
     static func position(at time: Double, rowStart: Double, rowEnd: Double, chords: [SheetModel.Placed],
-                         tokens: [Int: CGRect], width: CGFloat, rtl: Bool) -> Point? {
+                         wordTimes: [Double]? = nil, tokens: [Int: CGRect], width: CGFloat, rtl: Bool) -> Point? {
         guard !tokens.isEmpty else { return nil }
         // Visual lines: tokens grouped by top edge.
         let lines = Dictionary(grouping: tokens.values, by: { $0.minY.rounded() }).values
@@ -137,10 +142,18 @@ enum LyricPlayhead {
         let trailing: (CGRect) -> CGFloat = { rtl ? $0.minX : $0.maxX }
         func line(containing rect: CGRect) -> CGRect { lines.first { $0.intersects(rect) } ?? first }
 
+        var inside: [(time: Double, index: Int)] = chords.compactMap { chord in
+            chord.event.start > rowStart && chord.event.start < rowEnd ? (chord.event.start, chord.wordIndex ?? 0) : nil
+        }
+        for (index, onset) in (wordTimes ?? []).enumerated() where onset > rowStart && onset < rowEnd {
+            inside.append((onset, index))
+        }
+        // Word by word when the voice is timed; a chord and its word share a time.
+        inside.sort { $0.time != $1.time ? $0.time < $1.time : $0.index < $1.index }
         var points = [Waypoint(time: rowStart, x: leading(first), line: first)]
-        for chord in chords.sorted(by: { $0.event.start < $1.event.start }) {
-            guard let rect = tokens[chord.wordIndex ?? 0], chord.event.start > rowStart, chord.event.start < rowEnd else { continue }
-            points.append(Waypoint(time: chord.event.start, x: leading(rect), line: line(containing: rect)))
+        for (onset, index) in inside where onset > points.last!.time {
+            guard let rect = tokens[index] else { continue }
+            points.append(Waypoint(time: onset, x: leading(rect), line: line(containing: rect)))
         }
         points.append(Waypoint(time: rowEnd, x: trailing(last), line: last))
 

@@ -172,3 +172,17 @@ def test_queue_position_counts_only_earlier_unfinished_requests(tmp_path, monkey
     jobs.finish('first', claimed['id'], claimed['lease'], claimed['generation'], 'failed')
     assert jobs.public(jobs.get('third'))['ahead'] == 1
     assert 'ahead' not in jobs.public(jobs.get('first'))
+
+
+def test_lyrics_job_replaces_a_finished_record_but_not_a_running_one(tmp_path, monkeypatch):
+    jobs = song_jobs.SongJobs(tmp_path)
+    done = jobs.request({'track_id': 'song', 'title': 'Song', 'duration': 200})
+    assert done['kind'] == 'analysis'
+    running = jobs.request({'track_id': 'song', 'title': 'Song', 'duration': 200}, kind='lyrics')
+    assert running['id'] == done['id'], 'a queued analysis is not displaced'
+    job = jobs.claim()
+    assert jobs.finish('song', job['id'], job['lease'], job['generation'], 'ready')
+    lyrics = jobs.request({'track_id': 'song', 'title': 'Song', 'duration': 200}, kind='lyrics')
+    assert lyrics['kind'] == 'lyrics' and lyrics['state'] == 'queued' and lyrics['id'] != done['id']
+    assert jobs.request({'track_id': 'song', 'title': 'Song', 'duration': 200}, kind='lyrics')['id'] == lyrics['id']
+    assert jobs.claim()['kind'] == 'lyrics'

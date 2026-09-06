@@ -1,0 +1,59 @@
+"""Queue lyric-timing jobs for charts whose lyrics are not word-timed.
+
+    python scripts/refresh_lyrics.py [--limit N] [--dry-run]
+
+Charts analyzed before the worker transcribed recordings have only catalog
+line times, or no timed lyrics at all. Each job re-fetches the recording
+(yt-dlp first, the paid provider only as fallback) and runs the same
+alignment new charts get; the chart itself is untouched. Jobs queue behind
+analysis requests and run at the worker's usual pace.
+"""
+import json
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from chordlyze_backend.song_jobs import SongJobs  # noqa: E402
+
+
+def needs_timing(chart: dict) -> bool:
+    lyrics = chart.get("lyrics")
+    if not lyrics:
+        return True
+    if lyrics.get("instrumental"):
+        return False
+    return not any(line.get("words") for line in lyrics.get("lines", []))
+
+
+def main() -> None:
+    args = sys.argv[1:]
+    limit = int(args[args.index("--limit") + 1]) if "--limit" in args else None
+    dry = "--dry-run" in args
+    cache = Path(os.environ.get("CHORDLYZE_CACHE",
+                                str(Path(__file__).resolve().parents[1] / "analysis_cache")))
+    jobs = SongJobs(cache)
+    queued = skipped = 0
+    for path in sorted(cache.glob("track-*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        chart = json.loads(path.read_text())
+        if chart.get("source") == "itunes_preview" or not needs_timing(chart):
+            skipped += 1
+            continue
+        if limit is not None and queued >= limit:
+            break
+        song = {"track_id": chart.get("track_id", path.stem.removeprefix("track-")), "title": chart.get("title"),
+                "artist": chart.get("artist"), "album": chart.get("album"), "isrc": chart.get("isrc"),
+                "artwork": chart.get("artwork"),
+                "duration": chart.get("song_duration") or chart.get("audio_duration")}
+        if not song["title"] or not song["duration"]:
+            skipped += 1
+            continue
+        if not dry:
+            jobs.request(song, kind="lyrics")
+        queued += 1
+    print(f"{'would queue' if dry else 'queued'} {queued}, skipped {skipped}")
+
+
+if __name__ == "__main__":
+    main()
