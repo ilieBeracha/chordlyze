@@ -35,6 +35,7 @@ from fastapi import FastAPI, Form, Header, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from .analysis.beats import track_beats
+from .analysis.difficulty import difficulty
 from .analysis.chord import parse_label
 from .analysis.engine import AudioDecodeError, ChordSegment, merge_adjacent, recognize_audio
 from .analysis.ismir import RecognitionUnavailable, close as close_recognizer
@@ -254,6 +255,8 @@ def _song_status(track_id: str, isrc: str | None = None) -> dict:
     path = _track_cache_path(track_id)
     chart = _read_analysis(path) if path.exists() else _cached_by_isrc(track_id, isrc, None, None)
     ready = chart and chart.get("source") != "itunes_preview" and is_current(chart, model="ismir2019")
+    if ready:
+        chart = {**chart, "difficulty": difficulty(chart.get("chords") or [])}
     job = jobs.get(track_id)
     song = job["song"] if job else None
     if ready:
@@ -612,7 +615,8 @@ def _library() -> dict:
             "artist": data.get("artist"),
             "key": data.get("key"),
             "artwork": data.get("artwork"),
-            "difficulty": data.get("difficulty"),
+            # Recomputed on read so the scale can change without re-analysis.
+            "difficulty": difficulty(data.get("chords") or []),
             "source": data.get("source"),
             "model": data.get("model", "madmom"),
             "isrc": data.get("isrc"),
