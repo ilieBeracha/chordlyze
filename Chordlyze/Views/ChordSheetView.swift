@@ -190,7 +190,7 @@ struct ChordSheetView: View {
     var wordPlayhead: Double? = nil
 
     var body: some View {
-        LazyVStack(alignment: .leading, spacing: style == .live ? 30 : 20) {
+        LazyVStack(alignment: .leading, spacing: style == .live ? 28 : 20) {
             ForEach(store.rows) { row in
                 ChordRowView(row: row, transposeBy: store.shift, playhead: playhead,
                              style: style, onChordTap: onChordTap, onLyricTap: { onRowTap?(row) }, verdict: verdict,

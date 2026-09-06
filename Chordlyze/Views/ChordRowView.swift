@@ -11,8 +11,8 @@ struct ChordRowView: View {
         case live
 
         var chordFont: Font {
-            self == .sheet ? .system(size: 13, weight: .bold, design: .rounded)
-                           : .system(size: 16, weight: .semibold, design: .rounded)
+            self == .sheet ? .system(size: 14, weight: .semibold, design: .monospaced)
+                           : .system(size: 17, weight: .semibold, design: .monospaced)
         }
         var wordFont: Font { wordFont(active: false) }
         /// Live: the sung line is white and bold, the others lighter grey.
@@ -24,7 +24,7 @@ struct ChordRowView: View {
             self == .sheet ? Palette.nearWhite : (active ? .white : Palette.lyricDim)
         }
         var chipPadding: (vertical: CGFloat, horizontal: CGFloat) {
-            self == .sheet ? (3, 9) : (4, 10)
+            self == .sheet ? (2, 0) : (2, 0)
         }
     }
 
@@ -45,7 +45,7 @@ struct ChordRowView: View {
     private var active: Bool { playhead.map(row.contains) ?? false }
 
     var body: some View {
-        VStack(alignment: rtl ? .trailing : .leading, spacing: style == .sheet ? 4 : 12) {
+        VStack(alignment: rtl ? .trailing : .leading, spacing: style == .sheet ? 4 : 10) {
             if !row.text.isEmpty {
                 ChordLyricLine(text: row.text, chords: row.chords, words: row.words?.map(\.text), transposeBy: transposeBy,
                                playhead: playhead, style: style, active: active, pending: row.chords.isEmpty && row.held == nil,
@@ -54,17 +54,13 @@ struct ChordRowView: View {
                                wordPlayhead: wordPlayhead)
                     .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
             } else {
+                // A wordless stretch is its chords on a line, nothing more; the
+                // static sheet keeps a small time span so the page can be read.
                 timedRow
-                caption
+                if style == .sheet { caption }
             }
         }
         .frame(maxWidth: .infinity, alignment: rtl ? .trailing : .leading)
-        .overlay(alignment: rtl ? .trailing : .leading) {
-            if style == .live, active, !row.text.isEmpty {
-                RoundedRectangle(cornerRadius: 2).fill(Color.spotifyGreen)
-                    .frame(width: 3).padding(.vertical, 4).offset(x: rtl ? 14 : -14)
-            }
-        }
     }
 
     /// Chords at time-proportional positions, with the playhead when live.
@@ -77,7 +73,7 @@ struct ChordRowView: View {
                     .layoutValue(key: TimedRowLayout.Position.self, value: placed.position)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: style == .sheet ? 22 : 40, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: style == .sheet ? 22 : 34, alignment: .leading)
         .overlay(alignment: .leading) {
             if let playhead, row.contains(playhead), row.isInstrumental || row.text.isEmpty {
                 GeometryReader { geo in
@@ -135,16 +131,13 @@ struct ChordChip: View {
         Button {
             onTap?(name)
         } label: {
+            // Plain text, as on a printed chart: the sounding chord is bright,
+            // the others sit back; no boxes.
             Text(name)
                 .font(style.chordFont)
-                .foregroundStyle(active ? .black : Color.spotifyGreen)
+                .foregroundStyle(active ? Color.spotifyGreen : (style == .live ? Color.spotifyGreen.opacity(0.55) : Color.spotifyGreen))
                 .padding(.vertical, style.chipPadding.vertical)
                 .padding(.horizontal, style.chipPadding.horizontal)
-                .background(
-                    RoundedRectangle(cornerRadius: style == .sheet ? 7 : 13, style: .continuous)
-                        .fill(active ? Color.spotifyGreen
-                              : style == .sheet ? Color.white.opacity(0.06) : Color.clear)
-                )
                 .overlay(alignment: .topTrailing) {
                     if let verdictColor {
                         Circle().fill(verdictColor).frame(width: 9, height: 9)

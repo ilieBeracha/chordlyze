@@ -27,20 +27,16 @@ struct LiveNowView: View {
                 let activeID = SheetModel.activeRow(store.rows, at: wordPosition)?.id
                 VStack(spacing: 0) {
                     SongSheetHeader(store: store)
-                    VStack(alignment: .leading, spacing: 6) {
-                        if let playbackNote {
-                            Text(playbackNote).font(.system(size: 13)).foregroundStyle(Palette.secondary)
-                        }
-                        if seekDenied { Text("Spotify could not seek. Check playback permissions or Premium.").font(.caption).foregroundStyle(Palette.secondary) }
-                        if let note = store.editionNote {
-                            Label(note, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(Palette.warning)
-                                .accessibilityIdentifier("edition-note")
-                        }
-                        if let note = store.lyricsNote {
-                            Label(note, systemImage: "clock").font(.system(size: 12)).foregroundStyle(Palette.tertiary)
-                                .accessibilityIdentifier("lyrics-detail")
-                        }
-                    }.padding(.horizontal, 20).padding(.bottom, 6)
+                    // Only what changes the moment: paused, reconnecting, a refused seek.
+                    // Timing and edition notes live on the sheet page, not over the words.
+                    if let playbackNote {
+                        Text(playbackNote).font(.system(size: 13)).foregroundStyle(Palette.secondary)
+                            .padding(.horizontal, 20).padding(.bottom, 6)
+                    }
+                    if seekDenied {
+                        Text("Spotify could not seek. Check playback permissions or Premium.").font(.caption)
+                            .foregroundStyle(Palette.secondary).padding(.horizontal, 20).padding(.bottom, 6)
+                    }
                     ScrollView {
                         ChordSheetView(store: store, playhead: position, style: .live,
                                        onChordTap: { selectedChord = SelectedChord(name: $0) },
@@ -48,11 +44,13 @@ struct LiveNowView: View {
                                            guard let onSeek else { return }
                                            Task { seekDenied = !(await onSeek(store.timing.spotifyTime(row.start))) }
                                        }, verdict: verdict, wordPlayhead: wordPosition)
-                            .padding(.horizontal, 24).padding(.vertical, 32)
-                            .padding(.bottom, 90)
+                            .padding(.horizontal, 24).padding(.top, 40)
+                            .padding(.bottom, 320)  // the last lines can roll up to the reading height too
                     }
                     .onChange(of: activeID, initial: true) { _, id in
-                        if let id { withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) } }
+                        // The line being sung settles a third of the way down, so what
+                        // comes next is already in view; the roll is slow enough to follow.
+                        if let id { withAnimation(.easeInOut(duration: 0.55)) { proxy.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.32)) } }
                     }
                     HStack(spacing: 12) {
                         Text(mmss(position)).font(.system(size: 13, weight: .semibold, design: .monospaced))
