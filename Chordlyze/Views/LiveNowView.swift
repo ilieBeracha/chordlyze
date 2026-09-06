@@ -50,7 +50,7 @@ struct LiveNowView: View {
                     .onChange(of: activeID, initial: true) { _, id in
                         // The line being sung settles a third of the way down, so what
                         // comes next is already in view; the roll is slow enough to follow.
-                        if let id { withAnimation(.easeInOut(duration: 0.55)) { proxy.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.32)) } }
+                        if let id { withAnimation(.easeInOut(duration: 0.4)) { proxy.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.32)) } }
                     }
                     HStack(spacing: 12) {
                         Text(mmss(position)).font(.system(size: 13, weight: .semibold, design: .monospaced))
