@@ -18,6 +18,15 @@ metronome's beat grid and displayed timeline follow that pace; recording stops
 at the end of the range. After the result, return and choose **Practice this
 section again** to keep the range and pace for another attempt.
 
+## Looping a passage in Live
+
+Live has an A–B repeat for rehearsing a change before recording it: tap
+**Loop** at the passage start, then **B** at its end (or long-press a line and
+choose **Loop this line**). When Spotify reaches the end, the app seeks it back
+to the start, once per pass; the green chip shows the range and clears it. The
+loop lives in Live only; a practice take never loops, since a jump would break
+its timeline.
+
 ## Playing from Spotify
 
 **Play from Spotify and record** lists the account's Spotify devices and

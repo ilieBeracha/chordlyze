@@ -16,6 +16,10 @@ struct LiveNowView: View {
     @State private var lastPosition: Double = 0
     @State private var selectedChord: SelectedChord?
     @State private var seekDenied = false
+    /// A–B repeat: when the song reaches the end, Spotify is sent back to the
+    /// start. The range lives on the store; only the arming is view state.
+    @State private var loopStart: Double?
+    @State private var loopArmed = true
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -43,6 +47,8 @@ struct LiveNowView: View {
                                        onRowTap: { row in
                                            guard let onSeek else { return }
                                            Task { seekDenied = !(await onSeek(store.timing.spotifyTime(row.start))) }
+                                       }, onLoopRow: onSeek == nil ? nil : { row in
+                                           store.loop = row.start...max(row.start + 1, row.end); loopStart = nil; loopArmed = true
                                        }, verdict: verdict, wordPlayhead: wordPosition)
                             .padding(.horizontal, 24).padding(.top, 40)
                             .padding(.bottom, 320)  // the last lines can roll up to the reading height too
@@ -56,16 +62,64 @@ struct LiveNowView: View {
                         Text(mmss(position)).font(.system(size: 13, weight: .semibold, design: .monospaced))
                             .foregroundStyle(.white).accessibilityIdentifier("live-position")
                         ProgressView(value: position, total: max(1, duration)).tint(.spotifyGreen)
-                        Text("Live").font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.secondary)
+                        if onSeek != nil { loopControl(at: wordPosition) } else {
+                            Text("Live").font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.secondary)
+                        }
                     }
                     .padding(.horizontal, 20).padding(.bottom, 24)
                 }
-                .onChange(of: wordPosition) { _, value in lastPosition = value }
+                .onChange(of: wordPosition) { _, value in
+                    lastPosition = value
+                    // Back to the start once per pass; re-arm after the jump lands.
+                    if let loop = store.loop, let onSeek {
+                        if value >= loop.upperBound, loopArmed {
+                            loopArmed = false
+                            Task { seekDenied = !(await onSeek(store.timing.spotifyTime(loop.lowerBound))) }
+                        } else if value < loop.upperBound - 1 {
+                            loopArmed = true
+                        }
+                    }
+                }
             }
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .chordDiagram($selectedChord)
         .observes(store)
+    }
+
+    /// Loop: tap A at the passage start, B at its end; the chip shows the
+    /// range and clears it. Long-pressing a line loops that line directly.
+    @ViewBuilder private func loopControl(at now: Double) -> some View {
+        if let loop = store.loop {
+            Button {
+                store.loop = nil
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "repeat").font(.system(size: 12, weight: .bold))
+                    Text("\(mmss(loop.lowerBound))–\(mmss(loop.upperBound))").monospacedDigit()
+                    Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
+                }
+                .font(.system(size: 13, weight: .semibold)).foregroundStyle(.black)
+                .padding(.vertical, 6).padding(.horizontal, 10)
+                .background(Capsule().fill(Color.spotifyGreen))
+            }
+            .buttonStyle(.plain).accessibilityIdentifier("loop-active")
+        } else if let loopStart {
+            Button {
+                if now > loopStart + 1 { store.loop = loopStart...now; self.loopStart = nil; loopArmed = true }
+            } label: {
+                Text("A \(mmss(loopStart)) · tap B").font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                    .foregroundStyle(Color.spotifyGreen)
+            }
+            .buttonStyle(.plain)
+        } else {
+            Button {
+                loopStart = now
+            } label: {
+                Label("Loop", systemImage: "repeat").font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.secondary)
+            }
+            .buttonStyle(.plain).accessibilityIdentifier("loop-start")
+        }
     }
 }

@@ -185,6 +185,8 @@ struct ChordSheetView: View {
     var onChordTap: ((String) -> Void)? = nil
     var onRowTap: ((SheetModel.Row) -> Void)? = nil
     var onPracticeRow: ((SheetModel.Row) -> Void)? = nil
+    /// Live: repeat this line until cleared.
+    var onLoopRow: ((SheetModel.Row) -> Void)? = nil
     var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
     /// Song time for the words, without the chord display lead.
     var wordPlayhead: Double? = nil
@@ -201,6 +203,9 @@ struct ChordSheetView: View {
                     .contextMenu {
                         if let onPracticeRow, row.start < (store.analysis?.coverageEnd ?? 0) {
                             Button("Practice this passage", systemImage: "mic.fill") { onPracticeRow(row) }
+                        }
+                        if let onLoopRow, row.start < (store.analysis?.coverageEnd ?? 0) {
+                            Button("Loop this line", systemImage: "repeat") { onLoopRow(row) }
                         }
                     }
             }
