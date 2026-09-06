@@ -39,7 +39,9 @@ class WorkerClient:
 
     def get(self, path: str, params: dict) -> dict:
         query = urllib.parse.urlencode({key: value for key, value in params.items() if value is not None})
-        with urllib.request.urlopen(self.base + path + '?' + query, timeout=60) as response:
+        request = urllib.request.Request(self.base + path + '?' + query,
+                                         headers={'Authorization': 'Bearer ' + self.token})
+        with urllib.request.urlopen(request, timeout=60) as response:
             return json.load(response)
 
 

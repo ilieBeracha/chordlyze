@@ -98,3 +98,17 @@ def test_http_requires_a_token(cache, monkeypatch):
     assert [i["track_id"] for i in mine] == ["t1"]
     assert client.get("/library", headers={"Authorization": "Bearer dave"}).json()["items"] == []
     assert json.loads((cache / "users").glob("*.json").__next__().read_text())["user_id"] == "carol"
+
+
+def test_lyrics_lookup_accepts_the_worker_token(monkeypatch):
+    monkeypatch.setenv("CHORDLYZE_WORKER_TOKEN", "worker-secret")
+    monkeypatch.setattr(auth, "lookup", lambda token: "user-" + token)
+    assert main.user_or_worker("Bearer worker-secret") == "worker"
+    assert main.user_or_worker("Bearer spotify-token") == "user-spotify-token"
+    with pytest.raises(HTTPException) as denied:
+        main.user_or_worker(None)
+    assert denied.value.status_code == 401
+    monkeypatch.delenv("CHORDLYZE_WORKER_TOKEN")
+    auth.forget_all()
+    assert main.user_or_worker("Bearer worker-secret") == "user-worker-secret", \
+        "without a configured worker the token is treated as a Spotify token and verified"
