@@ -37,13 +37,12 @@ Charts that predate accounts belong to nobody until
 Tests stand in for Spotify with `tests/fake_spotify.py` through
 `CHORDLYZE_SPOTIFY_ME_URL`.
 
-In Live and Practice a runner sweeps every row, not only instrumental ones.
-On a word-timed row the words alone drive it (`LyricPlayhead`, a plain file
-with tests): it waits at the leading edge until a second before the first
-word, reaches each word as it is sung, finishes a second after the last word
-and rests at the far edge; the word being sung is highlighted. Chords light on
-their own time above their words and never move the runner, so several chords
-can change above one held word while the voice stays on it. The words use the
+In Live and Practice a word-timed row shows no moving line: the word being
+sung turns green, chords light on their own time above their words, and
+several chords can change above one held word while the voice stays on it. A
+moving line there only made players chase it. The thin runner remains on rows
+without word timing, instrumental stretches and line-timed lyrics, where it
+moves chord to chord (`LyricPlayhead`, a plain file with tests). The words use the
 calibrated time exactly; only chords get the "show chords ahead" lead. The
 runner is measured on the word's own text bounds, not the chord column. On a
 line-timed row chord starts are the only fixed points and the runner moves

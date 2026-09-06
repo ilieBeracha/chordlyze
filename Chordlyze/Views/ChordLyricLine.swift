@@ -65,14 +65,16 @@ struct ChordLyricLine: View {
             }
         }
         .overlayPreferenceValue(WordAnchors.self) { anchors in
-            if style == .live, let wordPlayhead, rowEnd > rowStart, wordPlayhead >= rowStart, wordPlayhead < rowEnd {
+            // The runner only on lines without word timing: with words timed, the
+            // sung word lights and a moving line just makes the player chase it.
+            if style == .live, wordTimes == nil, let wordPlayhead, rowEnd > rowStart, wordPlayhead >= rowStart, wordPlayhead < rowEnd {
                 GeometryReader { geo in
                     let points = LyricPlayhead.waypoints(rowStart: rowStart, rowEnd: rowEnd, words: anchors.mapValues { geo[$0] },
-                                                         wordTimes: wordTimes,
+                                                         wordTimes: nil,
                                                          chordStarts: chords.map { ($0.event.start, $0.wordIndex ?? 0) }, rtl: rtl)
                     if let point = LyricPlayhead.position(at: wordPlayhead, along: points, rtl: rtl) {
                         RoundedRectangle(cornerRadius: 1)
-                            .fill(Color.spotifyGreen.opacity(0.7))
+                            .fill(Color.spotifyGreen.opacity(0.5))
                             .frame(width: 2, height: point.height + 6)
                             .position(x: point.x, y: point.y)
                             .allowsHitTesting(false)
