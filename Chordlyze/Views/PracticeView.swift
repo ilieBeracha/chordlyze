@@ -18,9 +18,6 @@ struct PracticeView: View {
     @ObservedObject var songStore: SongSheetStore
     var initialRange: ClosedRange<Double>? = nil
     @ObservedObject var nowPlaying: SpotifyNowPlaying = .shared
-    /// Display-only lead shared with Live; the take itself is anchored to
-    /// Spotify's reported position so scoring stays in real song time.
-    @AppStorage("chordLead") private var lead = 0.3
 
     private enum Phase: Equatable { case intro, starting, countdown(Int), recording, uploading, saved, failed(String) }
     @State private var phase: Phase = .intro
@@ -387,13 +384,14 @@ struct PracticeView: View {
         }
     }
 
-    /// Chart position for the sheet while recording. A synced take shows
+    /// Calibrated chart position for the sheet while recording, without the
+    /// display lead (the sheet adds it for chords only). A synced take shows
     /// Spotify's clock so the chart and the audio agree; during a connection
     /// loss it falls back to the take's own clock instead of freezing.
     private func position() -> Double? {
         guard let startedAt, let activeTake else { return nil }
-        if synced, nowPlaying.connectionMessage == nil, let live = spotifyChartPosition() { return live + lead }
-        return activeTake.plan.position(elapsed: startedAt.duration(to: .now).seconds) + (synced ? lead : 0)
+        if synced, nowPlaying.connectionMessage == nil, let live = spotifyChartPosition() { return live }
+        return activeTake.plan.position(elapsed: startedAt.duration(to: .now).seconds)
     }
 
     private func tick() {

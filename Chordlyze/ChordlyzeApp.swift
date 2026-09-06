@@ -34,8 +34,19 @@ struct ChordlyzeApp: App {
 
     /// Signed out: only the login screen, no tabs. Every tab needs Spotify.
     @ViewBuilder private var root: some View {
-        if auth.isAuthorized { MainTabsView().environmentObject(auth) }
-        else { LoginView().environmentObject(auth) }
+        if !auth.isAuthorized { LoginView().environmentObject(auth) }
+        else if openLive { NavigationStack { SpotifyLiveView() }.environmentObject(auth) }
+        else { MainTabsView().environmentObject(auth) }
+    }
+
+    /// Debug launch flag: straight to Live follow, for checking the runner
+    /// against a real song without driving the UI.
+    private var openLive: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--open-live")
+        #else
+        false
+        #endif
     }
 
     private var isPreview: Bool {

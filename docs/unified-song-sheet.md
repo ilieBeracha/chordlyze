@@ -37,11 +37,19 @@ Charts that predate accounts belong to nobody until
 Tests stand in for Spotify with `tests/fake_spotify.py` through
 `CHORDLYZE_SPOTIFY_ME_URL`.
 
-In Live and Practice a playhead sweeps every row, not only instrumental ones:
-on a lyric row it enters at the leading edge when the row starts, reaches each
-chord's word exactly when that chord starts, and leaves at the trailing edge
-when the row ends, moving steadily in between and wrapping across visual lines
-(`LyricPlayhead`, driven by the same position as the chord highlight). Chart
+In Live and Practice a runner sweeps every row, not only instrumental ones.
+On a word-timed row the words alone drive it (`LyricPlayhead`, a plain file
+with tests): it waits at the leading edge until a second before the first
+word, reaches each word as it is sung, finishes a second after the last word
+and rests at the far edge; the word being sung is highlighted. Chords light on
+their own time above their words and never move the runner, so several chords
+can change above one held word while the voice stays on it. The words use the
+calibrated time exactly; only chords get the "show chords ahead" lead. The
+runner is measured on the word's own text bounds, not the chord column. On a
+line-timed row chord starts are the only fixed points and the runner moves
+steadily between them. Word end times are not stored yet, so motion within a
+held word is an even sweep to the next word. Launch with `--open-live` in Debug
+to open Live follow directly for checking against a real song. Chart
 time comes from Spotify's position through the song's timing calibration
 (`TimingMap`, spotify = scale × chart + offset). The chart was measured on a
 different recording, so the two can start at different moments or run at
