@@ -12,13 +12,13 @@ struct ChordRowView: View {
 
         var chordFont: Font {
             self == .sheet ? .system(size: 14, weight: .semibold, design: .monospaced)
-                           : .system(size: 17, weight: .semibold, design: .monospaced)
+                           : .system(size: 19, weight: .bold, design: .monospaced)
         }
         var wordFont: Font { wordFont(active: false) }
         /// Live: the sung line is white and bold, the others lighter grey.
         func wordFont(active: Bool) -> Font {
             self == .sheet ? .system(size: 18, design: .rounded)
-                : .system(size: active ? 24 : 21, weight: active ? .bold : .regular, design: .rounded)
+                : .system(size: active ? 26 : 23, weight: active ? .bold : .regular, design: .rounded)
         }
         func wordColor(active: Bool) -> Color {
             self == .sheet ? Palette.nearWhite : (active ? .white : Palette.lyricDim)
@@ -45,7 +45,7 @@ struct ChordRowView: View {
     private var active: Bool { playhead.map(row.contains) ?? false }
 
     var body: some View {
-        VStack(alignment: rtl ? .trailing : .leading, spacing: style == .sheet ? 4 : 10) {
+        VStack(alignment: rtl ? .trailing : .leading, spacing: style == .sheet ? 4 : 6) {
             if !row.text.isEmpty {
                 ChordLyricLine(text: row.text, chords: row.chords, words: row.words?.map(\.text), transposeBy: transposeBy,
                                playhead: playhead, style: style, active: active, pending: row.chords.isEmpty && row.held == nil,
@@ -149,7 +149,7 @@ struct ChordChip: View {
         }
         .buttonStyle(.plain)
         .disabled(onTap == nil)
-        .animation(.easeInOut(duration: 0.15), value: active)
+        .animation(.easeOut(duration: 0.08), value: active)
     }
 }
 

@@ -58,9 +58,9 @@ struct ChordLyricLine: View {
     var body: some View {
         let tokens = Self.tokens(text: text, chords: chords, words: words)
         let hasChords = !chords.isEmpty
-        FlowLayout(spacing: style == .sheet ? 8 : 12) {
+        FlowLayout(spacing: style == .sheet ? 8 : 10) {
             ForEach(tokens) { token in
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: style == .sheet ? 3 : 1) {
                     if hasChords {
                         chordRow(token.chords)
                             .frame(minHeight: style == .sheet ? 24 : 30, alignment: .bottomLeading)
@@ -77,7 +77,7 @@ struct ChordLyricLine: View {
                         .font(style.wordFont(active: active))
                         .foregroundStyle(wordColor(token.id))
                         .shadow(color: .white.opacity(glow(token.id) * 0.45), radius: 10)
-                        .animation(.easeInOut(duration: 0.3), value: currentWord)
+                        .animation(.easeOut(duration: 0.14), value: currentWord)
                         .onTapGesture { onLyricTap?() }
                         // The word's own text bounds, not the word-and-chords column.
                         .anchorPreference(key: WordAnchors.self, value: .bounds) { [token.id: $0] }
