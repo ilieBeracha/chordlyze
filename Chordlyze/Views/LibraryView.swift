@@ -19,7 +19,7 @@ struct LibraryView: View {
     enum Scope: String, CaseIterable, Identifiable {
         case mine, everyone
         var id: String { rawValue }
-        var label: String { self == .mine ? "My songs" : "All charts" }
+        var label: String { self == .mine ? "My songs" : "Browse" }
     }
 
     @State private var items: [BackendClient.LibraryItem] = []
@@ -63,6 +63,9 @@ struct LibraryView: View {
                         .padding(.top, 60)
                 } else if let error {
                     errorView(error)
+                } else if scope == .everyone {
+                    CatalogBrowseView(items: items)
+                        .padding(.top, 16)
                 } else if items.isEmpty {
                     ContentUnavailableView(scope == .mine ? "No saved songs yet" : "No charts yet", systemImage: "music.note",
                                            description: Text(scope == .mine
@@ -103,17 +106,23 @@ struct LibraryView: View {
         HStack(spacing: 14) {
             if !isRoot { BackCircle() }
             VStack(alignment: .leading, spacing: 1) {
-                Text(scope == .mine ? "Saved songs" : "All charts")
+                Text(scope == .mine ? "Saved songs" : "Browse charts")
                     .font(.system(size: 26, weight: .bold))
                     .tracking(-0.3)
                     .foregroundStyle(.white)
                 if !items.isEmpty {
-                    Text("\(items.count) songs · \(distinctKeys) keys")
+                    Text(scope == .mine ? "\(items.count) songs · \(distinctKeys) keys"
+                                        : "\(items.count) charts from every account")
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.secondary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            if scope == .mine { sortMenu }
+        }
+    }
+
+    private var sortMenu: some View {
             Menu {
                 Picker("Sort", selection: $sortRaw) {
                     ForEach(SortMode.allCases) { mode in
@@ -126,7 +135,6 @@ struct LibraryView: View {
                     .foregroundStyle(Color.spotifyGreen)
                     .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
             }
-        }
     }
 
     // MARK: - States
