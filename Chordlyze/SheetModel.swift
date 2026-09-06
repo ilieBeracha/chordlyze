@@ -39,6 +39,18 @@ enum SheetModel {
     static let minInstrumental: Double = 2
     static let rowLength: Double = 8
     static let lastWordLength: Double = 1
+    /// Line-timed lyrics: a line is sung over roughly half a second a word,
+    /// and never over less than this share of the gap to the next line.
+    static let secondsPerWord: Double = 0.5
+    static let minimumSungShare: Double = 0.6
+
+    /// Seconds of a line-timed row that carry words. The interval to the next
+    /// line includes the breath or fill before it; placing chords over the
+    /// whole interval put them early on the line.
+    static func sungDuration(words: Int, interval: Double) -> Double {
+        guard interval > 0, words > 0 else { return interval }
+        return min(interval, max(secondsPerWord * Double(words), minimumSungShare * interval))
+    }
 
     static func events(_ analysis: ChordAnalysis?) -> [Event] {
         guard let analysis, !analysis.isPreview else { return [] }
@@ -119,8 +131,10 @@ enum SheetModel {
             } else if !tokens.isEmpty {
                 // Line timestamps do not establish word onsets: these are layout
                 // estimates. Actual chord intervals stay on the audio timeline.
+                let sung = sungDuration(words: tokens.count, interval: end - start)
+                let share = min(1, max(0, (event.start - start) / max(sung, 0.001)))
                 let weights = tokens.map { Double(max(1, $0.count)) }
-                let target = position * weights.reduce(0, +)
+                let target = share * weights.reduce(0, +)
                 var consumed = 0.0
                 var index = 0
                 for weight in weights.dropLast() {
