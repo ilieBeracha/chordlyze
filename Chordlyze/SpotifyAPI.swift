@@ -200,8 +200,10 @@ final class SpotifyAPI: ObservableObject {
     struct Device: Decodable {
         let id: String?
         let name: String
+        /// Spotify's device class: "Smartphone", "Computer", "Speaker", ...
+        let type: String
         let isActive: Bool
-        enum CodingKeys: String, CodingKey { case id, name, isActive = "is_active" }
+        enum CodingKeys: String, CodingKey { case id, name, type, isActive = "is_active" }
     }
 
     /// Devices Spotify can start playback on, including an idle phone app.

@@ -325,14 +325,19 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         var started: [(String, Double)] = []
         var playFailure: Int?
         var stall = false
-        var listed: [SpotifyAPI.Device] = []
+        func dev(_ id: String, _ name: String, _ type: String, active: Bool = false) -> SpotifyAPI.Device {
+            decode(["id": id, "name": name, "type": type, "is_active": active])
+        }
+        let laptop = dev("mac", "Ilie's MacBook", "Computer", active: true)
+        let phone = dev("phone", "iPhone", "Smartphone")
+        var listed: [SpotifyAPI.Device] = [laptop, phone]
         var targeted: [String?] = []
         let starter = SpotifyNowPlaying(service: .init(
             current: { device.map { playback(id: "one", milliseconds: Int($0.offset * 1000), playing: $0.playing) } },
             seek: { _ in },
             play: { id, at, deviceID in
                 targeted.append(deviceID)
-                if let playFailure, deviceID == nil { throw NSError(domain: "SpotifyAPI", code: playFailure) }
+                if let playFailure { throw NSError(domain: "SpotifyAPI", code: playFailure) }
                 started.append((id, at)); device = (at, !stall)
             },
             devices: { listed },
@@ -340,16 +345,19 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         starter.resume()
         try await starter.play(trackID: "one", at: 30)
         check(started.count == 1 && started[0].0 == "one" && started[0].1 == 30, "Play starts the requested track at the requested position")
+        check(targeted == ["phone"] && starter.playbackDevice == "iPhone", "The phone is targeted even when a laptop is Spotify's active device")
         check(starter.playing?.track.id == "one" && starter.playing?.isPlaying == true, "Play returns only after Spotify reports the track playing")
         check(abs((starter.livePosition() ?? -1) - 30) < 1, "The playhead after play comes from Spotify's report")
-        playFailure = 404
-        do { try await starter.play(trackID: "one", at: 0); fatalError("A missing device must fail") }
-        catch let error as SpotifyNowPlaying.PlayError { check(error == .noDevice, "404 means no active device") }
-        listed = [decode(["id": "phone", "name": "Phone", "is_active": false], as: SpotifyAPI.Device.self)]
-        try await starter.play(trackID: "one", at: 8)
-        check(targeted.suffix(2).map { $0 } == [nil, "phone"] && started.count == 2, "No active device: the listed phone is targeted explicitly")
-        check(abs((starter.livePosition() ?? -1) - 8) < 1, "Playback on the targeted device is confirmed the same way")
+        listed = [laptop]
+        do { try await starter.play(trackID: "one", at: 0); fatalError("A laptop-only account must not start there") }
+        catch let error as SpotifyNowPlaying.PlayError { check(error == .onlyElsewhere("Ilie's MacBook"), "Playback is never sent where the headphones are not") }
         listed = []
+        do { try await starter.play(trackID: "one", at: 0); fatalError("No devices must fail") }
+        catch let error as SpotifyNowPlaying.PlayError { check(error == .noDevice, "No listed phone means open Spotify on it first") }
+        listed = [dev("p2", "Old phone", "Smartphone"), dev("p1", "iPhone", "Smartphone", active: true)]
+        try await starter.play(trackID: "one", at: 8)
+        check(targeted.last == "p1", "Among phones, the active one wins")
+        listed = [laptop, phone]
         playFailure = 403
         do { try await starter.play(trackID: "one", at: 0); fatalError("A Premium failure must surface") }
         catch let error as SpotifyNowPlaying.PlayError { check(error == .premiumRequired, "403 means Premium is required") }

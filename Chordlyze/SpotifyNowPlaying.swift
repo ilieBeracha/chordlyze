@@ -21,11 +21,12 @@ final class SpotifyNowPlaying: ObservableObject {
         var sleep: (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
     }
     enum PlayError: LocalizedError, Equatable {
-        case notConnected, noDevice, premiumRequired, notConfirmed, failed(Int)
+        case notConnected, noDevice, onlyElsewhere(String), premiumRequired, notConfirmed, failed(Int)
         var errorDescription: String? {
             switch self {
             case .notConnected: return "Spotify is not connected. Reconnect it in Profile."
-            case .noDevice: return "Spotify has no active device. Open Spotify on this phone and play anything once, then try again."
+            case .noDevice: return "Spotify is not open on this phone. Open the Spotify app once, then try again."
+            case .onlyElsewhere(let name): return "Spotify is only available on \(name) right now. Open the Spotify app on this phone once, then try again."
             case .premiumRequired: return "Starting playback from Chordlyze needs Spotify Premium. Play the song in Spotify instead."
             case .notConfirmed: return "Spotify did not report the song playing from the requested position. Try again."
             case .failed(let code): return "Spotify returned \(code)."
@@ -37,6 +38,8 @@ final class SpotifyNowPlaying: ObservableObject {
     @Published private(set) var analysisFailed = false
     @Published private(set) var needsReauth = false
     @Published private(set) var connectionMessage: String?
+    /// Name of the phone Spotify device the last practice start targeted.
+    @Published private(set) var playbackDevice: String?
     private var anchor: (offset: Double, at: ContinuousClock.Instant)?
     private var lastSuccess: ContinuousClock.Instant?
     private var pollTask: Task<Void, Never>?
@@ -184,23 +187,28 @@ final class SpotifyNowPlaying: ObservableObject {
         }.store(in: &subscriptions)
         sheetTask = Task { await sheet.observe() }
     }
-    /// Start `trackID` at `seconds`, then wait until a fresh poll reports it
-    /// playing near that position. The playhead is never assumed from the
-    /// request: it comes from Spotify's own report. Without an active device
-    /// (404) the first device Spotify still lists, such as the phone's idle
-    /// app, is targeted explicitly.
+    /// The phone in the account's device list: the active smartphone, else
+    /// any smartphone. Practice must play where the headphones are, never on
+    /// whatever device Spotify last used (a laptop across the room counts as
+    /// "active" and the phone hears nothing).
+    static func practiceDevice(_ devices: [SpotifyAPI.Device]) throws -> SpotifyAPI.Device {
+        let phones = devices.filter { $0.type.caseInsensitiveCompare("Smartphone") == .orderedSame && $0.id != nil }
+        if let phone = phones.first(where: \.isActive) ?? phones.first { return phone }
+        if let other = devices.first(where: \.isActive) ?? devices.first { throw PlayError.onlyElsewhere(other.name) }
+        throw PlayError.noDevice
+    }
+
+    /// Start `trackID` at `seconds` on this phone's Spotify, then wait until
+    /// a fresh poll reports it playing near that position. The playhead is
+    /// never assumed from the request: it comes from Spotify's own report.
     func play(trackID: String, at seconds: Double) async throws {
         guard let service else { throw PlayError.notConnected }
         let issued = now()
         let target = max(0, seconds)
         do {
-            do { try await service.play(trackID, target, nil) } catch where (error as NSError).code == 404 {
-                let devices = try await service.devices()
-                guard let device = devices.first(where: \.isActive) ?? devices.first, let id = device.id else {
-                    throw PlayError.noDevice
-                }
-                try await service.play(trackID, target, id)
-            }
+            let device = try Self.practiceDevice(try await service.devices())
+            playbackDevice = device.name
+            try await service.play(trackID, target, device.id)
         } catch let error as PlayError {
             throw error
         } catch {

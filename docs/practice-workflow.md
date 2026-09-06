@@ -20,12 +20,16 @@ section again** to keep the range and pace for another attempt.
 
 ## Playing from Spotify
 
-**Play from Spotify and record** starts the song on the account's active
-Spotify device (`PUT /me/player/play`, Premium required) up to three seconds
-before the chosen range so the player hears the lead-in, then waits until
-Spotify itself reports the track playing near that position. The app never
-assumes playback it did not confirm: no active device (404) asks the user to
-open Spotify once, and 403 explains that Premium is needed. The take begins at
+**Play from Spotify and record** lists the account's Spotify devices and
+starts the song on the phone (`PUT /me/player/play` with the smartphone's
+`device_id`, Premium required) up to three seconds before the chosen range so
+the player hears the lead-in, then waits until Spotify itself reports the
+track playing near that position. It never plays on Spotify's "active"
+device: a laptop across the room can be active while the phone, and the
+headphones, hear nothing. No phone in the list means the Spotify app is not
+open on it, and the message says so; a list with only other devices names
+them. 403 explains that Premium is needed. The app never assumes playback it
+did not confirm. The count-in and the recording bar name the device. The take begins at
 the position Spotify reports, and while recording, the sheet follows Spotify's
 reported position (polled every two seconds, extrapolated between polls) so the
 chart and the audio share one clock. During a connection loss the sheet falls
