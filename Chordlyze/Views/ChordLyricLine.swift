@@ -22,6 +22,9 @@ struct ChordLyricLine: View {
     var onChordTap: ((String) -> Void)? = nil
     var onLyricTap: (() -> Void)? = nil
     var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
+    /// The row's span in song time, for the sweeping playhead in Live.
+    var rowStart: Double = 0
+    var rowEnd: Double = 0
 
     var body: some View {
         let tokens = Self.tokens(text: text, chords: chords, words: words)
@@ -46,7 +49,32 @@ struct ChordLyricLine: View {
                         .foregroundStyle(style.wordColor(active: active))
                         .onTapGesture { onLyricTap?() }
                 }
+                .anchorPreference(key: TokenAnchors.self, value: .bounds) { [token.id: $0] }
             }
+        }
+        .overlayPreferenceValue(TokenAnchors.self) { anchors in
+            if style == .live, let playhead, rowEnd > rowStart, playhead >= rowStart, playhead < rowEnd {
+                GeometryReader { geo in
+                    if let point = LyricPlayhead.position(at: playhead, rowStart: rowStart, rowEnd: rowEnd,
+                                                          chords: chords, tokens: anchors.mapValues { geo[$0] },
+                                                          width: geo.size.width, rtl: rtl) {
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(Color.spotifyGreen.opacity(0.7))
+                            .frame(width: 2, height: point.height)
+                            .position(x: point.x, y: point.y)
+                            .allowsHitTesting(false)
+                    }
+                }
+            }
+        }
+    }
+
+    private var rtl: Bool { text.isRTLText }
+
+    struct TokenAnchors: PreferenceKey {
+        static var defaultValue: [Int: Anchor<CGRect>] = [:]
+        static func reduce(value: inout [Int: Anchor<CGRect>], nextValue: () -> [Int: Anchor<CGRect>]) {
+            value.merge(nextValue(), uniquingKeysWith: { $1 })
         }
     }
 
@@ -77,5 +105,64 @@ struct ChordLyricLine: View {
         return words.enumerated().map { index, word in
             Token(id: index, word: word, chords: byWord[index] ?? [])
         }
+    }
+}
+
+/// Where the playhead sits on a lyric row: it enters at the row's leading
+/// edge when the row starts, reaches each chord's word exactly when that
+/// chord starts, and leaves at the trailing edge when the row ends. Between
+/// those points it moves at a steady rate through the words, wrapping from
+/// one visual line to the next. Pure geometry, so it can be reasoned about.
+enum LyricPlayhead {
+    struct Point: Equatable {
+        let x: CGFloat
+        let y: CGFloat
+        let height: CGFloat
+    }
+    struct Waypoint {
+        let time: Double
+        let x: CGFloat
+        let line: CGRect  // the visual line's vertical extent
+    }
+
+    static func position(at time: Double, rowStart: Double, rowEnd: Double, chords: [SheetModel.Placed],
+                         tokens: [Int: CGRect], width: CGFloat, rtl: Bool) -> Point? {
+        guard !tokens.isEmpty else { return nil }
+        // Visual lines: tokens grouped by top edge.
+        let lines = Dictionary(grouping: tokens.values, by: { $0.minY.rounded() }).values
+            .map { rects in rects.reduce(rects[0]) { $0.union($1) } }
+            .sorted { $0.minY < $1.minY }
+        guard let first = lines.first, let last = lines.last else { return nil }
+        let leading: (CGRect) -> CGFloat = { rtl ? $0.maxX : $0.minX }
+        let trailing: (CGRect) -> CGFloat = { rtl ? $0.minX : $0.maxX }
+        func line(containing rect: CGRect) -> CGRect { lines.first { $0.intersects(rect) } ?? first }
+
+        var points = [Waypoint(time: rowStart, x: leading(first), line: first)]
+        for chord in chords.sorted(by: { $0.event.start < $1.event.start }) {
+            guard let rect = tokens[chord.wordIndex ?? 0], chord.event.start > rowStart, chord.event.start < rowEnd else { continue }
+            points.append(Waypoint(time: chord.event.start, x: leading(rect), line: line(containing: rect)))
+        }
+        points.append(Waypoint(time: rowEnd, x: trailing(last), line: last))
+
+        let index = points.lastIndex { $0.time <= time } ?? 0
+        let from = points[index]
+        guard index + 1 < points.count else { return Point(x: from.x, y: from.line.midY, height: from.line.height) }
+        let to = points[index + 1]
+        let share = max(0, min(1, (time - from.time) / max(to.time - from.time, 0.001)))
+        if from.line.minY == to.line.minY {
+            return Point(x: from.x + (to.x - from.x) * share, y: from.line.midY, height: from.line.height)
+        }
+        // Wrap: run to the trailing edge of this line, then from the leading edge of the next.
+        let firstLeg = abs(trailing(from.line) - from.x)
+        let secondLeg = abs(to.x - leading(to.line))
+        let total = max(firstLeg + secondLeg, 1)
+        let travelled = share * total
+        if travelled <= firstLeg {
+            let x = from.x + (trailing(from.line) - from.x) * (firstLeg > 0 ? travelled / firstLeg : 1)
+            return Point(x: x, y: from.line.midY, height: from.line.height)
+        }
+        let rest = travelled - firstLeg
+        let x = leading(to.line) + (to.x - leading(to.line)) * (secondLeg > 0 ? rest / secondLeg : 1)
+        return Point(x: x, y: to.line.midY, height: to.line.height)
     }
 }

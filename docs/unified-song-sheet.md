@@ -37,6 +37,12 @@ Charts that predate accounts belong to nobody until
 Tests stand in for Spotify with `tests/fake_spotify.py` through
 `CHORDLYZE_SPOTIFY_ME_URL`.
 
+In Live and Practice a playhead sweeps every row, not only instrumental ones:
+on a lyric row it enters at the leading edge when the row starts, reaches each
+chord's word exactly when that chord starts, and leaves at the trailing edge
+when the row ends, moving steadily in between and wrapping across visual lines
+(`LyricPlayhead`, driven by the same position as the chord highlight).
+
 ## Loading and timing
 
 Opening a song posts its recording metadata to `/song/request`, then follows `/song/{track_id}`. Lyrics load independently while a complete chart is prepared. Reopening a ready song reuses the chart. Concurrent views share a document and subscriber count; the last departure cancels work. Reentry starts fresh requests. Old, canceled responses cannot replace the current song.
