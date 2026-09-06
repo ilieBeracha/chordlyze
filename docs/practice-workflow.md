@@ -70,6 +70,12 @@ failure message names the current output. A route change that removes the
 headphones mid-take saves the partial recording without scoring. The
 simulator has no real routes and passes the check.
 
+The microphone is opened (`TakeRecorder.prime()`) before Spotify is asked to
+play: starting input later, with Bluetooth headphones, makes iOS interrupt
+other audio for about a second exactly as the take begins, and Spotify
+resumes on its own. A pause Spotify reports is tolerated for three seconds
+before it ends the take; a track change ends it at once.
+
 The take is captured through one `AVAudioEngine` tap. Each buffer is written to
 the .m4a and handed to `ChordDrillDetector` in its general form (any chord in
 the vocabulary, same 70 ms dwell), so the detector's sample time is the frame's
