@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// Every chart on the server, arranged to be picked from rather than
-/// scrolled: by how hard it is to play, by genre, key, tempo and chord
-/// count, plus the newest charts. Each shelf opens a plain list.
+/// scrolled. One accent colour, hierarchy from type and spacing: a
+/// difficulty filter that narrows everything below, genres and collections
+/// as quiet lists, keys as hairline chips, and the newest charts as a grid.
 struct CatalogBrowseView: View {
     typealias Item = BackendClient.LibraryItem
 
@@ -14,11 +15,17 @@ struct CatalogBrowseView: View {
 
     let items: [Item]
     @State private var query = ""
+    @State private var level: String?  // nil = all
+
+    private var filtered: [Item] {
+        level.map { chosen in items.filter { $0.difficulty?.level == chosen } } ?? items
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 26) {
+        VStack(alignment: .leading, spacing: 28) {
             searchField
             if query.trimmingCharacters(in: .whitespaces).isEmpty {
+                levelFilter
                 shelves
             } else {
                 CatalogRows(items: Self.search(items, query))
@@ -30,141 +37,154 @@ struct CatalogBrowseView: View {
 
     static func songs(_ count: Int) -> String { count == 1 ? "1 song" : "\(count) songs" }
 
+    // MARK: - Filter
+
+    private var levelFilter: some View {
+        let counts = Self.byDifficulty(items)
+        return HStack(spacing: 8) {
+            filterChip("All", count: items.count, selected: level == nil) { level = nil }
+            ForEach(["easy", "medium", "hard"], id: \.self) { name in
+                filterChip(name.capitalized, count: counts[name]?.count ?? 0, selected: level == name) {
+                    level = level == name ? nil : name
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+    }
+
+    private func filterChip(_ title: String, count: Int, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Text(title).font(.system(size: 14, weight: .semibold))
+                Text("\(count)").font(.system(size: 12, weight: .medium)).monospacedDigit().opacity(0.6)
+            }
+            .foregroundStyle(selected ? .black : .white)
+            .padding(.vertical, 8).padding(.horizontal, 13)
+            .background(Capsule().fill(selected ? Color.white : Color.clear))
+            .overlay(Capsule().strokeBorder(selected ? Color.clear : Palette.separator))
+        }
+        .buttonStyle(.plain)
+        .disabled(count == 0)
+        .opacity(count == 0 ? 0.35 : 1)
+        .animation(.easeOut(duration: 0.15), value: selected)
+    }
+
     // MARK: - Shelves
 
     @ViewBuilder private var shelves: some View {
-        let byLevel = Self.byDifficulty(items)
-        let genres = Self.byGenre(items)
-        let keys = Self.byKey(items)
-        let tempos = Self.byTempo(items)
-        let few = items.filter { ($0.chordCount ?? .max) <= 4 }
-        section("Start here") {
-            HStack(spacing: 10) {
-                ForEach(["easy", "medium", "hard"], id: \.self) { level in
-                    NavigationLink {
-                        CatalogListView(title: "\(level.capitalized) to play", items: byLevel[level] ?? [])
-                    } label: {
-                        levelCard(level, count: byLevel[level]?.count ?? 0)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled((byLevel[level] ?? []).isEmpty)
-                }
-            }
-        }
-        if !few.isEmpty {
-            section("Four chords or fewer", trailing: few.count) {
-                NavigationLink { CatalogListView(title: "Four chords or fewer", items: few) } label: {
-                    ArtworkStrip(items: Array(few.prefix(8)))
-                }
-                .buttonStyle(.plain)
-            }
+        let current = filtered
+        let genres = Self.byGenre(current)
+        let keys = Self.byKey(current)
+        let collections = Self.collections(current)
+        if current.isEmpty {
+            Text("No charts at this level yet.").font(.system(size: 13)).foregroundStyle(Palette.secondary)
+                .padding(.horizontal, 20)
         }
         if !genres.isEmpty {
-            section("Genres") {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                    ForEach(genres) { shelf in
-                        NavigationLink { CatalogListView(title: shelf.title, items: shelf.items) } label: {
-                            genreCard(shelf)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
+            section("Genres") { rowList(genres) }
+        }
+        if !collections.isEmpty {
+            section("Collections") { rowList(collections) }
         }
         if !keys.isEmpty {
-            section("Keys") {
-                chipRow(keys) { shelf in
-                    Text(shelf.title).font(.system(size: 14, weight: .bold, design: .rounded))
-                    Text("\(shelf.items.count)").font(.system(size: 12)).foregroundStyle(Palette.secondary)
-                }
-            }
+            section("Keys") { keyChips(keys) }
         }
-        if !tempos.isEmpty {
-            section("Tempo") {
-                chipRow(tempos) { shelf in
-                    Text(shelf.title).font(.system(size: 14, weight: .semibold))
-                    Text("\(shelf.items.count)").font(.system(size: 12)).foregroundStyle(Palette.secondary)
-                }
-            }
-        }
-        section("New charts") {
-            ArtworkStrip(items: Array(items.prefix(12)))
+        if !current.isEmpty {
+            section("Latest", trailing: current.count) { latestGrid(Array(current.prefix(6))) }
         }
     }
 
     private func section<Content: View>(_ title: String, trailing: Int? = nil,
                                         @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text(title).font(.system(size: 18, weight: .bold)).foregroundStyle(.white)
+                Text(title).font(.system(size: 17, weight: .semibold)).tracking(-0.2).foregroundStyle(.white)
                 Spacer()
                 if let trailing {
-                    Text(Self.songs(trailing)).font(.system(size: 12)).foregroundStyle(Palette.secondary)
+                    Text(Self.songs(trailing)).font(.system(size: 12)).foregroundStyle(Palette.tertiary)
                 }
             }
-            .padding(.horizontal, 20)
-            content().padding(.horizontal, 20)
+            content()
         }
+        .padding(.horizontal, 20)
     }
 
-    private func levelCard(_ level: String, count: Int) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Circle().fill(Palette.difficulty(level)).frame(width: 10, height: 10)
-            Text(level.capitalized).font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
-            Text(Self.songs(count)).font(.system(size: 12)).foregroundStyle(Palette.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Palette.homeCard))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .strokeBorder(Palette.difficulty(level).opacity(0.35)))
-        .opacity(count == 0 ? 0.4 : 1)
-    }
-
-    private func genreCard(_ shelf: Shelf) -> some View {
-        HStack(spacing: 10) {
-            ArtworkTile(url: shelf.items.first?.artworkURL, size: 40, radius: 8)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(shelf.title).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
-                Text(Self.songs(shelf.items.count)).font(.system(size: 12)).foregroundStyle(Palette.secondary)
+    /// Settings-style rows: name, count, chevron, hairlines between.
+    private func rowList(_ shelves: [Shelf]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(shelves.enumerated()), id: \.element.id) { index, shelf in
+                NavigationLink { CatalogListView(title: shelf.title, items: shelf.items) } label: {
+                    HStack(spacing: 12) {
+                        Text(shelf.title).font(.system(size: 16)).foregroundStyle(.white).lineLimit(1)
+                        Spacer(minLength: 8)
+                        Text("\(shelf.items.count)").font(.system(size: 14)).monospacedDigit().foregroundStyle(Palette.secondary)
+                        Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.faint)
+                    }
+                    .padding(.vertical, 13)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if index < shelves.count - 1 {
+                    Rectangle().fill(Palette.separator).frame(height: 0.5)
+                }
             }
-            Spacer(minLength: 0)
         }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.homeCard))
     }
 
-    private func chipRow<Label: View>(_ shelves: [Shelf], @ViewBuilder label: @escaping (Shelf) -> Label) -> some View {
+    private func keyChips(_ shelves: [Shelf]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(shelves) { shelf in
                     NavigationLink { CatalogListView(title: shelf.title, items: shelf.items) } label: {
-                        HStack(spacing: 6) { label(shelf) }
-                            .foregroundStyle(Color.spotifyGreen)
-                            .padding(.vertical, 8).padding(.horizontal, 12)
-                            .background(Capsule().fill(Palette.greenTintFill))
-                            .overlay(Capsule().strokeBorder(Palette.greenTintBorder))
+                        HStack(spacing: 6) {
+                            Text(shelf.title).font(.system(size: 14, weight: .semibold, design: .rounded))
+                            Text("\(shelf.items.count)").font(.system(size: 12)).monospacedDigit().foregroundStyle(Palette.secondary)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.vertical, 8).padding(.horizontal, 12)
+                        .overlay(Capsule().strokeBorder(Palette.separator))
                     }
                     .buttonStyle(.plain)
                 }
             }
+            .padding(.horizontal, 20)
         }
-        .padding(.horizontal, -20).padding(.leading, 20)
+        .padding(.horizontal, -20)
+    }
+
+    private func latestGrid(_ latest: [Item]) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 16) {
+            ForEach(latest) { item in
+                NavigationLink { SavedAnalysisView(item: item) } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        GeometryReader { geo in
+                            ArtworkTile(url: item.artworkURL, size: geo.size.width, radius: 8)
+                        }
+                        .aspectRatio(1, contentMode: .fit)
+                        Text(item.title ?? "Unknown song").font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.white).lineLimit(1)
+                        Text([item.artist ?? "", item.key ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.system(size: 11)).foregroundStyle(Palette.secondary).lineLimit(1)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 
     private var searchField: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundStyle(Palette.secondary)
+            Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .medium)).foregroundStyle(Palette.secondary)
             TextField("Search all charts", text: $query)
                 .textInputAutocapitalization(.never).autocorrectionDisabled()
-                .foregroundStyle(.white)
+                .font(.system(size: 15)).foregroundStyle(.white)
             if !query.isEmpty {
                 Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.secondary) }
                     .buttonStyle(.plain)
             }
         }
-        .padding(.vertical, 10).padding(.horizontal, 12)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.card))
+        .padding(.vertical, 9).padding(.horizontal, 12)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.07)))
         .padding(.horizontal, 20)
     }
 
@@ -195,10 +215,16 @@ struct CatalogBrowseView: View {
             .sorted { $0.items.count != $1.items.count ? $0.items.count > $1.items.count : $0.title < $1.title }
     }
 
-    static func byTempo(_ items: [Item]) -> [Shelf] {
-        let bands: [(String, ClosedRange<Double>)] = [("Slow · under 90", 0...89.999), ("Medium · 90–130", 90...130), ("Fast · over 130", 130.001...1000)]
-        return bands.compactMap { title, range in
-            let inBand = items.filter { $0.tempoBpm.map(range.contains) ?? false }
+    /// Ways in that are not a genre or a key: chord count and tempo.
+    static func collections(_ items: [Item]) -> [Shelf] {
+        let bands: [(String, (Item) -> Bool)] = [
+            ("Four chords or fewer", { ($0.chordCount ?? .max) <= 4 }),
+            ("Slow, under 90 BPM", { ($0.tempoBpm ?? -1) >= 0 && $0.tempoBpm! < 90 }),
+            ("Medium, 90 to 130 BPM", { ($0.tempoBpm ?? -1) >= 90 && $0.tempoBpm! <= 130 }),
+            ("Fast, over 130 BPM", { ($0.tempoBpm ?? -1) > 130 }),
+        ]
+        return bands.compactMap { title, matches in
+            let inBand = items.filter(matches)
             return inBand.isEmpty ? nil : Shelf(title: title, items: inBand)
         }
     }
