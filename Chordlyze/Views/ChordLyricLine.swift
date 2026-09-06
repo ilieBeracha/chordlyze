@@ -113,11 +113,11 @@ struct ChordLyricLine: View {
 }
 
 /// Where the playhead sits on a lyric row: it enters at the row's leading
-/// edge when the row starts, reaches each chord's word exactly when that
-/// chord starts, reaches each timed word when it is sung, and leaves at the
-/// trailing edge when the row ends. Between those points it moves at a
-/// steady rate through the words, wrapping from one visual line to the
-/// next. Pure geometry, so it can be reasoned about.
+/// edge, reaches each timed word as it is sung (or, with line times only,
+/// each chord's word as the chord starts), and finishes at the trailing
+/// edge. Between those points it moves at a steady rate through the words,
+/// wrapping from one visual line to the next. Pure geometry, so it can be
+/// reasoned about.
 enum LyricPlayhead {
     struct Point: Equatable {
         let x: CGFloat
@@ -142,20 +142,34 @@ enum LyricPlayhead {
         let trailing: (CGRect) -> CGFloat = { rtl ? $0.minX : $0.maxX }
         func line(containing rect: CGRect) -> CGRect { lines.first { $0.intersects(rect) } ?? first }
 
-        var inside: [(time: Double, index: Int)] = chords.compactMap { chord in
-            chord.event.start > rowStart && chord.event.start < rowEnd ? (chord.event.start, chord.wordIndex ?? 0) : nil
-        }
-        for (index, onset) in (wordTimes ?? []).enumerated() where onset > rowStart && onset < rowEnd {
-            inside.append((onset, index))
-        }
-        // Word by word when the voice is timed; a chord and its word share a time.
-        inside.sort { $0.time != $1.time ? $0.time < $1.time : $0.index < $1.index }
         var points = [Waypoint(time: rowStart, x: leading(first), line: first)]
-        for (onset, index) in inside where onset > points.last!.time {
-            guard let rect = tokens[index] else { continue }
-            points.append(Waypoint(time: onset, x: leading(rect), line: line(containing: rect)))
+        let timedWords = (wordTimes ?? []).enumerated().filter { $0.element > rowStart && $0.element < rowEnd }
+        if !timedWords.isEmpty {
+            // The voice drives the runner. Chords light at their own time above
+            // their word; making them targets too would freeze the runner on the
+            // word until the chord's slightly different time. Before the first
+            // word it waits at the edge; after the last it finishes the line in
+            // about a second and rests at the far edge.
+            if let firstOnset = timedWords.first?.element, firstOnset - SheetModel.lastWordLength > rowStart {
+                points.append(Waypoint(time: firstOnset - SheetModel.lastWordLength, x: leading(first), line: first))
+            }
+            for (index, onset) in timedWords where onset > points.last!.time {
+                guard let rect = tokens[index] else { continue }
+                points.append(Waypoint(time: onset, x: leading(rect), line: line(containing: rect)))
+            }
+            let finish = min(rowEnd, points.last!.time + SheetModel.lastWordLength)
+            if finish > points.last!.time { points.append(Waypoint(time: finish, x: trailing(last), line: last)) }
+            if rowEnd > finish { points.append(Waypoint(time: rowEnd, x: trailing(last), line: last)) }
+        } else {
+            // Line times only: chords are the only fixed points; steady motion between.
+            let inside = chords.filter { $0.event.start > rowStart && $0.event.start < rowEnd }
+                .sorted { $0.event.start < $1.event.start }
+            for chord in inside where chord.event.start > points.last!.time {
+                guard let rect = tokens[chord.wordIndex ?? 0] else { continue }
+                points.append(Waypoint(time: chord.event.start, x: leading(rect), line: line(containing: rect)))
+            }
+            points.append(Waypoint(time: rowEnd, x: trailing(last), line: last))
         }
-        points.append(Waypoint(time: rowEnd, x: trailing(last), line: last))
 
         let index = points.lastIndex { $0.time <= time } ?? 0
         let from = points[index]
