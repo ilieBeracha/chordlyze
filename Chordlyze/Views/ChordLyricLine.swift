@@ -40,20 +40,20 @@ struct ChordLyricLine: View {
     var body: some View {
         let tokens = Self.tokens(text: text, chords: chords, words: words)
         let hasChords = !chords.isEmpty
-        FlowLayout(spacing: style == .sheet ? 6 : 9) {
+        FlowLayout(spacing: style == .sheet ? 8 : 12) {
             ForEach(tokens) { token in
                 VStack(alignment: .leading, spacing: 3) {
                     if hasChords {
                         chordRow(token.chords)
-                            .frame(minHeight: style == .sheet ? 28 : 38, alignment: .bottomLeading)
+                            .frame(minHeight: style == .sheet ? 24 : 30, alignment: .bottomLeading)
                     } else if token.id == 0, pending {
                         Text("—")
                             .font(style.chordFont)
                             .foregroundStyle(Palette.tertiary)
-                            .frame(minHeight: style == .sheet ? 28 : 38, alignment: .bottomLeading)
+                            .frame(minHeight: style == .sheet ? 24 : 30, alignment: .bottomLeading)
                             .accessibilityLabel("Chords not available yet")
                     } else {
-                        Color.clear.frame(height: style == .sheet ? 28 : 38)
+                        Color.clear.frame(height: style == .sheet ? 24 : 30)
                     }
                     Text(token.word)
                         .font(style.wordFont(active: active))
@@ -96,7 +96,7 @@ struct ChordLyricLine: View {
         if placed.isEmpty {
             Text(" ").font(style.chordFont)  // keeps every word's baseline aligned
         } else {
-            HStack(spacing: 6) {
+            HStack(spacing: 10) {
                 ForEach(placed) { chord in
                     ChordChip(name: chord.event.display(transposedBy: transposeBy),
                               active: playhead.map(chord.event.contains) ?? false,
