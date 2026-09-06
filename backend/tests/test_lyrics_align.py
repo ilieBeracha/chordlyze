@@ -303,3 +303,32 @@ def test_lyrics_job_times_words_without_re_analyzing(monkeypatch, tmp_path, caps
     assert not any(path == '/analysis/submit' for path, _ in posted), 'the chart is not re-published'
     assert not audio.exists()
     assert 'Lyrics job aligned' in capsys.readouterr().out
+
+
+def test_lyrics_lookup_retries_a_503_and_lines_are_made_publishable(tmp_path):
+    aligned = [{'time': 40, 'text': 'Second', 'words': [{'time': 40, 'text': 'Second'}]},
+               {'time': 27.4, 'text': 'Come up', 'words': [{'time': 27.4, 'text': 'Come'}, {'time': 27.9, 'text': ''}]},
+               {'time': 30, 'text': '   ', 'words': []}]
+    answers = [urllib.error.HTTPError('u', 503, 'down', {}, None), urllib.error.HTTPError('u', 503, 'down', {}, None),
+               {'synced': False, 'lines': [{'time': 12, 'text': 'Come up'}, {'time': 40, 'text': 'Second'}]}]
+    class Flaky(Client):
+        def get(self, path, params):
+            answer = answers.pop(0)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+    client = Flaky(None)
+    waits = []
+    outcome = song_worker.attach_lyrics(client, SONG, tmp_path / 'a.mp3', 'gen',
+                                        align=lambda audio, lines, stats=None: aligned, sleep=waits.append)
+    assert outcome == 'aligned' and waits == [song_worker.LYRICS_LOOKUP_PAUSE] * 2
+    posted = client.posted[0][1]['lines']
+    assert [line['time'] for line in posted] == [27.4, 40], 'lines are in time order and blank lines dropped'
+    assert posted[0]['words'] == [{'time': 27.4, 'text': 'Come'}], 'empty words are dropped'
+    assert 'words' not in posted[1] or posted[1]['words'] == [{'time': 40.0, 'text': 'Second'}]
+    always_down = Flaky(None)
+    answers[:] = [urllib.error.HTTPError('u', 503, 'down', {}, None)] * 3
+    with pytest.raises(urllib.error.HTTPError):
+        song_worker.attach_lyrics(always_down, SONG, tmp_path / 'a.mp3', 'gen',
+                                  align=lambda *a, **k: aligned, sleep=waits.append)
+    assert len(waits) == 4, 'three attempts, then the error surfaces'

@@ -91,26 +91,59 @@ def recording_metadata(song: dict) -> dict:
             'artwork': song.get('artwork') or match.get('artworkUrl100')}
 
 
+LYRICS_LOOKUP_RETRIES = 3
+LYRICS_LOOKUP_PAUSE = 10
+
+
+def publishable_lines(lines: list[dict]) -> list[dict]:
+    """What the API accepts: non-empty texts within its length limits, at most
+    200 words a line, lines in time order. A transcript can hand back an
+    empty token or a run-on segment; the recording was paid for, so the
+    lines are trimmed rather than the whole result thrown away."""
+    cleaned = []
+    for line in sorted(lines, key=lambda entry: float(entry['time'])):
+        text = str(line.get('text') or '').strip()[:1000]
+        if not text:
+            continue
+        entry = {'time': max(0.0, float(line['time'])), 'text': text}
+        words = [{'time': max(0.0, float(w['time'])), 'text': str(w.get('text') or '').strip()[:200]}
+                 for w in line.get('words') or []]
+        words = [w for w in words if w['text']][:200]
+        if words:
+            entry['words'] = words
+        cleaned.append(entry)
+    return cleaned
+
+
 def attach_lyrics(client: WorkerClient, song: dict, audio: Path, generation: str,
                   stopping: threading.Event | None = None, align=align_lyrics,
-                  transcribe=transcribe_lyrics) -> str:
+                  transcribe=transcribe_lyrics, sleep=time.sleep) -> str:
     """After a chart is published: when the catalog has only untimed lyrics,
     time them from the recording; when it has none, keep the transcript as
     the lyrics, labeled as transcribed."""
     if stopping and stopping.is_set():
         return 'skipped'
-    try:
-        found = client.get('/lyrics', {'title': song['title'], 'artist': song.get('artist') or '',
-                                       'duration': song.get('duration'), 'album': song.get('album')})
-    except urllib.error.HTTPError as error:
-        if error.code != 404:
-            raise
-        lines = transcribe(audio)
-        if lines is None:
-            return 'none'
-        client.post('/internal/jobs/lyrics', {'track_id': song['track_id'], 'library_generation': generation,
-                                              'lines': lines, 'aligner': ALIGNER, 'source': 'transcribed'})
-        return 'transcribed'
+    params = {'title': song['title'], 'artist': song.get('artist') or '',
+              'duration': song.get('duration'), 'album': song.get('album')}
+    found = None
+    for attempt in range(LYRICS_LOOKUP_RETRIES):
+        try:
+            found = client.get('/lyrics', params)
+            break
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                lines = transcribe(audio)
+                if lines is None:
+                    return 'none'
+                client.post('/internal/jobs/lyrics', {'track_id': song['track_id'], 'library_generation': generation,
+                                                      'lines': publishable_lines(lines), 'aligner': ALIGNER,
+                                                      'source': 'transcribed'})
+                return 'transcribed'
+            # The catalog behind /lyrics answers 503 now and then; the recording is
+            # already downloaded, so wait and ask again before giving up.
+            if error.code != 503 or attempt == LYRICS_LOOKUP_RETRIES - 1:
+                raise
+            sleep(LYRICS_LOOKUP_PAUSE)
     if found.get('instrumental'):
         return 'instrumental'
     if found.get('synced') and any(line.get('words') for line in found.get('lines', [])):
@@ -123,7 +156,7 @@ def attach_lyrics(client: WorkerClient, song: dict, audio: Path, generation: str
         return ('synced unaligned ' if found.get('synced') else 'unaligned ') + \
             ' '.join(f'{key}={value}' for key, value in stats.items())
     client.post('/internal/jobs/lyrics', {'track_id': song['track_id'], 'library_generation': generation,
-                                          'lines': timed, 'aligner': ALIGNER})
+                                          'lines': publishable_lines(timed), 'aligner': ALIGNER})
     return 'aligned'
 
 
