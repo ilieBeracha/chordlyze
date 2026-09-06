@@ -547,9 +547,18 @@ def synthesize_lines(plain: str, duration: float | None) -> list[dict]:
     return lines
 
 
+def user_or_worker(authorization: str | None = Header(default=None)) -> str:
+    """The lyrics lookup serves both the app (Spotify token) and the worker
+    (its own token), which asks it before timing a recording's lyrics."""
+    token = os.environ.get("CHORDLYZE_WORKER_TOKEN")
+    if token and isinstance(authorization, str) and hmac.compare_digest(authorization, "Bearer " + token):
+        return "worker"
+    return current_user(authorization)
+
+
 @app.get("/lyrics")
 def lyrics(title: str, artist: str = "", duration: float | None = None,
-           album: str | None = None, user: str = Depends(current_user)) -> dict:
+           album: str | None = None, user: str = Depends(user_or_worker)) -> dict:
     """Time-synced lyrics from LRCLIB, cached on disk. Duration/album narrow
     the match to the right version (not a cover/remix) when provided."""
     if duration is not None and (not math.isfinite(duration) or duration <= 0):
