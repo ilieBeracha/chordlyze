@@ -36,6 +36,8 @@ struct ChordRowView: View {
     var style: Style = .sheet
     var onChordTap: ((String) -> Void)? = nil
     var onLyricTap: (() -> Void)? = nil
+    /// Practice: live verdict for the chord starting at this chart second.
+    var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
 
     private var rtl: Bool { row.text.isRTLText }
     private var active: Bool { playhead.map(row.contains) ?? false }
@@ -45,7 +47,7 @@ struct ChordRowView: View {
             if !row.text.isEmpty {
                 ChordLyricLine(text: row.text, chords: row.chords, words: row.words?.map(\.text), transposeBy: transposeBy,
                                playhead: playhead, style: style, active: active, pending: row.chords.isEmpty && row.held == nil,
-                               onChordTap: onChordTap, onLyricTap: onLyricTap)
+                               onChordTap: onChordTap, onLyricTap: onLyricTap, verdict: verdict)
                     .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
             } else {
                 timedRow
@@ -67,7 +69,7 @@ struct ChordRowView: View {
             ForEach(row.chords) { placed in
                 ChordChip(name: placed.event.display(transposedBy: transposeBy),
                           active: playhead.map(placed.event.contains) ?? false,
-                          style: style, onTap: onChordTap)
+                          style: style, onTap: onChordTap, verdict: verdict?(placed.event.start))
                     .layoutValue(key: TimedRowLayout.Position.self, value: placed.position)
             }
         }
@@ -113,6 +115,17 @@ struct ChordChip: View {
     var active = false
     var style: ChordRowView.Style = .sheet
     var onTap: ((String) -> Void)? = nil
+    /// Practice: what the microphone made of this chord, as a corner dot.
+    var verdict: PracticeFeedback.Verdict? = nil
+
+    private var verdictColor: Color? {
+        switch verdict {
+        case .none: return nil
+        case .hit(let offset): return abs(offset) <= PracticeFeedback.onTimeTolerance ? Palette.successCheck : Palette.warning
+        case .wrong: return Palette.destructive
+        case .held: return Palette.successCheck.opacity(0.5)
+        }
+    }
 
     var body: some View {
         Button {
@@ -128,6 +141,14 @@ struct ChordChip: View {
                         .fill(active ? Color.spotifyGreen
                               : style == .sheet ? Color.white.opacity(0.06) : Color.clear)
                 )
+                .overlay(alignment: .topTrailing) {
+                    if let verdictColor {
+                        Circle().fill(verdictColor).frame(width: 9, height: 9)
+                            .overlay(Circle().stroke(Color.black, lineWidth: 1.5))
+                            .offset(x: 3, y: -3)
+                            .accessibilityLabel(verdict.map { "\($0)" } ?? "")
+                    }
+                }
         }
         .buttonStyle(.plain)
         .disabled(onTap == nil)

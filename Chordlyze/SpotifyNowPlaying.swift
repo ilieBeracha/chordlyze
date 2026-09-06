@@ -16,7 +16,21 @@ final class SpotifyNowPlaying: ObservableObject {
     struct Service {
         var current: () async throws -> SpotifyAPI.CurrentlyPlaying?
         var seek: (Double) async throws -> Void
+        var play: (String, Double, String?) async throws -> Void = { _, _, _ in throw PlayError.notConnected }
+        var devices: () async throws -> [SpotifyAPI.Device] = { throw PlayError.notConnected }
         var sleep: (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
+    }
+    enum PlayError: LocalizedError, Equatable {
+        case notConnected, noDevice, premiumRequired, notConfirmed, failed(Int)
+        var errorDescription: String? {
+            switch self {
+            case .notConnected: return "Spotify is not connected. Reconnect it in Profile."
+            case .noDevice: return "Spotify has no active device. Open Spotify on this phone and play anything once, then try again."
+            case .premiumRequired: return "Starting playback from Chordlyze needs Spotify Premium. Play the song in Spotify instead."
+            case .notConfirmed: return "Spotify did not report the song playing from the requested position. Try again."
+            case .failed(let code): return "Spotify returned \(code)."
+            }
+        }
     }
     @Published private(set) var playing: Playing?
     @Published private(set) var analysis: ChordAnalysis?
@@ -48,7 +62,9 @@ final class SpotifyNowPlaying: ObservableObject {
     }
     func start(api: SpotifyAPI) {
         service = Service(current: { try await api.currentlyPlaying() },
-                          seek: { try await api.seek(toMs: Int($0 * 1000)) })
+                          seek: { try await api.seek(toMs: Int($0 * 1000)) },
+                          play: { try await api.play(trackID: $0, positionMs: Int($1 * 1000), deviceID: $2) },
+                          devices: { try await api.devices() })
         restart()
     }
     func resume() {
@@ -167,6 +183,42 @@ final class SpotifyNowPlaying: ObservableObject {
             self?.analysisFailed = ["failed", "unavailable"].contains(value)
         }.store(in: &subscriptions)
         sheetTask = Task { await sheet.observe() }
+    }
+    /// Start `trackID` at `seconds`, then wait until a fresh poll reports it
+    /// playing near that position. The playhead is never assumed from the
+    /// request: it comes from Spotify's own report. Without an active device
+    /// (404) the first device Spotify still lists, such as the phone's idle
+    /// app, is targeted explicitly.
+    func play(trackID: String, at seconds: Double) async throws {
+        guard let service else { throw PlayError.notConnected }
+        let issued = now()
+        let target = max(0, seconds)
+        do {
+            do { try await service.play(trackID, target, nil) } catch where (error as NSError).code == 404 {
+                let devices = try await service.devices()
+                guard let device = devices.first(where: \.isActive) ?? devices.first, let id = device.id else {
+                    throw PlayError.noDevice
+                }
+                try await service.play(trackID, target, id)
+            }
+        } catch let error as PlayError {
+            throw error
+        } catch {
+            switch (error as NSError).code {
+            case 404: throw PlayError.noDevice
+            case 403: throw PlayError.premiumRequired
+            case 401: needsReauth = true; stop(); throw PlayError.notConnected
+            case let code: throw PlayError.failed(code)
+            }
+        }
+        restart()
+        for _ in 0..<40 {
+            try await service.sleep(0.1)
+            guard let lastSuccess, lastSuccess > issued, let playing, playing.track.id == trackID, playing.isPlaying,
+                  let position = livePosition(), abs(position - seconds) < 3 else { continue }
+            return
+        }
+        throw PlayError.notConfirmed
     }
     func seek(to seconds: Double) async -> Bool {
         guard let service, let trackID = playing?.track.id, seconds.isFinite else { return false }

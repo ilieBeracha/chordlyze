@@ -4,11 +4,20 @@ import SwiftUI
 /// Offline regression fixture, only enabled by an explicit Debug launch arg.
 /// Uses authored sample words; never requests or publishes a real song.
 struct SongSheetPreview: View {
-    @StateObject private var store = makeStore()
+    @StateObject private var store: SongSheetStore
+    /// Practice preview: a fake Spotify device that starts wherever it is told
+    /// and reports its position like the real poller, without any network.
+    @StateObject private var player: SpotifyNowPlaying
     @State private var mode = ProcessInfo.processInfo.arguments.contains("--song-sheet-preview-live") ? "Live" : "Sheet"
     @State private var paused = false
     @State private var anchor = ContinuousClock.now
     @State private var offset = 0.0
+
+    init() {
+        let store = Self.makeStore()
+        _store = StateObject(wrappedValue: store)
+        _player = StateObject(wrappedValue: Self.makePlayer(sheet: store))
+    }
 
     var body: some View {
         NavigationStack {
@@ -25,7 +34,7 @@ struct SongSheetPreview: View {
                     LiveSongView(store: store, playbackNote: paused ? "Playback paused" : nil) { position() }
                 } else if mode == "Practice", let chart = store.analysis {
                     PracticeView(analysis: chart, title: store.song.title, artist: store.song.artist,
-                                 trackID: store.song.id, songStore: store)
+                                 trackID: store.song.id, songStore: store, nowPlaying: player)
                 } else {
                     AnalysisTabsView(song: store.song, store: store)
                 }
@@ -40,10 +49,29 @@ struct SongSheetPreview: View {
         paused ? offset : offset + anchor.duration(to: .now).seconds
     }
 
+    private static func decode<T: Decodable>(_ object: Any) -> T {
+        try! JSONDecoder().decode(T.self, from: JSONSerialization.data(withJSONObject: object))
+    }
+
+    @MainActor private static func makePlayer(sheet: SongSheetStore) -> SpotifyNowPlaying {
+        var device: (anchor: ContinuousClock.Instant, offset: Double, playing: Bool)?
+        let item: [String: Any] = ["id": sheet.song.id, "name": sheet.song.title, "artists": [["name": sheet.song.artist]],
+                                   "album": ["name": "Preview"], "duration_ms": 40000]
+        let player = SpotifyNowPlaying(service: .init(
+            current: {
+                guard let device else { return nil }
+                let position = device.offset + (device.playing ? device.anchor.duration(to: .now).seconds : 0)
+                if position >= 40 { return nil }
+                return decode(["progress_ms": Int(position * 1000), "is_playing": device.playing, "item": item])
+            },
+            seek: { device = (.now, $0, true) },
+            play: { _, at, _ in device = (.now, at, true) }),
+            sheetProvider: { _ in sheet })
+        player.resume()
+        return player
+    }
+
     @MainActor private static func makeStore() -> SongSheetStore {
-        func decode<T: Decodable>(_ object: Any) -> T {
-            try! JSONDecoder().decode(T.self, from: JSONSerialization.data(withJSONObject: object))
-        }
         let chart: ChordAnalysis = decode([
             "chords": [["start": 0, "end": 6, "label": "C:maj"],
                        ["start": 6, "end": 12, "label": "G:7"],

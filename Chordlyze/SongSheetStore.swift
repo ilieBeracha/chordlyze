@@ -38,6 +38,9 @@ final class SongSheetStore: ObservableObject {
     /// name the same chords: capo mode favors open shapes, manual shift transposes.
     @Published var capoMode = false
     @Published var manualShift = 0
+    /// Seconds added to Spotify's position before reading the chart, for a
+    /// chart whose recording starts earlier or later than the Spotify track.
+    @Published var timingOffset = 0.0
     @Published private(set) var capo = 0
     private(set) var lyricsResult: BackendClient.LyricsResult?
     private var service: Service
@@ -66,6 +69,17 @@ final class SongSheetStore: ObservableObject {
         let parts = [capoMode && capo > 0 ? "Capo \(capo)" : nil,
                      manualShift != 0 ? String(format: "%+d", manualShift) : nil].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+    /// Seconds the analyzed recording is longer (+) or shorter (−) than the
+    /// Spotify track. nil when either length is unknown or they agree within
+    /// a second. A different edition shifts every chord against Spotify audio.
+    var editionGap: Double? {
+        guard let analyzed = analysis?.audioDuration, let track = song.duration else { return nil }
+        let gap = analyzed - track
+        return abs(gap) > 1 ? gap : nil
+    }
+    var editionNote: String? {
+        editionGap.map { String(format: "Chart made from a recording %.0f s %@ than the Spotify track. Chords may sit early or late; adjust timing in Key & capo.", abs($0), $0 > 0 ? "longer" : "shorter") }
     }
     /// Label of the one action that requests analysis; nil while nothing can be requested.
     var actionTitle: String? {

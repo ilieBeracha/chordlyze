@@ -23,6 +23,27 @@ def test_hard_song():
     assert d["score"] >= 7
 
 
+def test_capo_makes_sharp_keys_open():
+    # F# B C#m D#m is E A Bm C#m... with a capo at 2 it is E A Bm C#m; at 4 it is D G Am Bm: open shapes.
+    d = difficulty(_chart(["F#:maj", "B:maj", "G#:min", "D#:min"] * 8, 4.0))
+    assert d["level"] == "easy", d
+
+
+def test_passing_chords_do_not_inflate_vocabulary():
+    # Four chords carry the song; eight different chords flash by for a beat each.
+    labels = []
+    for i in range(8):
+        labels += ["C:maj", "G:maj", "A:min", "F:maj"]
+    steady = difficulty(_chart(labels, 4.0))
+    busy = _chart(labels, 4.0)
+    passing = ["D:min7", "E:min7", "B:min7", "F#:min7", "C#:min7", "G#:min7", "D#:min7", "A#:min7"]
+    for i, label in enumerate(passing):
+        t = busy[i * 4]["end"]
+        busy[i * 4]["end"] = t - 0.3
+        busy.insert(i * 4 + 1, {"start": t - 0.3, "end": t, "label": label})
+    assert difficulty(busy)["score"] - steady["score"] < 1.5
+
+
 def test_empty_and_noise():
     assert difficulty([]) is None
     assert difficulty([{"start": 0, "end": 4, "label": "N"}]) is None

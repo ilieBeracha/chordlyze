@@ -18,11 +18,68 @@ metronome's beat grid and displayed timeline follow that pace; recording stops
 at the end of the range. After the result, return and choose **Practice this
 section again** to keep the range and pace for another attempt.
 
-Solo practice requires pausing Spotify. Changing pace never modifies Spotify
-playback speed. Full-song practice at the original sounding key and 100% pace
-can instead follow Spotify's current position. Pausing, seeking or changing
-songs saves the partial recording without silently submitting it. Each take is
-limited to 600 real seconds. Charts without beat data use a visual count-in.
+## Playing from Spotify
+
+**Play from Spotify and record** starts the song on the account's active
+Spotify device (`PUT /me/player/play`, Premium required) up to three seconds
+before the chosen range so the player hears the lead-in, then waits until
+Spotify itself reports the track playing near that position. The app never
+assumes playback it did not confirm: no active device (404) asks the user to
+open Spotify once, and 403 explains that Premium is needed. The take begins at
+the position Spotify reports, and while recording, the sheet follows Spotify's
+reported position (polled every two seconds, extrapolated between polls) so the
+chart and the audio share one clock. During a connection loss the sheet falls
+back to the take's own clock. Pausing, seeking or changing songs saves the
+partial recording without silently submitting it. Spotify playback needs 100%
+pace and the original key; the metronome path is the only way to slow down.
+
+Measured against the Spotify desktop client's own clock, the app's playhead
+agrees within about 0.1 s, so a chord that highlights late is a chart matter,
+not a polling one: recognized boundaries land slightly after the change and
+players read ahead of the beat. **Key & capo** therefore has a global
+"Show chords ahead" lead (`chordLead` in UserDefaults, default 0.3 s) applied
+to the Live and Practice display only; the take stays anchored to Spotify's
+reported position so scoring remains in real song time.
+
+Charts are analyzed from a matched YouTube recording, not the Spotify master.
+When the recording's length differs from the Spotify track by more than a
+second, the sheet, Live and Practice show an edition warning, and **Key &
+capo** offers a timing offset (±5 s in 0.25 s steps) that Live and Practice add
+to Spotify's position before reading the chart. Like transpose and capo, the
+offset lives on the in-memory song document.
+
+**Record with metronome** requires pausing Spotify. Changing pace never
+modifies Spotify playback speed. Each take is limited to 600 real seconds.
+Charts without beat data use a visual count-in.
+
+## Headphones and live feedback
+
+Spotify practice requires headphones: on the speaker the microphone records
+the song, and both live feedback and scoring would grade Spotify's playing.
+`TakeRecorder.headphonesConnected` accepts any output other than the built-in
+speaker or earpiece; the check runs at start, and a route change that removes
+the headphones mid-take saves the partial recording without scoring. The
+simulator has no real routes and passes the check.
+
+The take is captured through one `AVAudioEngine` tap. Each buffer is written to
+the .m4a and handed to `ChordDrillDetector` in its general form (any chord in
+the vocabulary, same 70 ms dwell), so the detector's sample time is the frame's
+position in the file: feedback and the backend score the same timeline.
+
+`PracticeFeedback` judges each chart chord in the take from detector strums
+(the moment the detector starts reporting a chord it was not reporting). A
+strum's chart time is its take time through the plan, minus 0.35 s of detector
+latency (window plus dwell; at slower paces this is slightly overcorrected).
+Matching is by pitch-class set after transposition, so voicing, bass note and
+spelling do not matter. Verdicts: **hit** with an offset (within 0.25 s is "on
+time"; a strum up to 0.5 s before a change belongs to the coming chord),
+**wrong** naming what was heard, upgraded to a late hit if the right chord
+follows, and **held** for a repeated chord after a hit. A chord the detector
+never accepted stays unjudged: the detector is conservative and its silence is
+not evidence. During the take, chips show a corner dot (green on time, amber
+early/late, red wrong) and the bottom bar names the latest verdict with a
+running hit count. The saved-take screen repeats the totals; backend scoring
+remains the full result.
 
 ## Key and capo
 
@@ -72,7 +129,7 @@ background upload or cross-device synchronization.
 ## Verification
 
 ```sh
-bash scripts/test_practice.sh
+bash scripts/test_practice.sh   # takes, report contract, live feedback
 bash scripts/test_song_sheet.sh
 bash scripts/test_drill.sh
 cd backend
@@ -90,6 +147,7 @@ validation, and real multipart uploads through the installed recognition model.
 Before release, visually check guest and connected navigation, passage selection,
 capo/transposition, microphone permission refusal, count-in cancellation, a physical
 instrument recording, interrupted playback, offline retry and report navigation.
-Simulator capture was unavailable during this implementation due to a macOS
-ScreenCaptureKit capture error; compile and automated checks do not replace these
-visual and microphone checks.
+`--song-sheet-preview` Practice mode uses a fake Spotify device that starts
+wherever it is told, so the play-confirm-record flow can be checked offline.
+Sync feel against real Spotify audio, Premium and no-device errors need a
+physical device with the Spotify app.

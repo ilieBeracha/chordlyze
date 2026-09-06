@@ -278,8 +278,17 @@ struct DrillChordClassifier {
     private let targetMasks: [UInt16]
     private let vocabulary: [Candidate]
 
+    /// Two drill targets, which must be distinct chords.
     init(chordA: String, chordB: String) throws {
-        targets = [chordA, chordB]
+        try self.init(targets: [chordA, chordB])
+        guard targetMasks[0] != targetMasks[1] else { throw DrillConfigurationError.indistinguishableChords }
+    }
+
+    /// Named targets are reported under their own spelling; every other
+    /// recognized chord is reported by its vocabulary name. No targets means
+    /// every chord in the vocabulary is a candidate, as in practice feedback.
+    init(targets: [String]) throws {
+        self.targets = targets
         var masks: [UInt16] = []
         for name in targets {
             guard let chord = Chord(display: name)?.withoutBass,
@@ -288,7 +297,6 @@ struct DrillChordClassifier {
             }
             masks.append(Self.mask(notes))
         }
-        guard masks[0] != masks[1] else { throw DrillConfigurationError.indistinguishableChords }
         targetMasks = masks
         let qualities = ["maj", "min", "dim", "aug", "sus2", "sus4", "7", "maj7", "min7",
                          "minmaj7", "dim7", "hdim7", "maj6", "min6", "9", "maj9", "min9", "11", "13", "sus4(b7)"]
@@ -357,9 +365,18 @@ final class ChordDrillDetector {
     private var noiseFloor: Float = 0.00015
     private var smoothedChroma: [Float]?
 
-    init(sampleRate: Double, chordA: String, chordB: String) throws {
+    convenience init(sampleRate: Double, chordA: String, chordB: String) throws {
+        try self.init(sampleRate: sampleRate, classifier: DrillChordClassifier(chordA: chordA, chordB: chordB))
+    }
+
+    /// Accepts any vocabulary chord after the same dwell, for practice feedback.
+    convenience init(sampleRate: Double) throws {
+        try self.init(sampleRate: sampleRate, classifier: DrillChordClassifier(targets: []))
+    }
+
+    private init(sampleRate: Double, classifier: DrillChordClassifier) throws {
         self.sampleRate = sampleRate
-        classifier = try DrillChordClassifier(chordA: chordA, chordB: chordB)
+        self.classifier = classifier
         analyzer = try DrillPitchAnalyzer(sampleRate: sampleRate)
     }
 
@@ -428,7 +445,7 @@ final class ChordDrillDetector {
     }
 
     private func accept(_ evidence: DrillEvidence, at time: Double) -> DrillSnapshot {
-        if case .chord(let name) = evidence, classifier.targets.contains(name) {
+        if case .chord(let name) = evidence, classifier.targets.isEmpty || classifier.targets.contains(name) {
             if candidate?.name != name { candidate = (name, time); current = nil }
             if let candidate, time - candidate.since >= 0.07 {
                 if previousAccepted != name {

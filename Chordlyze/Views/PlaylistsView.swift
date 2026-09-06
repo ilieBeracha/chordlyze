@@ -9,6 +9,7 @@ struct HomeView: View {
     @ObservedObject private var nowPlaying = SpotifyNowPlaying.shared
     @State private var library: [BackendClient.LibraryItem] = []
     @State private var plays: [RecentPlays.Song] = []
+    @State private var recent: [SpotifyAPI.RecentPlay] = []
     @State private var playCount = 0
     /// The token predates the recently-played scope; a reconnect grants it.
     @State private var playsNeedReconnect = false
@@ -24,9 +25,10 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 28) {
                     header
                     statTiles
+                    insights
                     playedRecently
                     lastAnalyzed
                     if nowPlaying.needsReauth {
@@ -70,6 +72,7 @@ struct HomeView: View {
         async let top = try? api.topTracksTotal()
         do {
             let recent = try await api.recentlyPlayed()
+            self.recent = recent
             plays = RecentPlays.songs(recent)
             playCount = recent.count
             playsNeedReconnect = false
@@ -112,50 +115,194 @@ struct HomeView: View {
 
     // MARK: - Stats
 
+    /// One card, three columns: the library the app made, and the two
+    /// Spotify collections it can browse.
     private var statTiles: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 0) {
             NavigationLink { LibraryView() } label: {
-                statTile(count: loaded ? library.count : nil, label: "Analyzed")
+                statTile(count: loaded ? library.count : nil, label: "Analyzed", icon: "waveform")
             }.buttonStyle(.plain)
+            statDivider
             NavigationLink(value: TrackSource.liked) {
-                statTile(count: likedCount, label: "Liked")
+                statTile(count: likedCount, label: "Liked", icon: "heart.fill")
             }.buttonStyle(.plain)
+            statDivider
             NavigationLink(value: TrackSource.top) {
-                statTile(count: topCount, label: "Top")
+                statTile(count: topCount, label: "Top", icon: "chart.bar.fill")
             }.buttonStyle(.plain)
         }
+        .padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.homeCard))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.white.opacity(0.06)))
     }
 
-    private func statTile(count: Int?, label: String) -> some View {
-        VStack(spacing: 2) {
-            Text(count.map(String.init) ?? "—")
-                .font(.system(size: 22, weight: .heavy, design: .rounded))
+    private var statDivider: some View {
+        Rectangle().fill(Color.white.opacity(0.08)).frame(width: 0.5).padding(.vertical, 14)
+    }
+
+    private func statTile(count: Int?, label: String, icon: String) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.spotifyGreen)
+            Text(count.map { $0.formatted() } ?? "—")
+                .font(.system(size: 24, weight: .heavy, design: .rounded))
                 .foregroundStyle(.white)
-            Text(label.uppercased())
-                .font(.system(size: 10, weight: .bold))
-                .tracking(1)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+            Text(label)
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Palette.secondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Palette.homeCard))
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - Insights
+
+    /// Two small charts from data already on the page: plays per day with the
+    /// analyzed share, and what the analyzed library looks like. Hidden
+    /// while there is nothing to draw; never seeded.
+    @ViewBuilder private var insights: some View {
+        if !recent.isEmpty || !library.isEmpty {
+            VStack(spacing: 12) {
+                if !recent.isEmpty { listeningCard }
+                if !library.isEmpty { libraryCard }
+            }
+        }
+    }
+
+    private var listeningCard: some View {
+        let days = RecentPlays.daily(recent, analyzed: Set(analyzedByTrack.keys))
+        let peak = max(1, days.map(\.total).max() ?? 1)
+        let analyzed = days.reduce(0) { $0 + $1.analyzed }
+        let oldest = recent.map(\.playedAt).min()
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Listening").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                Spacer()
+                Text(oldest.map { "last \(recent.count) plays, since \(RecentPlays.relativeTime($0))" } ?? "")
+                    .font(.system(size: 12)).foregroundStyle(Palette.secondary)
+            }
+            HStack(alignment: .bottom, spacing: 8) {
+                ForEach(days, id: \.date) { day in
+                    VStack(spacing: 6) {
+                        ZStack(alignment: .bottom) {
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(Palette.gray5)
+                                .frame(height: max(3, 56 * CGFloat(day.total) / CGFloat(peak)))
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(Color.spotifyGreen)
+                                .frame(height: day.analyzed == 0 ? 0 : max(3, 56 * CGFloat(day.analyzed) / CGFloat(peak)))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .bottom)
+                        .accessibilityLabel("\(day.total) plays, \(day.analyzed) analyzed")
+                        Text(day.date.formatted(.dateTime.weekday(.narrow)))
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Palette.tertiary)
+                    }
+                }
+            }
+            .frame(height: 74, alignment: .bottom)
+            HStack(spacing: 6) {
+                Circle().fill(Color.spotifyGreen).frame(width: 6, height: 6)
+                Text("\(analyzed) of \(recent.count) plays were songs you can practice")
+                    .font(.system(size: 12)).foregroundStyle(Palette.secondary)
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.homeCard))
+    }
+
+    private struct Bucket: Identifiable {
+        let name: String
+        let count: Int
+        var id: String { name }
+    }
+
+    private var difficultyBuckets: [Bucket] {
+        ["easy", "medium", "hard"].map { level in
+            Bucket(name: level, count: library.filter { $0.difficulty?.level == level }.count)
+        }
+    }
+
+    private var keyBuckets: [Bucket] {
+        Dictionary(grouping: library.compactMap(\.key), by: { $0 })
+            .map { Bucket(name: $0.key, count: $0.value.count) }
+            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.name < $1.name }
+            .prefix(4).map { $0 }
+    }
+
+    private var libraryCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Your \(library.count) analyzed songs").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+            difficultyBar(difficultyBuckets)
+            keyBars(keyBuckets)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.homeCard))
+    }
+
+    @ViewBuilder private func difficultyBar(_ levels: [Bucket]) -> some View {
+        let graded = levels.reduce(0) { $0 + $1.count }
+        if graded > 0 {
+            VStack(alignment: .leading, spacing: 8) {
+                GeometryReader { geo in
+                    HStack(spacing: 2) {
+                        ForEach(levels.filter { $0.count > 0 }) { level in
+                            Rectangle().fill(Palette.difficulty(level.name))
+                                .frame(width: max(2, geo.size.width * CGFloat(level.count) / CGFloat(graded)))
+                        }
+                    }
+                    .clipShape(Capsule())
+                }
+                .frame(height: 8)
+                HStack(spacing: 14) {
+                    ForEach(levels) { level in
+                        HStack(spacing: 5) {
+                            Circle().fill(Palette.difficulty(level.name)).frame(width: 6, height: 6)
+                            Text("\(level.count) \(level.name)").font(.system(size: 12)).foregroundStyle(Palette.secondary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func keyBars(_ keys: [Bucket]) -> some View {
+        let top = CGFloat(max(1, keys.first?.count ?? 1))
+        if !keys.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(keys) { key in
+                    HStack(spacing: 10) {
+                        Text(key.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.nearWhite)
+                            .frame(width: 64, alignment: .leading).lineLimit(1)
+                        GeometryReader { geo in
+                            Capsule().fill(Color.spotifyGreen.opacity(0.75))
+                                .frame(width: max(4, geo.size.width * CGFloat(key.count) / top))
+                        }
+                        .frame(height: 6)
+                        Text("\(key.count)").font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Palette.secondary).monospacedDigit()
+                            .frame(width: 28, alignment: .trailing)
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Played recently
 
     private var playedRecently: some View {
-        let analyzed = plays.filter { analyzedByTrack[$0.track.id] != nil }.count
-        return VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
-                sectionLabel("PLAYED RECENTLY")
+                sectionLabel("Played recently")
                 Spacer()
                 if !plays.isEmpty {
-                    (Text("\(playCount)").foregroundStyle(.white).fontWeight(.bold)
-                        + Text(playCount == 1 ? " play · " : " plays · ")
-                        + Text("\(analyzed)").foregroundStyle(.white).fontWeight(.bold)
-                        + Text(" analyzed"))
+                    Text("\(plays.count) songs")
                         .font(.system(size: 13))
-                        .foregroundStyle(Palette.secondaryAlt)
+                        .foregroundStyle(Palette.secondary)
                 }
             }
             if playsNeedReconnect {
@@ -163,18 +310,15 @@ struct HomeView: View {
             } else if plays.isEmpty {
                 emptyRow(loaded ? "Nothing played yet." : "Loading your plays…")
             } else {
-                VStack(spacing: 14) {
-                    ForEach(plays.prefix(5)) { song in
-                        NavigationLink {
-                            ChordView(track: song.track)
-                        } label: {
-                            songRow(artwork: song.track.album.artworkURL, title: song.track.name,
-                                    meta: [song.track.artistNames, RecentPlays.relativeTime(song.lastPlayed),
-                                           song.count > 1 ? "×\(song.count)" : nil].compactMap { $0 }.joined(separator: " · "),
-                                    saved: analyzedByTrack[song.track.id])
-                        }
-                        .buttonStyle(.plain)
+                rowList(Array(plays.prefix(5))) { song in
+                    NavigationLink {
+                        ChordView(track: song.track)
+                    } label: {
+                        songRow(artwork: song.track.album.artworkURL, title: song.track.name,
+                                meta: "\(song.track.artistNames) · \(RecentPlays.relativeTime(song.lastPlayed))",
+                                plays: song.count, saved: analyzedByTrack[song.track.id])
                     }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -183,33 +327,34 @@ struct HomeView: View {
     // MARK: - Last analyzed
 
     private var lastAnalyzed: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
-                sectionLabel("LAST ANALYZED")
+                sectionLabel("Last analyzed")
                 Spacer()
                 NavigationLink {
                     LibraryView()
                 } label: {
-                    Text("All songs")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.spotifyGreen)
-                        .frame(minHeight: 44)
+                    HStack(spacing: 3) {
+                        Text("All songs")
+                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.spotifyGreen)
+                    .frame(minHeight: 44)
                 }
                 .buttonStyle(.plain)
             }
             if library.isEmpty {
                 emptyRow(loaded ? "Analyze a song from Search or a playlist to see it here." : "Loading your library…")
             } else {
-                VStack(spacing: 14) {
-                    ForEach(library.prefix(3)) { item in
-                        NavigationLink {
-                            SavedAnalysisView(item: item)
-                        } label: {
-                            songRow(artwork: item.artworkURL, title: item.title ?? "Unknown song",
-                                    meta: item.artist ?? "", saved: item)
-                        }
-                        .buttonStyle(.plain)
+                rowList(Array(library.prefix(3))) { item in
+                    NavigationLink {
+                        SavedAnalysisView(item: item)
+                    } label: {
+                        songRow(artwork: item.artworkURL, title: item.title ?? "Unknown song",
+                                meta: item.artist ?? "", saved: item)
                     }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -217,22 +362,43 @@ struct HomeView: View {
 
     // MARK: - Rows
 
-    private func songRow(artwork url: URL?, title: String, meta: String,
+    /// Rows separated by a hairline that starts after the artwork, as a list does.
+    private func rowList<Item: Identifiable, Row: View>(_ items: [Item], @ViewBuilder row: @escaping (Item) -> Row) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                row(item)
+                if index < items.count - 1 {
+                    Rectangle().fill(Palette.separator).frame(height: 0.5).padding(.leading, 65)
+                }
+            }
+        }
+    }
+
+    private func songRow(artwork url: URL?, title: String, meta: String, plays: Int = 1,
                          saved: BackendClient.LibraryItem?) -> some View {
         HStack(spacing: 13) {
-            artwork(url, size: 50, radius: 10)
+            artwork(url, size: 52, radius: 8)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(meta)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Palette.secondary)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(meta)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Palette.secondary)
+                        .lineLimit(1)
+                    if plays > 1 {
+                        Text("×\(plays)")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundStyle(Palette.secondaryAlt)
+                            .padding(.vertical, 1).padding(.horizontal, 6)
+                            .background(Capsule().fill(Color.white.opacity(0.08)))
+                    }
+                }
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
             if let key = saved?.key {
                 KeyBadge(key: key, difficulty: saved?.difficulty?.level)
             } else {
@@ -241,7 +407,8 @@ struct HomeView: View {
                     .foregroundStyle(Palette.faint)
             }
         }
-        .frame(minHeight: 50)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
     }
 
     private func emptyRow(_ text: String) -> some View {
@@ -308,9 +475,9 @@ struct HomeView: View {
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 12, weight: .bold))
-            .tracking(1.2)
-            .foregroundStyle(Palette.secondary)
+            .font(.system(size: 20, weight: .bold))
+            .tracking(-0.2)
+            .foregroundStyle(.white)
     }
 }
 

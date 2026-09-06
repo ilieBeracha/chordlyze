@@ -21,6 +21,7 @@ struct ChordLyricLine: View {
     var pending = false
     var onChordTap: ((String) -> Void)? = nil
     var onLyricTap: (() -> Void)? = nil
+    var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
 
     var body: some View {
         let tokens = Self.tokens(text: text, chords: chords, words: words)
@@ -58,7 +59,7 @@ struct ChordLyricLine: View {
                 ForEach(placed) { chord in
                     ChordChip(name: chord.event.display(transposedBy: transposeBy),
                               active: playhead.map(chord.event.contains) ?? false,
-                              style: style, onTap: onChordTap)
+                              style: style, onTap: onChordTap, verdict: verdict?(chord.event.start))
                 }
             }
         }

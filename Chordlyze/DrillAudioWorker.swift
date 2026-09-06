@@ -86,10 +86,18 @@ final class DrillAudioWorker: @unchecked Sendable {
     private let onSnapshot: @MainActor @Sendable (DrillSnapshot) -> Void
     private let onFailure: @MainActor @Sendable () -> Void
 
-    init(sampleRate: Double, chordA: String, chordB: String,
+    convenience init(sampleRate: Double, chordA: String, chordB: String,
+                     onSnapshot: @escaping @MainActor @Sendable (DrillSnapshot) -> Void,
+                     onFailure: @escaping @MainActor @Sendable () -> Void = {}) throws {
+        self.init(detector: try ChordDrillDetector(sampleRate: sampleRate, chordA: chordA, chordB: chordB),
+                  onSnapshot: onSnapshot, onFailure: onFailure)
+    }
+
+    init(detector: ChordDrillDetector,
          onSnapshot: @escaping @MainActor @Sendable (DrillSnapshot) -> Void,
-         onFailure: @escaping @MainActor @Sendable () -> Void = {}) throws {
-        detector = try ChordDrillDetector(sampleRate: sampleRate, chordA: chordA, chordB: chordB)
+         onFailure: @escaping @MainActor @Sendable () -> Void = {}) {
+        let sampleRate = detector.sampleRate
+        self.detector = detector
         inbox = DrillAudioInbox(sampleRate: sampleRate)
         maximumOfferedFrames = min(DrillAudioInbox.maximumBufferSize, Int(sampleRate * 0.25))
         scratch = .allocate(capacity: DrillAudioInbox.maximumBufferSize)
