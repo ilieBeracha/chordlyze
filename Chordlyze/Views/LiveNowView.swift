@@ -7,7 +7,9 @@ struct LiveNowView: View {
     var onSeek: ((Double) async -> Bool)? = nil
     var playbackNote: String? = nil
     var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
-    let livePosition: () -> TimeInterval?
+    /// Calibrated chart time, no display lead: the caller has already put
+    /// Spotify's position (or the take clock) through the song's timing map.
+    let chartPosition: () -> TimeInterval?
     /// Seconds the highlight runs ahead of Spotify audio. Recognized chord
     /// boundaries land a little late and players read ahead of the beat.
     @AppStorage("chordLead") private var lead = 0.3
@@ -19,9 +21,10 @@ struct LiveNowView: View {
         ScrollViewReader { proxy in
             TimelineView(.periodic(from: .now, by: 0.1)) { _ in
                 let duration = store.song.duration ?? store.analysis?.coverageEnd ?? 0
-                // Chart time: Spotify's position through the song's calibration, plus the display lead.
-                let position = max(0, min(livePosition().map { store.timing.chartTime($0) + lead } ?? lastPosition, duration > 0 ? duration : .infinity))
-                let activeID = SheetModel.activeRow(store.rows, at: position)?.id
+                // Words at the calibrated time; chords a little ahead of it by the display lead.
+                let wordPosition = max(0, min(chartPosition() ?? lastPosition, duration > 0 ? duration : .infinity))
+                let position = max(0, min(wordPosition + lead, duration > 0 ? duration : .infinity))
+                let activeID = SheetModel.activeRow(store.rows, at: wordPosition)?.id
                 VStack(spacing: 0) {
                     SongSheetHeader(store: store)
                     VStack(alignment: .leading, spacing: 6) {
@@ -44,7 +47,7 @@ struct LiveNowView: View {
                                        onRowTap: { row in
                                            guard let onSeek else { return }
                                            Task { seekDenied = !(await onSeek(store.timing.spotifyTime(row.start))) }
-                                       }, verdict: verdict)
+                                       }, verdict: verdict, wordPlayhead: wordPosition)
                             .padding(.horizontal, 24).padding(.vertical, 32)
                             .padding(.bottom, 90)
                     }
@@ -59,7 +62,7 @@ struct LiveNowView: View {
                     }
                     .padding(.horizontal, 20).padding(.bottom, 24)
                 }
-                .onChange(of: position) { _, value in lastPosition = value }
+                .onChange(of: wordPosition) { _, value in lastPosition = value }
             }
         }
         .background(Color.black.ignoresSafeArea())

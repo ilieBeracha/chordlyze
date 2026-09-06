@@ -9,10 +9,10 @@ struct SpotifyLiveView: View {
     var body: some View {
         Group {
             if let playing = nowPlaying.playing {
-                LiveSongView(store: SongSheetStore.shared(for: SongDescriptor(track: playing.track)),
-                             onSeek: { await nowPlaying.seek(to: $0) },
+                let store = SongSheetStore.shared(for: SongDescriptor(track: playing.track))
+                LiveSongView(store: store, onSeek: { await nowPlaying.seek(to: $0) },
                              playbackNote: nowPlaying.playbackNote) {
-                    nowPlaying.livePosition()
+                    nowPlaying.livePosition().map(store.timing.chartTime)
                 }
                 .id(playing.track.id)
             } else {
@@ -30,11 +30,12 @@ struct LiveSongView: View {
     @ObservedObject var store: SongSheetStore
     var onSeek: ((Double) async -> Bool)? = nil
     var playbackNote: String? = nil
-    let livePosition: () -> TimeInterval?
+    /// Calibrated chart time, no display lead.
+    let chartPosition: () -> TimeInterval?
 
     var body: some View {
         if store.canPractice {
-            LiveNowView(store: store, onSeek: onSeek, playbackNote: playbackNote, livePosition: livePosition)
+            LiveNowView(store: store, onSeek: onSeek, playbackNote: playbackNote, chartPosition: chartPosition)
         } else {
             LiveAnalyzingView(store: store, playbackNote: playbackNote)
         }

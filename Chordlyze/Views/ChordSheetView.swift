@@ -186,12 +186,15 @@ struct ChordSheetView: View {
     var onRowTap: ((SheetModel.Row) -> Void)? = nil
     var onPracticeRow: ((SheetModel.Row) -> Void)? = nil
     var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
+    /// Song time for the words, without the chord display lead.
+    var wordPlayhead: Double? = nil
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: style == .live ? 30 : 20) {
             ForEach(store.rows) { row in
                 ChordRowView(row: row, transposeBy: store.shift, playhead: playhead,
-                             style: style, onChordTap: onChordTap, onLyricTap: { onRowTap?(row) }, verdict: verdict)
+                             style: style, onChordTap: onChordTap, onLyricTap: { onRowTap?(row) }, verdict: verdict,
+                             wordPlayhead: wordPlayhead)
                     .padding(.vertical, 8)
                     .id(row.id)
                     .accessibilityIdentifier("song-row-\(row.start)")

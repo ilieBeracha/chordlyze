@@ -44,6 +44,7 @@
 		DF8D6FE40BD9E5FA79E5F1BF /* SheetModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BA9465F7DCB9D992A1C4F3B /* SheetModel.swift */; };
 		E7D8FF3747FE41AF1E3F5CB9 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4808D969DCC674CF4F8881C7 /* Keychain.swift */; };
 		E9167BC65303156A07B3F87A /* SpotifyNowPlaying.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9466B007A80465DD43B8334 /* SpotifyNowPlaying.swift */; };
+		E95E4B5B3C6CF63338154038 /* LyricPlayhead.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3312C302F9B53B1895F12621 /* LyricPlayhead.swift */; };
 		EABAEF37B1E0E250E3F39AB5 /* ChordLyricLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C984E0CBEB1E577640330B5A /* ChordLyricLine.swift */; };
 		F0FF13C989C9AC89EE725FD0 /* SongSheetPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4225FA3FADDF11F0F346E8F8 /* SongSheetPreview.swift */; };
 		F4D6A14494B7A9BE7FB7459C /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F5B942830EA8AE8A9C87C42 /* ProfileView.swift */; };
@@ -58,6 +59,7 @@
 		23F4EBD18FDE26AB8F0E18A2 /* TakeRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TakeRecorder.swift; sourceTree = "<group>"; };
 		30ACA8DA715E5954990AADD9 /* ChordShapes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordShapes.swift; sourceTree = "<group>"; };
 		30D6E6D1F80C702489521D6B /* ChordDrillDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordDrillDetector.swift; sourceTree = "<group>"; };
+		3312C302F9B53B1895F12621 /* LyricPlayhead.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricPlayhead.swift; sourceTree = "<group>"; };
 		3B5F39F29A534B7E488CE8FE /* ChordlyzeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordlyzeApp.swift; sourceTree = "<group>"; };
 		3E4FF07B614A2CF0ABCC7DAC /* SpotifyAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyAPI.swift; sourceTree = "<group>"; };
 		3E5D5C8A6FF9A44586E99A20 /* SongSheetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongSheetStore.swift; sourceTree = "<group>"; };
@@ -151,6 +153,7 @@
 				E1614B50A45FA29707012533 /* DrillAudioWorker.swift */,
 				5EAB26A01240370A7EAF0A82 /* Info.plist */,
 				4808D969DCC674CF4F8881C7 /* Keychain.swift */,
+				3312C302F9B53B1895F12621 /* LyricPlayhead.swift */,
 				A1649CD4213D38B91DD970BB /* Metronome.swift */,
 				FC9839963ADF8918052143AE /* PracticeFeedback.swift */,
 				41C7BD8A07B26C51461140CF /* PracticeTakeStore.swift */,
@@ -259,6 +262,7 @@
 				819EA82C7039FDCF503E5133 /* LiveHostViews.swift in Sources */,
 				693E17329B4789EEA5A5E1B1 /* LiveNowView.swift in Sources */,
 				6A2B6688285C7D9AA0B2A958 /* LoginView.swift in Sources */,
+				E95E4B5B3C6CF63338154038 /* LyricPlayhead.swift in Sources */,
 				2B0B316D24CDEEE7AD0A48C8 /* Metronome.swift in Sources */,
 				B674DCCE4D245E938BC179F2 /* PlaylistsView.swift in Sources */,
 				AB2FC8022809197A04A10DEF /* PracticeFeedback.swift in Sources */,

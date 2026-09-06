@@ -38,6 +38,8 @@ struct ChordRowView: View {
     var onLyricTap: (() -> Void)? = nil
     /// Practice: live verdict for the chord starting at this chart second.
     var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
+    /// Song time for the words, without the chord display lead.
+    var wordPlayhead: Double? = nil
 
     private var rtl: Bool { row.text.isRTLText }
     private var active: Bool { playhead.map(row.contains) ?? false }
@@ -48,7 +50,8 @@ struct ChordRowView: View {
                 ChordLyricLine(text: row.text, chords: row.chords, words: row.words?.map(\.text), transposeBy: transposeBy,
                                playhead: playhead, style: style, active: active, pending: row.chords.isEmpty && row.held == nil,
                                onChordTap: onChordTap, onLyricTap: onLyricTap, verdict: verdict,
-                               rowStart: row.start, rowEnd: row.end, wordTimes: row.words?.map(\.time))
+                               rowStart: row.start, rowEnd: row.end, wordTimes: row.words?.map(\.time),
+                               wordPlayhead: wordPlayhead)
                     .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
             } else {
                 timedRow

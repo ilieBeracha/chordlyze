@@ -39,6 +39,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
 @main struct SongSheetTests {
     @MainActor static func main() async throws {
         modelTests()
+        runnerTests()
         try await documentTests()
         try await cancellationTests()
         try await playbackTests()
@@ -65,6 +66,41 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(RecentPlays.relativeTime(now.addingTimeInterval(-30), now: now) == "now", "Under a minute reads as now")
         check(RecentPlays.relativeTime(now.addingTimeInterval(-600), now: now) == "10m ago", "Minutes ago")
         check(RecentPlays.relativeTime(now.addingTimeInterval(-7200), now: now) == "2h ago", "Hours ago")
+    }
+
+    /// The lyric runner: words alone drive it; chords never move it.
+    @MainActor static func runnerTests() {
+        // One visual line: five words 60 pt apart. Word 2 is held for ten seconds under many chords.
+        let words: [Int: CGRect] = Dictionary(uniqueKeysWithValues: (0..<5).map { ($0, CGRect(x: CGFloat($0) * 60, y: 0, width: 50, height: 20)) })
+        let times = [10.0, 11.0, 12.0, 22.0, 23.0]
+        let chords: [(time: Double, wordIndex: Int)] = [(12, 2), (14, 2), (16, 2), (18, 2), (20, 2)]
+        let points = LyricPlayhead.waypoints(rowStart: 8, rowEnd: 30, words: words, wordTimes: times, chordStarts: chords, rtl: false)
+        check(points.map(\.time) == [8, 9, 10, 11, 12, 22, 23, 24, 30], "Edge, one second before the first word, each word, a one-second tail, the row end")
+        check(!points.contains { [14, 16, 18, 20].contains($0.time) }, "Chord changes above a held word add no waypoints")
+        let held = LyricPlayhead.position(at: 17, along: points, rtl: false)!
+        check(held.x == 120 + (180 - 120) * 0.5, "During a held word the runner moves steadily toward the next word, not to a chord")
+        check(LyricPlayhead.position(at: 8.5, along: points, rtl: false)!.x == 0, "Before the lead-in it waits at the leading edge")
+        check(LyricPlayhead.position(at: 26, along: points, rtl: false)!.x == 290, "After the tail it rests at the trailing edge")
+        check(LyricPlayhead.currentWord(at: 17, wordTimes: times) == 2 && LyricPlayhead.currentWord(at: 9.9, wordTimes: times) == nil
+              && LyricPlayhead.currentWord(at: 23, wordTimes: times) == 4, "The highlighted word is the last one begun")
+        // Seeking: any time resolves without state.
+        check(LyricPlayhead.position(at: 22.5, along: points, rtl: false)!.x == 210, "Halfway between words 3 and 4")
+        // A wrapped line: words 3 and 4 sit on a second visual line.
+        var wrapped = words
+        wrapped[3] = CGRect(x: 0, y: 40, width: 50, height: 20); wrapped[4] = CGRect(x: 60, y: 40, width: 50, height: 20)
+        let wrapPoints = LyricPlayhead.waypoints(rowStart: 8, rowEnd: 30, words: wrapped, wordTimes: times, chordStarts: [], rtl: false)
+        let crossing = LyricPlayhead.position(at: 17, along: wrapPoints, rtl: false)!
+        check(crossing.y == 10 && crossing.x > 120, "Halfway from word 2 to a wrapped word 3 the runner is still on the first line, moving right")
+        let nearEnd = LyricPlayhead.position(at: 21.9, along: wrapPoints, rtl: false)!
+        check(nearEnd.y == 10 && nearEnd.x > 160, "Just before a wrapped word it has run to the end of the first line")
+        let arrived = LyricPlayhead.position(at: 22, along: wrapPoints, rtl: false)!
+        check(arrived.y == 50 && arrived.x == 0, "At the word's onset it is on the second line at that word")
+        // Line-timed rows: chords are the only fixed points.
+        let lineTimed = LyricPlayhead.waypoints(rowStart: 8, rowEnd: 30, words: words, wordTimes: nil, chordStarts: [(12, 1), (20, 3)], rtl: false)
+        check(lineTimed.map(\.time) == [8, 12, 20, 30] && lineTimed.map(\.x) == [0, 60, 180, 290], "Without word times the runner moves chord to chord and on to the edge")
+        // Right-to-left text runs the other way.
+        let rtlPoints = LyricPlayhead.waypoints(rowStart: 8, rowEnd: 30, words: words, wordTimes: times, chordStarts: [], rtl: true)
+        check(rtlPoints.first!.x == 290 && rtlPoints.last!.x == 0, "Right-to-left rows enter at the right edge and leave at the left")
     }
 
     @MainActor static func modelTests() {
