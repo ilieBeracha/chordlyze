@@ -14,6 +14,7 @@ final class SongSheetStore: ObservableObject {
             try await BackendClient.lyrics(title: $0.title, artist: $0.artist, duration: $0.duration, album: $0.album)
         }
         var save: (String, Bool) async throws -> Void = { try await BackendClient.setSaved(trackID: $0, $1) }
+        var saveTiming: (String, TimingMap?) async throws -> Void = { try await BackendClient.setTiming(trackID: $0, $1) }
         var sleep: (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
     }
     private static var documents: [String: SongSheetStore] = [:]
@@ -43,9 +44,11 @@ final class SongSheetStore: ObservableObject {
     /// name the same chords: capo mode favors open shapes, manual shift transposes.
     @Published var capoMode = false
     @Published var manualShift = 0
-    /// Seconds added to Spotify's position before reading the chart, for a
-    /// chart whose recording starts earlier or later than the Spotify track.
-    @Published var timingOffset = 0.0
+    /// How this account's chart timeline maps onto the Spotify recording it
+    /// hears. Identity until calibrated by ear; saved per account on the
+    /// server, since it absorbs the listener's own output delay.
+    @Published private(set) var timing: TimingMap = .identity
+    @Published private(set) var timingError: String?
     @Published private(set) var capo = 0
     private(set) var lyricsResult: BackendClient.LyricsResult?
     private var service: Service
@@ -115,6 +118,37 @@ final class SongSheetStore: ObservableObject {
     func retry() {
         start(request: state != "connection")
         loadLyrics(force: true)
+    }
+
+    /// A calibration stops applying when the chart it was made on is gone.
+    var timingIsStale: Bool {
+        !timing.isIdentity && !timing.matches(chartAudioSha256: analysis?.audioSha256, spotifyTrackID: nil)
+    }
+    var timingNote: String? {
+        if timing.isIdentity { return nil }
+        if timingIsStale { return "Calibration is from an earlier chart. Calibrate again." }
+        if let error = timing.verifiedError { return String(format: "Calibrated by ear, checked within %.2f s.", error) }
+        return "Adjusted by hand."
+    }
+
+    /// Saves a calibration (nil clears it) for this account on the server.
+    func setTiming(_ map: TimingMap?) async {
+        let previous = timing
+        timing = map ?? .identity
+        timingError = nil
+        do { try await service.saveTiming(song.id, map) } catch {
+            timing = previous
+            timingError = "Could not save the timing: \(error.localizedDescription)"
+        }
+    }
+
+    /// Hand adjustment from Key & capo: shifts the offset, keeps the scale.
+    func nudgeTiming(chordsEarlierBy delta: Double) async {
+        var map = timing
+        map.offset -= delta
+        map.verifiedError = nil
+        map.chartAudioSha256 = analysis?.audioSha256
+        await setTiming(map.isIdentity ? nil : map)
     }
 
     /// Bookmark: keep or drop this song in the account's library.
@@ -200,6 +234,7 @@ final class SongSheetStore: ObservableObject {
         }
         state = status.job.state
         if let flag = status.saved { saved = flag }
+        if status.saved != nil { timing = status.timing ?? .identity }
         // Three states the user sees: not analyzed, analyzing, ready.
         switch state {
         case "ready": message = ""

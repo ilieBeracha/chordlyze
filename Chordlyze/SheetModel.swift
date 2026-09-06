@@ -239,3 +239,62 @@ struct BeatGrid: Equatable {
             .map { (beats[$0] - start, isDownbeat($0)) }
     }
 }
+
+/// How the chart's timeline maps onto the Spotify recording the listener
+/// hears: spotify = scale * chart + offset. The chart was measured on a
+/// different recording of the song, so the two can start at different
+/// moments and, rarely, run at slightly different speeds. Fitted from
+/// anchors the listener confirmed by ear; identity checks mark it stale
+/// when the chart or the Spotify track changes.
+struct TimingMap: Codable, Equatable {
+    struct Anchor: Codable, Equatable {
+        let chart: Double
+        let spotify: Double
+    }
+    var offset: Double = 0
+    var scale: Double = 1
+    var anchors: [Anchor] = []
+    var verifiedError: Double? = nil
+    var chartAudioSha256: String? = nil
+    var spotifyTrackID: String? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case offset, scale, anchors
+        case verifiedError = "verified_error", chartAudioSha256 = "chart_audio_sha256", spotifyTrackID = "spotify_track_id"
+    }
+
+    static let identity = TimingMap()
+
+    func chartTime(_ spotify: Double) -> Double { (spotify - offset) / scale }
+    func spotifyTime(_ chart: Double) -> Double { scale * chart + offset }
+    var isIdentity: Bool { offset == 0 && scale == 1 }
+
+    /// Fitted from anchors: one gives the offset at scale 1; two or more give
+    /// offset and scale by least squares, with scale kept within ten percent.
+    static func fit(_ anchors: [Anchor], chartAudioSha256: String?, spotifyTrackID: String?) -> TimingMap? {
+        let valid = anchors.filter { $0.chart.isFinite && $0.spotify.isFinite }
+        guard let first = valid.first else { return nil }
+        var map = TimingMap(anchors: valid, chartAudioSha256: chartAudioSha256, spotifyTrackID: spotifyTrackID)
+        let span = (valid.map(\.chart).max() ?? 0) - (valid.map(\.chart).min() ?? 0)
+        if valid.count < 2 || span < 20 {
+            // Too close together to measure speed: offset only.
+            map.offset = valid.map { $0.spotify - $0.chart }.reduce(0, +) / Double(valid.count)
+            return map
+        }
+        let n = Double(valid.count)
+        let meanC = valid.map(\.chart).reduce(0, +) / n
+        let meanS = valid.map(\.spotify).reduce(0, +) / n
+        let cov = valid.reduce(0) { $0 + ($1.chart - meanC) * ($1.spotify - meanS) }
+        let varC = valid.reduce(0) { $0 + ($1.chart - meanC) * ($1.chart - meanC) }
+        map.scale = min(1.1, max(0.9, cov / varC))
+        map.offset = meanS - map.scale * meanC
+        _ = first
+        return map
+    }
+
+    /// Stale when the chart or the Spotify recording it was made for changed.
+    func matches(chartAudioSha256: String?, spotifyTrackID: String?) -> Bool {
+        (self.chartAudioSha256 == nil || self.chartAudioSha256 == chartAudioSha256)
+            && (self.spotifyTrackID == nil || spotifyTrackID == nil || self.spotifyTrackID == spotifyTrackID)
+    }
+}

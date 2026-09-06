@@ -58,6 +58,21 @@ class UserLibrary:
         self._write(data)
         return True
 
+    def timing(self, track_id: str) -> dict | None:
+        """This account's calibration of the chart's timeline to the Spotify
+        recording it hears, or None. Personal: it absorbs the account's own
+        output delay, so it is never shared between accounts."""
+        return self._read()["songs"].get(track_id, {}).get("timing")
+
+    def set_timing(self, track_id: str, timing: dict | None) -> None:
+        data = self._read()
+        entry = data["songs"].setdefault(track_id, {"added_at": time.time()})
+        if timing is None:
+            entry.pop("timing", None)
+        else:
+            entry["timing"] = timing
+        self._write(data)
+
     def remove(self, track_id: str) -> bool:
         data = self._read()
         if data["songs"].pop(track_id, None) is None:

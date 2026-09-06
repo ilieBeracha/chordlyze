@@ -42,8 +42,10 @@ struct SongStatus: Decodable {
     let libraryGeneration: String
     /// Whether this song is in the signed-in account's library.
     let saved: Bool?
+    /// This account's calibration of the chart to the Spotify recording.
+    let timing: TimingMap?
     enum CodingKeys: String, CodingKey {
-        case song, analysis, lyrics, job, saved, libraryGeneration = "library_generation"
+        case song, analysis, lyrics, job, saved, timing, libraryGeneration = "library_generation"
     }
 }
 
@@ -66,6 +68,8 @@ struct ChordAnalysis: Decodable, Equatable {
     let audioDuration: Double?
     let songDuration: Double?
     let album: String?
+    /// Identity of the analyzed recording; a calibration is tied to it.
+    let audioSha256: String?
 
     struct Tempo: Decodable, Equatable {
         let bpm: Double
@@ -76,7 +80,7 @@ struct ChordAnalysis: Decodable, Equatable {
         case key
         case keyConfidence = "key_confidence"
         case analyzedEnd = "analyzed_end"
-        case audioDuration = "audio_duration", songDuration = "song_duration"
+        case audioDuration = "audio_duration", songDuration = "song_duration", audioSha256 = "audio_sha256"
         case chords, source, difficulty, tempo, album
     }
 
@@ -183,6 +187,21 @@ enum BackendClient {
         let url = Config.backendBaseURL.appendingPathComponent("catalog")
         let page: LibraryPage? = try await fetch(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
         return page?.items ?? []
+    }
+
+    /// Saves or clears the account's timing calibration for a song.
+    static func setTiming(trackID: String, _ timing: TimingMap?) async throws {
+        struct Result: Decodable { let trackId: String; enum CodingKeys: String, CodingKey { case trackId = "track_id" } }
+        var request = URLRequest(url: Config.backendBaseURL.appendingPathComponent("library/\(trackID)/timing"),
+                                 cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+        request.httpMethod = timing == nil ? "DELETE" : "PUT"
+        if let timing {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(timing)
+        }
+        guard let _: Result = try await fetch(request) else {
+            throw BackendError(status: 404, detail: "This song has no chart to calibrate yet.")
+        }
     }
 
     /// Adds or removes one song in the account's library; the chart itself stays.

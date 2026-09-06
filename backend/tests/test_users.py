@@ -112,3 +112,18 @@ def test_lyrics_lookup_accepts_the_worker_token(monkeypatch):
     auth.forget_all()
     assert main.user_or_worker("Bearer worker-secret") == "user-worker-secret", \
         "without a configured worker the token is treated as a Spotify token and verified"
+
+
+def test_timing_calibration_is_per_account_and_travels_with_the_song(cache):
+    _publish("t1")
+    body = main.TimingCalibration(offset=0.35, scale=1.001, anchors=[main.TimingAnchor(chart=12, spotify=12.35)],
+                                  verified_error=0.04, chart_audio_sha256="a" * 64, spotify_track_id="t1")
+    assert main.set_timing("t1", body, user="alice")["timing"]["offset"] == 0.35
+    assert main.song_status("t1", user="alice")["timing"]["scale"] == 1.001
+    assert main.song_status("t1", user="bob")["timing"] is None, "calibration absorbs one listener's output delay"
+    assert [i["track_id"] for i in main.library(user="alice")["items"]] == ["t1"], "calibrating saves the song"
+    assert main.clear_timing("t1", user="alice")["timing"] is None
+    assert main.song_status("t1", user="alice")["timing"] is None
+    with pytest.raises(HTTPException) as missing:
+        main.set_timing("nope", body, user="alice")
+    assert missing.value.status_code == 404

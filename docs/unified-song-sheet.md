@@ -41,7 +41,20 @@ In Live and Practice a playhead sweeps every row, not only instrumental ones:
 on a lyric row it enters at the leading edge when the row starts, reaches each
 chord's word exactly when that chord starts, and leaves at the trailing edge
 when the row ends, moving steadily in between and wrapping across visual lines
-(`LyricPlayhead`, driven by the same position as the chord highlight). When the
+(`LyricPlayhead`, driven by the same position as the chord highlight). Chart
+time comes from Spotify's position through the song's timing calibration
+(`TimingMap`, spotify = scale × chart + offset). The chart was measured on a
+different recording, so the two can start at different moments or run at
+slightly different speeds; no playback engine can know by how much. **Calibrate
+by ear** in Key & capo replays two chord changes far apart, the listener taps
+Now and nudges until the highlight and the sound coincide, the map is fitted
+(offset only when the anchors are under twenty seconds apart), then a third
+change not used for the fit is replayed as a check and its remaining nudge is
+saved as the verified error. The calibration is saved per account with the
+chart's audio hash and the Spotify track that played, since it absorbs the
+listener's own output delay; the sheet marks it stale when the chart changes.
+Spotify's audio-analysis endpoint, which would have given beat times on its
+master, returns 403 for this app. When the
 lyrics are word-timed, every word onset is a waypoint too, so the line follows
 the voice; with line times only it moves steadily between chords.
 

@@ -274,11 +274,13 @@ def _song_status(track_id: str, isrc: str | None = None, user: str | None = None
         song = {"track_id": track_id, "title": chart.get("title"), "artist": chart.get("artist"),
                 "album": chart.get("album"), "duration": chart.get("song_duration") or chart.get("audio_duration"),
                 "isrc": chart.get("isrc"), "artwork": chart.get("artwork")}
+    mine = UserLibrary(CACHE_DIR, user) if user else None
     return {"song": song, "analysis": chart if ready else None,
             "lyrics": chart.get("lyrics") if ready else None,
             "job": {"state": "ready", "worker_online": jobs.worker_online()} if ready else jobs.public(job),
             "library_generation": generation(CACHE_DIR),
-            "saved": UserLibrary(CACHE_DIR, user).contains(track_id) if user else False}
+            "saved": mine.contains(track_id) if mine else False,
+            "timing": mine.timing(track_id) if mine else None}
 
 
 @app.post("/song/request")
@@ -650,6 +652,40 @@ def save_song(track_id: str, user: str = Depends(current_user)) -> dict:
             raise HTTPException(404, "no chart or analysis request for this track")
         UserLibrary(CACHE_DIR, user).add(track_id)
         return {"track_id": track_id, "saved": True}
+
+
+class TimingAnchor(BaseModel):
+    chart: float = Field(ge=0, allow_inf_nan=False)
+    spotify: float = Field(ge=0, allow_inf_nan=False)
+
+
+class TimingCalibration(BaseModel):
+    """spotifyTime = scale * chartTime + offset, fitted from listened anchors.
+    The chart is identified by its audio hash and the Spotify recording by the
+    id that actually played, so either changing marks the calibration stale."""
+    offset: float = Field(ge=-30, le=30, allow_inf_nan=False)
+    scale: float = Field(ge=0.9, le=1.1, allow_inf_nan=False)
+    anchors: list[TimingAnchor] = Field(default_factory=list, max_length=8)
+    verified_error: float | None = Field(default=None, ge=0, le=30, allow_inf_nan=False)
+    chart_audio_sha256: str | None = Field(default=None, max_length=64)
+    spotify_track_id: str | None = Field(default=None, max_length=200)
+
+
+@app.put("/library/{track_id}/timing")
+def set_timing(track_id: str, body: TimingCalibration, user: str = Depends(current_user)) -> dict:
+    """Saves this account's calibration for the song; the song joins the library."""
+    with library_lock(CACHE_DIR):
+        if not _track_cache_path(track_id).exists():
+            raise HTTPException(404, "no chart for this track")
+        UserLibrary(CACHE_DIR, user).set_timing(track_id, body.model_dump(exclude_none=True))
+        return {"track_id": track_id, "timing": body.model_dump(exclude_none=True)}
+
+
+@app.delete("/library/{track_id}/timing")
+def clear_timing(track_id: str, user: str = Depends(current_user)) -> dict:
+    with library_lock(CACHE_DIR):
+        UserLibrary(CACHE_DIR, user).set_timing(track_id, None)
+        return {"track_id": track_id, "timing": None}
 
 
 @app.delete("/library/{track_id}")
