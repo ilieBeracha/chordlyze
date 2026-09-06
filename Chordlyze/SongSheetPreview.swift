@@ -101,7 +101,10 @@ struct SongSheetPreview: View {
                 ["time": 28.4, "text": "The final line keeps its harmony"]
             ] : [
                 ["time": 0, "text": "Sample words follow every chord"],
-                ["time": 8, "text": "A held chord is not repeated on this line"],
+                ["time": 8, "text": "A held chord is not repeated on this line",
+                 "words": [["time": 8.4, "text": "A"], ["time": 8.7, "text": "held"], ["time": 9.2, "text": "chord"], ["time": 9.8, "text": "is"],
+                           ["time": 10.1, "text": "not"], ["time": 10.6, "text": "repeated"], ["time": 11.4, "text": "on"],
+                           ["time": 11.7, "text": "this"], ["time": 12.1, "text": "line"]]],
                 ["time": 16, "text": ""],
                 ["time": 20, "text": "שרים יחד בקצב של הלב"],
                 ["time": 30, "text": "The final line keeps its harmony"]
