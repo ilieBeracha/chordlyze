@@ -29,6 +29,7 @@
 		91650A2B258E73E2DD2C1CAE /* DrillAudioWorker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1614B50A45FA29707012533 /* DrillAudioWorker.swift */; };
 		A06633ABA3BEAB893FD7B5B5 /* PracticeHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D39A53C100E29AD1F5A6E72 /* PracticeHubView.swift */; };
 		A81A4D30F5FC3E622D1BE1A2 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97301991890B494924679808 /* SearchView.swift */; };
+		AB2FC8022809197A04A10DEF /* PracticeFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC9839963ADF8918052143AE /* PracticeFeedback.swift */; };
 		B674DCCE4D245E938BC179F2 /* PlaylistsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74327AC9AC251365E2B4429F /* PlaylistsView.swift */; };
 		B7CA552052205086EC43A233 /* SpotifyAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7137E803C002FAEC4B13BC6A /* SpotifyAuth.swift */; };
 		C2D3DBA369FE2FCC2F82E0E9 /* ChordSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F25A477EBBECFCAB181FC4B9 /* ChordSheetView.swift */; };
@@ -86,6 +87,7 @@
 		F0F811F0C5F3043C10F537F8 /* ReportCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportCardView.swift; sourceTree = "<group>"; };
 		F25A477EBBECFCAB181FC4B9 /* ChordSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordSheetView.swift; sourceTree = "<group>"; };
 		F55B762EFBB35519E23900A3 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
+		FC9839963ADF8918052143AE /* PracticeFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeFeedback.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -144,6 +146,7 @@
 				5EAB26A01240370A7EAF0A82 /* Info.plist */,
 				4808D969DCC674CF4F8881C7 /* Keychain.swift */,
 				A1649CD4213D38B91DD970BB /* Metronome.swift */,
+				FC9839963ADF8918052143AE /* PracticeFeedback.swift */,
 				41C7BD8A07B26C51461140CF /* PracticeTakeStore.swift */,
 				4BA9465F7DCB9D992A1C4F3B /* SheetModel.swift */,
 				4225FA3FADDF11F0F346E8F8 /* SongSheetPreview.swift */,
@@ -251,6 +254,7 @@
 				6A2B6688285C7D9AA0B2A958 /* LoginView.swift in Sources */,
 				2B0B316D24CDEEE7AD0A48C8 /* Metronome.swift in Sources */,
 				B674DCCE4D245E938BC179F2 /* PlaylistsView.swift in Sources */,
+				AB2FC8022809197A04A10DEF /* PracticeFeedback.swift in Sources */,
 				A06633ABA3BEAB893FD7B5B5 /* PracticeHubView.swift in Sources */,
 				10FC0A4E94368041EFDFFAD3 /* PracticeTakeStore.swift in Sources */,
 				D9FBBE3071F11A8A1924B803 /* PracticeView.swift in Sources */,

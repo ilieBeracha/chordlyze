@@ -10,4 +10,8 @@ swiftc -module-cache-path "$practice_test_dir/module-cache" \
 swiftc -module-cache-path "$practice_test_dir/module-cache" \
   Chordlyze/Chord.swift Chordlyze/BackendClient.swift \
   tests/PracticeReportContract.swift -o "$practice_test_dir/report"
+swiftc -module-cache-path "$practice_test_dir/module-cache" \
+  Chordlyze/Chord.swift Chordlyze/BackendClient.swift Chordlyze/PracticeFeedback.swift \
+  tests/PracticeFeedbackTests.swift -o "$practice_test_dir/feedback"
+"$practice_test_dir/feedback"
 "$practice_test_dir/report"
