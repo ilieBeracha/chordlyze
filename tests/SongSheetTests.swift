@@ -79,6 +79,13 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(SheetModel.activeRow(rows, at: 9)?.id == 8, "Live selects current row by interval")
         check(SheetModel.activeRow(rows, at: 20) == nil, "Live does not hold the last lyric forever past song end")
         check(SheetModel.activeRow(rows, at: 3)?.id == 2, "Backward seek selects the earlier line")
+        // Line-timed lyrics: the words end before the next line starts, so a chord
+        // halfway through the singing sits over the middle word, not an early one.
+        let lineTimed = SheetModel.build(analysis: chart([["start": 0, "end": 2.4, "label": "C:maj"], ["start": 2.4, "end": 20, "label": "G:maj"]]),
+                                     lines: [LyricLine(time: 0, text: "one two three four", words: nil), LyricLine(time: 8, text: "next", words: nil)], duration: 20)
+        check(SheetModel.sungDuration(words: 4, interval: 8) == 4.8 && SheetModel.sungDuration(words: 12, interval: 4) == 4,
+              "Singing is estimated at half a second a word, at least 60% of the gap, never past it")
+        check(lineTimed.first?.chords.map(\.wordIndex) == [0, 2], "A chord 2.4 s into an 8 s gap sits over the third word, not the second")
         check(status("ready", saved: true).saved == true && status("ready").saved == nil, "The saved flag is optional in the status")
         let other = SongSheetStore(song: SongDescriptor(trackID: "x", title: "T", artist: "A", duration: 200), analysis: chart())
         check(other.editionGap == -180 && other.editionNote?.contains("180 s shorter") == true, "A chart from a different-length recording reports the gap")
@@ -225,7 +232,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         }, lyrics: { _ in lyrics() }, sleep: { _ in try await Task.sleep(for: .milliseconds(10)) }))
         let recovery = Task { await recovering.observe() }
         try await waitFor { recovering.canPractice }
-        check(attempts == 2, "A failed initial status read recovers in place")
+        check(attempts >= 2 && recovering.state == "ready", "A failed initial status read recovers in place")  // the poll keeps going after recovery
         recovery.cancel(); await recovery.value
     }
 
