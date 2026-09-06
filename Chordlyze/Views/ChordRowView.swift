@@ -63,30 +63,43 @@ struct ChordRowView: View {
         .frame(maxWidth: .infinity, alignment: rtl ? .trailing : .leading)
     }
 
-    /// Chords at time-proportional positions, with the playhead when live.
+    /// A wordless stretch: its chords in an even row with equal gaps, as on
+    /// a printed chart, never spread across the width by time. Live, the
+    /// runner walks from chord to chord on their times.
     private var timedRow: some View {
-        TimedRowLayout(spacing: 6) {
-            ForEach(row.chords) { placed in
+        FlowLayout(spacing: style == .sheet ? 14 : 22) {
+            ForEach(Array(row.chords.enumerated()), id: \.element.id) { index, placed in
                 ChordChip(name: placed.event.display(transposedBy: transposeBy),
                           active: playhead.map(placed.event.contains) ?? false,
                           style: style, onTap: onChordTap, verdict: verdict?(placed.event.start))
-                    .layoutValue(key: TimedRowLayout.Position.self, value: placed.position)
+                    .anchorPreference(key: ChordAnchors.self, value: .bounds) { [index: $0] }
             }
         }
-        .frame(maxWidth: .infinity, minHeight: style == .sheet ? 22 : 34, alignment: .leading)
-        .overlay(alignment: .leading) {
-            if let playhead, row.contains(playhead), row.isInstrumental || row.text.isEmpty {
+        .frame(maxWidth: .infinity, minHeight: style == .sheet ? 22 : 30, alignment: rtl ? .trailing : .leading)
+        .overlayPreferenceValue(ChordAnchors.self) { anchors in
+            if style == .live, let wordPlayhead, row.contains(wordPlayhead), !row.chords.isEmpty {
                 GeometryReader { geo in
-                    let fraction = (playhead - row.start) / max(row.end - row.start, 0.001)
-                    let x = rtl ? geo.size.width * (1 - fraction) : geo.size.width * fraction
-                    Rectangle()
-                        .fill(Color.spotifyGreen.opacity(0.7))
-                        .frame(width: 2)
-                        .offset(x: max(0, min(geo.size.width - 2, x)))
+                    let points = LyricPlayhead.waypoints(rowStart: row.start, rowEnd: row.end, words: anchors.mapValues { geo[$0] },
+                                                         wordTimes: nil,
+                                                         chordStarts: row.chords.enumerated().map { ($0.element.event.start, $0.offset) }, rtl: rtl)
+                    if let point = LyricPlayhead.position(at: wordPlayhead, along: points, rtl: rtl) {
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(Color.spotifyGreen.opacity(0.5))
+                            .frame(width: 2, height: point.height + 4)
+                            .position(x: point.x, y: point.y)
+                            .allowsHitTesting(false)
+                    }
                 }
             }
         }
         .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
+    }
+
+    private struct ChordAnchors: PreferenceKey {
+        static var defaultValue: [Int: Anchor<CGRect>] = [:]
+        static func reduce(value: inout [Int: Anchor<CGRect>], nextValue: () -> [Int: Anchor<CGRect>]) {
+            value.merge(nextValue(), uniquingKeysWith: { $1 })
+        }
     }
 
     private var caption: some View {
