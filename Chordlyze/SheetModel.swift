@@ -77,10 +77,11 @@ enum SheetModel {
     }
     /// The chord rail: the sounding chord (or, in a gap, the first to come)
     /// and the next changes of chord after it, up to `count` in all. Events
-    /// that show the same chord as the one before them are one entry.
+    /// that show the same chord as the one before them are one entry; a
+    /// no-chord stretch has nothing to finger and is skipped.
     static func changes(_ events: [Event], from time: Double, count: Int) -> [Event] {
         var out: [Event] = []
-        for event in events where event.end > time {
+        for event in events where event.end > time && event.chord != nil {
             if let last = out.last, last.chord == event.chord { continue }
             out.append(event)
             if out.count == count { break }

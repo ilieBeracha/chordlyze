@@ -148,6 +148,8 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
               "The rail starts at the sounding chord, merges repeats, and stops at the count")
         check(SheetModel.changes(pillEvents, from: 9, count: 8).isEmpty && SheetModel.changes(pillEvents, from: -1, count: 8).first?.start == 0,
               "Nothing past the chart; before it, the first chord to come")
+        let withRest = SheetModel.events(chart([["start": 0, "end": 2, "label": "C:maj"], ["start": 2, "end": 4, "label": "N"], ["start": 4, "end": 6, "label": "G:maj"]]))
+        check(SheetModel.changes(withRest, from: 2.5, count: 8).map(\.start) == [4], "A no-chord stretch is not a card")
         // A word-timed line with a long pause that carries chord changes splits around an instrumental.
         let paused = SheetModel.build(analysis: chart([["start": 0, "end": 2, "label": "C:maj"], ["start": 2, "end": 5, "label": "G:maj"],
                                                        ["start": 5, "end": 8, "label": "A:min"], ["start": 8, "end": 20, "label": "F:maj"]]),
