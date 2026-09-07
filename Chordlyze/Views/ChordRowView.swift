@@ -44,7 +44,8 @@ struct ChordRowView: View {
     var wordPlayhead: Double? = nil
 
     private var rtl: Bool { row.text.isRTLText }
-    private var active: Bool { playhead.map(row.contains) ?? false }
+    /// With no playhead nothing is being sung, and no line sits back.
+    private var active: Bool { playhead.map(row.contains) ?? true }
 
     var body: some View {
         VStack(alignment: rtl ? .trailing : .leading, spacing: style == .sheet ? 4 : 6) {

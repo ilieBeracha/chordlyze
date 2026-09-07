@@ -9,12 +9,8 @@ struct SpotifyLiveView: View {
     var body: some View {
         Group {
             if let playing = nowPlaying.playing {
-                let store = SongSheetStore.shared(for: SongDescriptor(track: playing.track))
-                LiveSongView(store: store, onSeek: { await nowPlaying.seek(to: $0) },
-                             playbackNote: nowPlaying.playbackNote) {
-                    nowPlaying.livePosition().map(store.timing.chartTime)
-                }
-                .id(playing.track.id)
+                AnalysisTabsView(song: SongDescriptor(track: playing.track))
+                    .id(playing.track.id)
             } else {
                 WaitingView(title: nowPlaying.needsReauth ? "Reconnect Spotify" : "Nothing playing",
                             subtitle: "", message: nowPlaying.playbackNote ?? "Play something on Spotify.", spinning: false)
