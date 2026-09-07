@@ -37,6 +37,12 @@ struct SongSheetPreview: View {
                                  trackID: store.song.id, songStore: store, nowPlaying: player)
                 } else {
                     AnalysisTabsView(song: store.song, store: store, nowPlaying: player)
+                        .task {
+                            // `--song-sheet-preview-playing`: the fake device starts at once, so
+                            // the sheet lighting up in place can be checked without a tap.
+                            guard ProcessInfo.processInfo.arguments.contains("--song-sheet-preview-playing") else { return }
+                            try? await player.play(trackID: store.song.id, at: 0)
+                        }
                 }
             }.background(.black)
                 .onChange(of: mode) { _, value in

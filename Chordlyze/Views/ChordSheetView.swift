@@ -11,31 +11,48 @@ struct AnalysisTabsView: View {
     @State private var showLive = false
     @State private var starting = false
     @State private var startError: String?
+    /// While this song plays: scroll the sheet so the sounding row stays in view.
+    @State private var follow = false
+    @AppStorage("chordLead") private var lead = 0.0
 
     /// The Spotify poller behind Live seeks and calibration; the offline fixture passes its own.
-    var nowPlaying: SpotifyNowPlaying = .shared
+    @ObservedObject var nowPlaying: SpotifyNowPlaying
 
     init(song: SongDescriptor, store: SongSheetStore? = nil, nowPlaying: SpotifyNowPlaying = .shared) {
         _store = StateObject(wrappedValue: store ?? SongSheetStore.shared(for: song))
-        self.nowPlaying = nowPlaying
+        _nowPlaying = ObservedObject(wrappedValue: nowPlaying)
     }
+
+    /// Spotify has this song up, playing or paused: the sheet follows it in
+    /// place, whoever started it. No mode to enter.
+    private var songIsUp: Bool { store.canPractice && nowPlaying.playing?.track.id == store.song.id }
 
     var body: some View {
         VStack(spacing: 0) {
             SongSheetHeader(store: store)
             Rectangle().fill(Palette.separator).frame(height: 0.5)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    if store.canPractice { toolbar }
-                    SongSheetStatus(store: store)
-                    ChordSheetView(store: store, onChordTap: { selectedChord = SelectedChord(name: $0) },
-                        onPracticeRow: store.canPractice ? { row in
-                            practiceRange = row.start...min(row.end, store.analysis?.coverageEnd ?? row.end)
-                        } : nil)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    if songIsUp {
+                        TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+                            let position = max(0, (nowPlaying.livePosition().map(store.timing.chartTime) ?? 0) + lead)
+                            let activeID = SheetModel.activeRow(store.rows, at: position)?.id
+                            page(playhead: position)
+                                .onChange(of: activeID, initial: true) { _, id in
+                                    guard follow, let id else { return }
+                                    withAnimation(.easeInOut(duration: 0.4)) { proxy.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.32)) }
+                                }
+                                .onChange(of: follow) { _, on in
+                                    guard on, let id = activeID else { return }
+                                    withAnimation(.easeInOut(duration: 0.4)) { proxy.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.32)) }
+                                }
+                        }
+                    } else {
+                        page(playhead: nil)
+                    }
                 }
-                .padding(20)
+                .refreshable { store.refresh() }
             }
-            .refreshable { store.refresh() }
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
@@ -57,21 +74,40 @@ struct AnalysisTabsView: View {
         .observes(store)
     }
 
+    /// Toolbar, status and the chart. `playhead` is the chart second Spotify
+    /// is at (plus the display lead) while this song is up, else nil.
+    private func page(playhead: Double?) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            if store.canPractice { toolbar(playhead: playhead) }
+            SongSheetStatus(store: store)
+            ChordSheetView(store: store, playhead: playhead, onChordTap: { selectedChord = SelectedChord(name: $0) },
+                onPracticeRow: store.canPractice ? { row in
+                    practiceRange = row.start...min(row.end, store.analysis?.coverageEnd ?? row.end)
+                } : nil)
+        }
+        .padding(20)
+    }
+
     /// One row under the header: play along with the song, practice, key
-    /// and capo, save. The chart starts right beneath it.
-    private var toolbar: some View {
+    /// and capo, save. The chart starts right beneath it. While the song is
+    /// up, Play along becomes the sounding chord and the next one.
+    private func toolbar(playhead: Double?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Button {
-                    playAlong()
-                } label: {
-                    Label(starting ? "Starting…" : "Play along", systemImage: "play.fill")
-                        .font(.system(size: 14, weight: .bold)).foregroundStyle(.black)
-                        .frame(maxWidth: .infinity, minHeight: 42)
-                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.spotifyGreen))
+                if let playhead {
+                    nowPlayingPill(at: playhead)
+                } else {
+                    Button {
+                        playAlong()
+                    } label: {
+                        Label(starting ? "Starting…" : "Play along", systemImage: "play.fill")
+                            .font(.system(size: 14, weight: .bold)).foregroundStyle(.black)
+                            .frame(maxWidth: .infinity, minHeight: 42)
+                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.spotifyGreen))
+                    }
+                    .buttonStyle(.plain).disabled(starting)
+                    .accessibilityIdentifier("play-along")
                 }
-                .buttonStyle(.plain).disabled(starting)
-                .accessibilityIdentifier("play-along")
                 if let chart = store.analysis {
                     NavigationLink {
                         PracticeView(analysis: chart, title: store.song.title, artist: store.song.artist,
@@ -96,20 +132,71 @@ struct AnalysisTabsView: View {
         }
     }
 
+    /// The chord Spotify is on and the one after it, over a thin progress
+    /// line; tap for the full Live page. The trailing segment toggles Follow.
+    private func nowPlayingPill(at playhead: Double) -> some View {
+        let events = SheetModel.events(store.analysis)
+        let current = SheetModel.activeEvent(events, at: playhead)?.display(transposedBy: store.shift)
+        let next = SheetModel.nextEvent(events, after: playhead)?.display(transposedBy: store.shift)
+        let duration = store.song.duration ?? store.analysis?.coverageEnd ?? 0
+        let paused = nowPlaying.playing?.isPlaying == false
+        return HStack(spacing: 0) {
+            Button {
+                showLive = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: paused ? "pause.fill" : "waveform")
+                        .font(.system(size: 12, weight: .bold)).symbolEffect(.variableColor.iterative, isActive: !paused)
+                    Text(current ?? "…").font(.system(size: 16, weight: .bold, design: .monospaced))
+                        .contentTransition(.opacity).animation(.easeInOut(duration: 0.2), value: current)
+                    if let next {
+                        Text(next).font(.system(size: 13, weight: .semibold, design: .monospaced)).opacity(0.55)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(.black).lineLimit(1)
+                .padding(.horizontal, 12).frame(minWidth: 118, maxWidth: .infinity, minHeight: 42)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).accessibilityIdentifier("now-playing")
+            Rectangle().fill(.black.opacity(0.18)).frame(width: 1, height: 22)
+            Button {
+                follow.toggle()
+            } label: {
+                Image(systemName: "text.line.first.and.arrowtriangle.forward")
+                    .font(.system(size: 13, weight: .bold)).foregroundStyle(.black.opacity(follow ? 1 : 0.4))
+                    .frame(width: 40, height: 42).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).accessibilityIdentifier("follow-toggle")
+            .accessibilityLabel(follow ? "Stop following" : "Follow the song")
+        }
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.spotifyGreen))
+        .overlay(alignment: .bottomLeading) {
+            if duration > 0 {
+                GeometryReader { geo in
+                    Rectangle().fill(.black.opacity(0.35))
+                        .frame(width: geo.size.width * min(1, playhead / duration), height: 2)
+                }
+                .frame(height: 2)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
     private func tool(_ title: String) -> some View {
         Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
             .frame(maxWidth: .infinity, minHeight: 42)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.card))
     }
 
-    /// Start the song on this phone's Spotify and follow it live.
+    /// Start the song on this phone's Spotify. The sheet lights up in place
+    /// once the poller sees it; Live is one tap on the pill.
     private func playAlong() {
         starting = true
         startError = nil
         Task {
             do {
                 try await nowPlaying.play(trackID: store.song.id, at: 0)
-                showLive = true
             } catch {
                 startError = error.localizedDescription
             }

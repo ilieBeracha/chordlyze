@@ -75,6 +75,12 @@ enum SheetModel {
     static func activeRow(_ rows: [Row], at time: Double) -> Row? {
         rows.first { $0.contains(time) }
     }
+    /// The next change of chord after `time`: a following event with the same
+    /// chord (a bass or voicing the sheet shows alike) is not "next".
+    static func nextEvent(_ events: [Event], after time: Double) -> Event? {
+        let sounding = activeEvent(events, at: time)?.chord
+        return events.first { $0.start > time && $0.chord != sounding }
+    }
 
     static func build(analysis: ChordAnalysis?, lines: [LyricLine], duration: Double?) -> [Row] {
         let events = events(analysis)

@@ -136,7 +136,7 @@ struct ChordLyricLine: View {
                 ForEach(placed) { chord in
                     ChordChip(name: chord.event.display(transposedBy: transposeBy),
                               active: playhead.map(chord.event.contains) ?? false,
-                              style: style, onTap: onChordTap, verdict: verdict?(chord.event.start))
+                              style: style, playing: playhead != nil, onTap: onChordTap, verdict: verdict?(chord.event.start))
                 }
             }
         }
