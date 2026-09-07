@@ -17,8 +17,10 @@ struct ChordRowView: View {
         var wordFont: Font { wordFont(active: false) }
         /// Live: the sung line is white and bold, the others lighter grey.
         func wordFont(active: Bool) -> Font {
+            // One size for every live row: the sung line is lifted by colour and a
+            // small animated scale, never by a font change that reflows the words.
             self == .sheet ? .system(size: 18, design: .rounded)
-                : .system(size: active ? 26 : 23, weight: active ? .bold : .regular, design: .rounded)
+                : .system(size: 24, weight: .semibold, design: .rounded)
         }
         func wordColor(active: Bool) -> Color {
             self == .sheet ? Palette.nearWhite : (active ? .white : Palette.lyricDim)
@@ -51,7 +53,7 @@ struct ChordRowView: View {
                                playhead: playhead, style: style, active: active, pending: row.chords.isEmpty && row.held == nil,
                                onChordTap: onChordTap, onLyricTap: onLyricTap, verdict: verdict,
                                rowStart: row.start, rowEnd: row.end, wordTimes: row.words?.map(\.time),
-                               wordPlayhead: wordPlayhead)
+                               wordPlayhead: wordPlayhead, wordEnds: row.words?.map(\.end))
                     .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
             } else {
                 // A wordless stretch is its chords on a line, nothing more; the

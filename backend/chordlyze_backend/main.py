@@ -384,6 +384,8 @@ def finish_song(body: WorkerUpdate, authorization: str | None = Header(default=N
 class AlignedWord(BaseModel):
     time: float = Field(ge=0, allow_inf_nan=False)
     text: str = Field(min_length=1, max_length=200)
+    # When the word stops sounding; absent for words the transcript did not hear.
+    end: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 class AlignedLine(BaseModel):

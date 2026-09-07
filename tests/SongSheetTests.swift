@@ -116,6 +116,17 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(SheetModel.activeRow(rows, at: 9)?.id == 8, "Live selects current row by interval")
         check(SheetModel.activeRow(rows, at: 20) == nil, "Live does not hold the last lyric forever past song end")
         check(SheetModel.activeRow(rows, at: 3)?.id == 2, "Backward seek selects the earlier line")
+        // A word-timed line with a long pause that carries chord changes splits around an instrumental.
+        let paused = SheetModel.build(analysis: chart([["start": 0, "end": 2, "label": "C:maj"], ["start": 2, "end": 5, "label": "G:maj"],
+                                                       ["start": 5, "end": 8, "label": "A:min"], ["start": 8, "end": 20, "label": "F:maj"]]),
+            lines: [LyricLine(time: 1, text: "When when did it", words: [WordStamp(time: 1, text: "When", end: 1.4), WordStamp(time: 9, text: "when"),
+                                                                        WordStamp(time: 9.5, text: "did"), WordStamp(time: 10, text: "it")])], duration: 20)
+        check(paused.map(\.text) == ["", "When", "", "when did it", "", ""], "The pause after the first word becomes its own row")
+        check(paused[2].chords.map { $0.event.chord?.display } == ["Am", "F"] && paused[1].chords.map { $0.event.chord?.display } == ["G"],
+              "Chords changed during the pause sit in the pause row; a change while the word sounds stays above it")
+        let brief = SheetModel.build(analysis: chart([["start": 0, "end": 20, "label": "C:maj"]]),
+            lines: [LyricLine(time: 1, text: "When when", words: [WordStamp(time: 1, text: "When"), WordStamp(time: 9, text: "when")])], duration: 20)
+        check(brief.filter { !$0.text.isEmpty }.count == 1, "A pause with no chord change does not split the line")
         // Beat grid: 120 BPM, chord changes on beats 4, 8, 12 (index 3 mod 4 = 3) -> those are downbeats.
         let beats = (0..<32).map { Double($0) * 0.5 }
         let gridChart: ChordAnalysis = decode(["chords": [["start": 0, "end": 1.53, "label": "C:maj"], ["start": 1.53, "end": 3.48, "label": "G:maj"],
