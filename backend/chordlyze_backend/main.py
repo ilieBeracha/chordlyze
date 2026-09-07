@@ -53,6 +53,7 @@ from .analysis.provenance import (ANALYSIS_VERSION, MODEL_QUALITIES, MODEL_RANK,
                                   MODEL_REVISIONS, is_current, quality)
 from .analysis.keyfinder import analyze
 from .auth import current_user
+from .stems import router as isolation_router, StemJobs
 from .song_jobs import SongJobs, generation, library_lock
 from .users import UserLibrary
 
@@ -76,7 +77,8 @@ def health() -> dict:
     return {"status": "ok", "api_version": app.version,
             "release": os.environ.get("CHORDLYZE_RELEASE", "development"),
             "analysis_version": ANALYSIS_VERSION, "library_generation": generation(CACHE_DIR),
-            "song_worker_online": SongJobs(CACHE_DIR).worker_online()}
+            "song_worker_online": SongJobs(CACHE_DIR).worker_online(),
+            "stem_worker_online": StemJobs(CACHE_DIR).online()}
 
 
 
@@ -1010,3 +1012,6 @@ async def practice_take(
             **recognition.metadata(), "reference_analysis_version": reference.get("analysis_version", 0),
             "reference_model_revision": reference.get("model_revision"),
             "reference_chart_revision": reference["chart_revision"]}
+
+# Isolated instrument mixes use their own durable queue and worker.
+app.include_router(isolation_router(lambda: CACHE_DIR, _track_cache_path, _worker_authorized))

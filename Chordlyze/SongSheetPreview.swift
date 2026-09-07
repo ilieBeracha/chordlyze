@@ -8,7 +8,7 @@ struct SongSheetPreview: View {
     /// Practice preview: a fake Spotify device that starts wherever it is told
     /// and reports its position like the real poller, without any network.
     @StateObject private var player: SpotifyNowPlaying
-    @State private var mode = ProcessInfo.processInfo.arguments.contains("--song-sheet-preview-live") ? "Live" : "Sheet"
+    @State private var mode = ProcessInfo.processInfo.arguments.contains("--song-sheet-preview-live") ? "Live" : ProcessInfo.processInfo.arguments.contains("--practice-setup-preview") ? "Practice" : "Sheet"
     @State private var paused = false
     @State private var anchor = ContinuousClock.now
     @State private var offset = 0.0
@@ -22,11 +22,13 @@ struct SongSheetPreview: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                if !ProcessInfo.processInfo.arguments.contains("--practice-setup-preview") && !ProcessInfo.processInfo.arguments.contains("--isolation-preview") {
                 Picker("Display", selection: $mode) {
                     Text("Sheet").tag("Sheet")
                     Text("Live").tag("Live")
                     Text("Practice").tag("Practice")
                 }.pickerStyle(.segmented).padding(12)
+                }
                 if ProcessInfo.processInfo.arguments.contains("--spotify-device-recovery-preview"), mode != "Practice" {
                     ScrollView {
                         SpotifyDeviceRecoveryView(nowPlaying: player, trackID: store.song.id, retryTitle: "Retry practice") {
@@ -35,6 +37,8 @@ struct SongSheetPreview: View {
                     }.observes(store)
                 } else if ProcessInfo.processInfo.arguments.contains("--chord-corrections-preview") {
                     ChordCorrectionsView(store: store)
+                } else if ProcessInfo.processInfo.arguments.contains("--isolation-preview") {
+                    InstrumentIsolationView(store: store)
                 } else if mode == "Live" {
                     Button(paused ? "Resume preview" : "Pause preview") {
                         offset = position(); anchor = .now; paused.toggle()
@@ -148,8 +152,8 @@ struct SongSheetPreview: View {
                 ["time": 30, "text": "The final line keeps its harmony"]
             ]
         ])
-        let song = SongDescriptor(trackID: "offline-preview", title: mapPreview ? "Song map · sample" : "Song sheet preview",
-                                  artist: "Offline regression fixture", duration: 40)
+        let song = SongDescriptor(trackID: "offline-preview", title: arguments.contains("--practice-setup-preview") ? "Love by the Hour" : mapPreview ? "Song map · sample" : "Song sheet preview",
+                                  artist: arguments.contains("--practice-setup-preview") ? "" : "Offline regression fixture", duration: 40)
         if arguments.contains("--song-sheet-preview-delayed") || arguments.contains("--song-sheet-preview-missing") {
             // Chart arrives after three polls, as it does for a fresh song.
             // "missing": nothing happens until Analyze is tapped, as in the app.
@@ -187,7 +191,7 @@ struct SongSheetPreview: View {
                     }]])
             return status
         }
-        return SongSheetStore(song: song, analysis: chart,
+        return SongSheetStore(song: song, analysis: arguments.contains("--practice-setup-preview") ? status.analysis : chart,
                               service: .init(request: { _ in status }, status: { _ in status }, lyrics: { _ in words },
                                              save: { _, _ in }, saveTiming: { _, _ in },
                                              editBoundary: { _, edit in

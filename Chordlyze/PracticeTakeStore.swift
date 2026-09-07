@@ -14,14 +14,14 @@ struct PracticePlan: Codable, Equatable {
     let chartRevision: String?
     var chartRate: Double { rate / (timingScale ?? 1) }
 
-    init(start: Double, end: Double, rate: Double = 1, transpose: Int = 0, capo: Int = 0, timingScale: Double = 1, chartRevision: String? = nil) throws {
+    init(start: Double, end: Double, rate: Double = 1, transpose: Int = 0, capo: Int = 0, timingScale: Double = 1, chartRevision: String? = nil, limitRecordingDuration: Bool = true) throws {
         guard start.isFinite, end.isFinite, rate.isFinite, start >= 0, end > start,
               (0.5...1).contains(rate), timingScale.isFinite, (0.9...1.1).contains(timingScale),
               (-12...12).contains(transpose), (0...9).contains(capo) else {
             throw NSError(domain: "Practice", code: 1, userInfo: [NSLocalizedDescriptionKey: "Choose a valid time range, key and pace before recording."])
         }
         self.start = start
-        self.end = min(end, start + 600 * rate / timingScale)
+        self.end = limitRecordingDuration ? min(end, start + 600 * rate / timingScale) : end
         self.rate = rate
         self.transpose = transpose
         self.capo = capo

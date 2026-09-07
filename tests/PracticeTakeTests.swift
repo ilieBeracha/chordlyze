@@ -27,6 +27,12 @@ struct Track {
         precondition(plan.beats([10, 20, 21, 22, 40, 41]) == [0, 2, 4])
         let capped = try PracticePlan(start: 0, end: 1000, rate: 0.5)
         precondition(capped.recordingDuration == 600)
+        // Playing along has no file-size cap; its clock still follows the
+        // chosen pace and timing calibration, including the last passage.
+        let listening = try PracticePlan(start: 0, end: 1000, rate: 0.5, timingScale: 1.04, limitRecordingDuration: false)
+        precondition(listening.end == 1000 && abs(listening.recordingDuration - 2080) < 1e-8)
+        precondition(abs(listening.position(elapsed: 1040) - 500) < 1e-8)
+        precondition(listening.position(elapsed: 3000) == 1000)
         for (start, end, rate) in [(0.0, 0.0, 1.0), (-1, 4, 1), (0, 4, 0), (0, 4, 1.5), (.nan, 4, 1), (0, .infinity, 1)] {
             do { _ = try PracticePlan(start: start, end: end, rate: rate); fatalError("Invalid plan accepted") }
             catch {}

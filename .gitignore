@@ -11,3 +11,4 @@ backend/backups/
 backend/.env
 backend/.env.*
 backend/worker-logs/
+backend/.stems/
