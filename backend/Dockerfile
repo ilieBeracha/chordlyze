@@ -28,13 +28,8 @@ COPY chordlyze_backend/analysis/rhythm.py chordlyze_backend/analysis/rhythm_work
 ENV CHORDLYZE_RHYTHM_DIR=/opt/chordlyze/rhythm
 RUN PYTHON=python3.11 bash scripts/setup_rhythm.sh "$CHORDLYZE_RHYTHM_DIR"
 
-COPY requirements-stems.txt .
-COPY scripts/setup_stems.sh ./scripts/setup_stems.sh
-ENV CHORDLYZE_STEMS_DIR=/opt/chordlyze/stems
-RUN PYTHON=python3.11 bash scripts/setup_stems.sh "$CHORDLYZE_STEMS_DIR"
-
 COPY chordlyze_backend ./chordlyze_backend
-COPY song_worker.py stem_worker.py ./
+COPY song_worker.py ./song_worker.py
 COPY scripts/reset_song_library.py scripts/claim_library.py scripts/backfill_genres.py scripts/refresh_lyrics.py ./scripts/
 
 ARG APP_REVISION=unknown

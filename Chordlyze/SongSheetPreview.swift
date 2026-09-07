@@ -22,7 +22,7 @@ struct SongSheetPreview: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if !ProcessInfo.processInfo.arguments.contains("--practice-setup-preview") && !ProcessInfo.processInfo.arguments.contains("--isolation-preview") {
+                if !ProcessInfo.processInfo.arguments.contains("--practice-setup-preview") {
                 Picker("Display", selection: $mode) {
                     Text("Sheet").tag("Sheet")
                     Text("Live").tag("Live")
@@ -37,8 +37,6 @@ struct SongSheetPreview: View {
                     }.observes(store)
                 } else if ProcessInfo.processInfo.arguments.contains("--chord-corrections-preview") {
                     ChordCorrectionsView(store: store)
-                } else if ProcessInfo.processInfo.arguments.contains("--isolation-preview") {
-                    InstrumentIsolationView(store: store)
                 } else if mode == "Live" {
                     Button(paused ? "Resume preview" : "Pause preview") {
                         offset = position(); anchor = .now; paused.toggle()

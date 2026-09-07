@@ -5,6 +5,13 @@ struct ChordlyzeApp: App {
     @StateObject private var auth = SpotifyAuth()
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        // Remove downloaded mixes left by the retired instrument-isolation feature.
+        if let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+            try? FileManager.default.removeItem(at: cache.appendingPathComponent("Isolation", isDirectory: true))
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             Group {
