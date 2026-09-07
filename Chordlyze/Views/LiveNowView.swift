@@ -20,6 +20,8 @@ struct LiveNowView: View {
     /// start. The range lives on the store; only the arming is view state.
     @State private var loopStart: Double?
     @State private var loopArmed = true
+    /// The strip of chord fingerings above the words; a bottom-bar toggle.
+    @AppStorage("liveChordRail") private var showRail = true
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -30,7 +32,19 @@ struct LiveNowView: View {
                 let position = max(0, min(wordPosition + lead, duration > 0 ? duration : .infinity))
                 let activeID = SheetModel.activeRow(store.rows, at: wordPosition)?.id
                 VStack(spacing: 0) {
-                    SongSheetHeader(store: store)
+                    SongSheetHeader(store: store) {
+                        HeaderCircle(icon: "guitars", on: showRail, label: showRail ? "Hide chord shapes" : "Show chord shapes",
+                                     identifier: "chord-rail-toggle") {
+                            withAnimation(.easeInOut(duration: 0.25)) { showRail.toggle() }
+                        }
+                        if onSeek != nil {
+                            HeaderCircle(icon: "repeat", on: store.loop != nil || loopStart != nil,
+                                         label: store.loop != nil ? "Clear loop" : loopStart == nil ? "Loop from here" : "Loop until here",
+                                         identifier: store.loop != nil ? "loop-active" : "loop-start") {
+                                loopTapped(at: wordPosition)
+                            }
+                        }
+                    }
                     // Only what changes the moment: paused, reconnecting, a refused seek.
                     // Timing and edition notes live on the sheet page, not over the words.
                     if let playbackNote {
@@ -40,6 +54,11 @@ struct LiveNowView: View {
                     if seekDenied {
                         Text("Spotify could not seek. Check playback permissions or Premium.").font(.caption)
                             .foregroundStyle(Palette.secondary).padding(.horizontal, 20).padding(.bottom, 6)
+                    }
+                    if showRail {
+                        ChordRailView(events: SheetModel.events(store.analysis), position: position, transposeBy: store.shift,
+                                      onTap: { selectedChord = SelectedChord(name: $0) })
+                            .transition(.move(edge: .top).combined(with: .opacity))
                     }
                     ScrollView {
                         ChordSheetView(store: store, playhead: position, style: .live,
@@ -62,9 +81,7 @@ struct LiveNowView: View {
                         Text(mmss(position)).font(.system(size: 13, weight: .semibold, design: .monospaced))
                             .foregroundStyle(.white).accessibilityIdentifier("live-position")
                         ProgressView(value: position, total: max(1, duration)).tint(.spotifyGreen)
-                        if onSeek != nil { loopControl(at: wordPosition) } else {
-                            Text("Live").font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.secondary)
-                        }
+                        loopChip
                     }
                     .padding(.horizontal, 20).padding(.bottom, 24)
                 }
@@ -89,38 +106,32 @@ struct LiveNowView: View {
         .observes(store)
     }
 
-    /// Loop: tap A at the passage start, B at its end; the chip shows the
-    /// range and clears it. Long-pressing a line loops that line directly.
-    @ViewBuilder private func loopControl(at now: Double) -> some View {
-        if let loop = store.loop {
-            Button {
-                store.loop = nil
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "repeat").font(.system(size: 12, weight: .bold))
-                    Text("\(mmss(loop.lowerBound))–\(mmss(loop.upperBound))").monospacedDigit()
-                    Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
-                }
-                .font(.system(size: 13, weight: .semibold)).foregroundStyle(.black)
-                .padding(.vertical, 6).padding(.horizontal, 10)
-                .background(Capsule().fill(Color.spotifyGreen))
-            }
-            .buttonStyle(.plain).accessibilityIdentifier("loop-active")
-        } else if let loopStart {
-            Button {
-                if now > loopStart + 1 { store.loop = loopStart...now; self.loopStart = nil; loopArmed = true }
-            } label: {
-                Text("A \(mmss(loopStart)) · tap B").font(.system(size: 13, weight: .semibold)).monospacedDigit()
-                    .foregroundStyle(Color.spotifyGreen)
-            }
-            .buttonStyle(.plain)
+    /// The loop circle in the header: first tap marks A, the second marks B
+    /// and starts the loop, a tap on a running loop clears it. Long-pressing
+    /// a line loops that line directly.
+    private func loopTapped(at now: Double) {
+        if store.loop != nil {
+            store.loop = nil
+        } else if let start = loopStart {
+            guard now > start + 1 else { return }
+            store.loop = start...now; loopStart = nil; loopArmed = true
         } else {
-            Button {
-                loopStart = now
-            } label: {
-                Label("Loop", systemImage: "repeat").font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.secondary)
+            loopStart = now
+        }
+    }
+
+    /// Under the progress line, only while a loop is being set or running.
+    @ViewBuilder private var loopChip: some View {
+        if let loop = store.loop {
+            HStack(spacing: 5) {
+                Image(systemName: "repeat").font(.system(size: 11, weight: .bold))
+                Text("\(mmss(loop.lowerBound))–\(mmss(loop.upperBound))").monospacedDigit()
             }
-            .buttonStyle(.plain).accessibilityIdentifier("loop-start")
+            .font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.spotifyGreen)
+            .accessibilityIdentifier("loop-range")
+        } else if let loopStart {
+            Text("A \(mmss(loopStart)) · tap again at B").font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                .foregroundStyle(Color.spotifyGreen)
         }
     }
 }

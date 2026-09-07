@@ -116,12 +116,40 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(SheetModel.activeRow(rows, at: 9)?.id == 8, "Live selects current row by interval")
         check(SheetModel.activeRow(rows, at: 20) == nil, "Live does not hold the last lyric forever past song end")
         check(SheetModel.activeRow(rows, at: 3)?.id == 2, "Backward seek selects the earlier line")
+        // Guitar shapes: every root with a known quality has one, and every fretted note is a chord tone.
+        let openStrings = [4, 9, 2, 7, 11, 4]
+        var shapes = 0
+        for root in Chord.names {
+            for suffix in ["", "m", "7", "maj7", "m7", "sus2", "sus4", "7sus4", "°", "°7", "ø7", "+", "6", "m6", "mMaj7", "9", "maj9", "m9", "11", "13"] {
+                let name = root + suffix
+                guard let chord = Chord(display: name), let tones = chord.pitchClasses else { fatalError("\(name) should parse") }
+                guard let shape = ChordShapes.guitar(name) else { fatalError("\(name) has no shape") }
+                shapes += 1
+                check(shape.frets.count == 6 && shape.top <= 15, "\(name): six strings within the neck")
+                let pressed = shape.frets.filter { $0 > 0 }
+                check(pressed.allSatisfy { $0 >= shape.baseFret && $0 < shape.baseFret + 4 }, "\(name): fits the four-fret grid from \(shape.baseFret)")
+                let sounding = zip(openStrings, shape.frets).compactMap { $1 < 0 ? nil : ($0 + $1) % 12 }
+                check(sounding.allSatisfy { tones.contains($0) }, "\(name): \(shape.frets) plays only chord tones")
+                check(sounding.contains(chord.root), "\(name): the root sounds")
+            }
+        }
+        check(shapes == 240, "Twelve roots by twenty qualities")
+        check(ChordShapes.guitar("C") == ChordShapes.GuitarShape([-1, 3, 2, 0, 1, 0]) && ChordShapes.guitar("Cm7/A#") == ChordShapes.guitar("Cm7"),
+              "Open shapes stay the known ones; a slash chord plays its root position")
+        check(ChordShapes.guitar("Cm") == ChordShapes.GuitarShape([-1, 3, 5, 5, 4, 3], base: 3) && ChordShapes.guitar("N.C.") == nil,
+              "Cm is the A-form barre at the third fret; no chord, no shape")
         // The now-playing pill: the sounding chord and the next change of chord.
         let pillEvents = SheetModel.events(chart([["start": 0, "end": 2, "label": "C:maj"], ["start": 2, "end": 4, "label": "C:maj"],
                                                   ["start": 4, "end": 6, "label": "G:maj"], ["start": 6, "end": 8, "label": "A:min"]]))
         check(SheetModel.nextEvent(pillEvents, after: 1)?.start == 4, "A following event with the same chord is not the next chord")
         check(SheetModel.nextEvent(pillEvents, after: 5)?.start == 6 && SheetModel.nextEvent(pillEvents, after: 7) == nil,
               "The next chord after the sounding one; none at the end of the chart")
+        check(SheetModel.changes(pillEvents, from: 1, count: 8).map(\.start) == [0, 4, 6] && SheetModel.changes(pillEvents, from: 3, count: 2).map(\.start) == [2, 4],
+              "The rail starts at the sounding chord, merges repeats, and stops at the count")
+        check(SheetModel.changes(pillEvents, from: 9, count: 8).isEmpty && SheetModel.changes(pillEvents, from: -1, count: 8).first?.start == 0,
+              "Nothing past the chart; before it, the first chord to come")
+        let withRest = SheetModel.events(chart([["start": 0, "end": 2, "label": "C:maj"], ["start": 2, "end": 4, "label": "N"], ["start": 4, "end": 6, "label": "G:maj"]]))
+        check(SheetModel.changes(withRest, from: 2.5, count: 8).map(\.start) == [4], "A no-chord stretch is not a card")
         // A word-timed line with a long pause that carries chord changes splits around an instrumental.
         let paused = SheetModel.build(analysis: chart([["start": 0, "end": 2, "label": "C:maj"], ["start": 2, "end": 5, "label": "G:maj"],
                                                        ["start": 5, "end": 8, "label": "A:min"], ["start": 8, "end": 20, "label": "F:maj"]]),

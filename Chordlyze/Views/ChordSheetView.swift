@@ -206,8 +206,15 @@ struct AnalysisTabsView: View {
 }
 
 /// Title, artist, key and the current capo/transpose, over every song surface.
-struct SongSheetHeader: View {
+/// `trailing` holds a screen's own round controls, matching the back circle.
+struct SongSheetHeader<Trailing: View>: View {
     @ObservedObject var store: SongSheetStore
+    @ViewBuilder var trailing: () -> Trailing
+
+    init(store: SongSheetStore, @ViewBuilder trailing: @escaping () -> Trailing) {
+        self.store = store
+        self.trailing = trailing
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -220,9 +227,39 @@ struct SongSheetHeader: View {
                     .filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.system(size: 12)).foregroundStyle(Palette.secondary).lineLimit(1)
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
+            HStack(spacing: 8) { trailing() }
         }
         .padding(.horizontal, 20).padding(.vertical, 12)
+    }
+}
+
+extension SongSheetHeader where Trailing == EmptyView {
+    init(store: SongSheetStore) { self.init(store: store) { EmptyView() } }
+}
+
+/// A round header control the size of the back circle; green when on.
+struct HeaderCircle: View {
+    let icon: String
+    var on = false
+    var label: String
+    var identifier: String? = nil
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(on ? .black : .white)
+                .frame(width: 38, height: 38)
+                .background(Circle().fill(on ? Color.spotifyGreen : Palette.elevated))
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.2), value: on)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(identifier ?? "")
     }
 }
 
