@@ -122,8 +122,13 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
             lines: [LyricLine(time: 1, text: "When when did it", words: [WordStamp(time: 1, text: "When", end: 1.4), WordStamp(time: 9, text: "when"),
                                                                         WordStamp(time: 9.5, text: "did"), WordStamp(time: 10, text: "it")])], duration: 20)
         check(paused.map(\.text) == ["", "When", "", "when did it", "", ""], "The pause after the first word becomes its own row")
-        check(paused[2].chords.map { $0.event.chord?.display } == ["Am", "F"] && paused[1].chords.map { $0.event.chord?.display } == ["G"],
+        check(paused[2].chords.map { $0.event.chord?.display } == ["Am"] && paused[1].chords.map { $0.event.chord?.display } == ["G"],
               "Chords changed during the pause sit in the pause row; a change while the word sounds stays above it")
+        check(paused[3].start == 8 && paused[3].chords.map { $0.event.chord?.display } == ["F"] && paused[3].chords.first?.wordIndex == 0,
+              "The chord sounding when the next word is sung heads that word's row, above the word")
+        let lone = SheetModel.build(analysis: chart([["start": 0, "end": 3, "label": "C:maj"], ["start": 3, "end": 20, "label": "F:maj"]]),
+            lines: [LyricLine(time: 1, text: "When when", words: [WordStamp(time: 1, text: "When"), WordStamp(time: 9, text: "when")])], duration: 20)
+        check(lone.filter { !$0.text.isEmpty }.count == 1, "A pause whose only change is the chord under the next word does not split")
         let brief = SheetModel.build(analysis: chart([["start": 0, "end": 20, "label": "C:maj"]]),
             lines: [LyricLine(time: 1, text: "When when", words: [WordStamp(time: 1, text: "When"), WordStamp(time: 9, text: "when")])], duration: 20)
         check(brief.filter { !$0.text.isEmpty }.count == 1, "A pause with no chord change does not split the line")

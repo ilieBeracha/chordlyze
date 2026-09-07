@@ -122,6 +122,9 @@ enum SheetModel {
                 // A long pause inside a line that carries chord changes is sung as
                 // two parts with an instrumental between; drawn that way, the
                 // chords of the pause are not stacked above the last word before it.
+                // The chord sounding when the next word is sung heads that word's
+                // row, above the word, so the pause row ends where it starts; a
+                // pause whose only change is that chord does not split.
                 var partStart = start
                 var part: [WordStamp] = []
                 for (index, word) in words.enumerated() {
@@ -129,11 +132,11 @@ enum SheetModel {
                     guard index + 1 < words.count else { break }
                     let nextOnset = words[index + 1].time
                     let sungEnd = min(nextOnset, (word.end ?? word.time) + lastWordLength)
-                    let changes = events.contains { $0.start > sungEnd && $0.start < nextOnset }
-                    if nextOnset - sungEnd >= pauseSplit, changes {
+                    let changes = events.filter { $0.start > sungEnd && $0.start < nextOnset }.map(\.start)
+                    if nextOnset - sungEnd >= pauseSplit, changes.count >= 2, let resume = changes.last {
                         append(start: partStart, end: sungEnd, text: part.map(\.text).joined(separator: " "), words: part)
-                        append(start: sungEnd, end: nextOnset)
-                        partStart = nextOnset
+                        append(start: sungEnd, end: resume)
+                        partStart = resume
                         part = []
                     }
                 }
