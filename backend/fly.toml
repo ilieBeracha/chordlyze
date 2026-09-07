@@ -6,7 +6,6 @@ kill_timeout = "30s"
 [processes]
   app = "uvicorn chordlyze_backend.main:app --host 0.0.0.0 --port 8080"
   worker = "python -u song_worker.py"
-  stems = "python -u stem_worker.py"
 
 [env]
   CHORDLYZE_AUDIO_PROVIDER = "apify"
@@ -54,12 +53,3 @@ kill_timeout = "30s"
 [[restart]]
   policy = "always"
   processes = ["worker"]
-
-[[vm]]
-  processes = ["stems"]
-  size = "performance-1x"
-  memory = "4gb"
-
-[[restart]]
-  policy = "always"
-  processes = ["stems"]

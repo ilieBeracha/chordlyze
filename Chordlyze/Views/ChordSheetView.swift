@@ -181,15 +181,6 @@ struct AnalysisTabsView: View {
                 }
                 .buttonStyle(.plain).accessibilityIdentifier("save-toggle")
             }
-            if store.analysis?.audioSha256 != nil {
-                NavigationLink {
-                    InstrumentIsolationView(store: store)
-                } label: {
-                    Label("Instrument isolation", systemImage: "slider.horizontal.3")
-                        .font(.subheadline.weight(.semibold)).foregroundStyle(Color.spotifyGreen)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                }.buttonStyle(.plain).accessibilityIdentifier("open-instrument-isolation")
-            }
             if nowPlaying.isControlling {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)

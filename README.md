@@ -79,7 +79,3 @@ docker run --rm -p 8787:8080 -v chordlyze-cache:/data chordlyze-backend
 ```
 
 The image includes both recognizers. Recognition loads lazily and the rich worker stays resident across requests. Cache files are saved by track ID and ISRC, with normalized PCM hashes, model revisions and analysis versions for traceability. New song requests use durable on-demand jobs; a library reset rotates its generation and prevents old jobs from restoring cleared analyses.
-
-### Instrument isolation
-
-Local implementation: solo or mute guitar, bass, drums, vocals, or piano, with slower playback and synchronized chord loops. See [setup, architecture, limits, and verification](docs/instrument-isolation/README.md). Requires the dedicated stems worker; not included in the last TestFlight release.
