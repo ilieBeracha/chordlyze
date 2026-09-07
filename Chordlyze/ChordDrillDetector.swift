@@ -13,6 +13,8 @@ struct DrillSnapshot: Equatable, Sendable {
     let evidence: DrillEvidence
     let current: String?
     let changes: Int
+    /// First acceptance in captured-audio time, retained across UI coalescing.
+    var recognizedAt: Double? = nil
 }
 
 enum DrillConfigurationError: LocalizedError {
@@ -361,6 +363,7 @@ final class ChordDrillDetector {
     private var candidate: (name: String, since: Double)?
     private var previousAccepted: String?
     private(set) var current: String?
+    private var recognizedAt: Double?
     private(set) var changes = 0
     private var noiseFloor: Float = 0.00015
     private var smoothedChroma: [Float]?
@@ -395,6 +398,7 @@ final class ChordDrillDetector {
         recentPower = 0
         candidate = nil
         current = nil
+        recognizedAt = nil
         smoothedChroma = nil
         analyzer.reset()
     }
@@ -446,18 +450,20 @@ final class ChordDrillDetector {
 
     private func accept(_ evidence: DrillEvidence, at time: Double) -> DrillSnapshot {
         if case .chord(let name) = evidence, classifier.targets.isEmpty || classifier.targets.contains(name) {
-            if candidate?.name != name { candidate = (name, time); current = nil }
+            if candidate?.name != name { candidate = (name, time); current = nil; recognizedAt = nil }
             if let candidate, time - candidate.since >= 0.07 {
                 if previousAccepted != name {
                     if previousAccepted != nil { changes += 1 }
                     previousAccepted = name
                 }
+                if current == nil { recognizedAt = time }
                 current = name
             }
         } else {
             candidate = nil
             current = nil
+            recognizedAt = nil
         }
-        return DrillSnapshot(time: time, evidence: evidence, current: current, changes: changes)
+        return DrillSnapshot(time: time, evidence: evidence, current: current, changes: changes, recognizedAt: recognizedAt)
     }
 }

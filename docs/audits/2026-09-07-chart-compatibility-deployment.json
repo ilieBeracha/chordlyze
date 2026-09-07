@@ -1,0 +1,25 @@
+{
+  "verified_at": "2026-09-07T12:34:19.393723+00:00",
+  "release": "2026-09-07-chart-compatibility-270191c3d736",
+  "image": "registry.fly.io/chordlyze-api:deployment-01M1XXQ4JN7W6T141X5RQ90Q3B",
+  "image_digest": "sha256:c87c265e0684b3e78f734ed22e8903bd5088b87055d159c3ef4162a371917fb0",
+  "scope": "API compatibility fix; existing version 3 worker unchanged",
+  "before": {
+    "saved_charts": 121,
+    "visible_charts": 1
+  },
+  "after": {
+    "saved_charts": 121,
+    "visible_charts": 121,
+    "ready_charts": 121,
+    "unchanged_chords": true
+  },
+  "health": "ok",
+  "worker_online": true,
+  "library_generation": "d547948414b641659cf90a0e9e2f001e",
+  "validation": {
+    "backend_passed": 339,
+    "expected_failures": 17
+  },
+  "root_cause": "Song status required current analysis version after an optional rhythm metadata upgrade, hiding compatible version 2 chord charts."
+}

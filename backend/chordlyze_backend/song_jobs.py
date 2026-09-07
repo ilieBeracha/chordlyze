@@ -90,7 +90,7 @@ class SongJobs:
         finished record for the track, never one still queued or running."""
         with library_lock(self.directory):
             previous = self.get(song['track_id'])
-            if previous and kind == 'analysis' and not (retry and previous['state'] in ('failed', 'unavailable')):
+            if previous and kind == 'analysis' and not (retry and previous['state'] in ('failed', 'unavailable', 'ready')):
                 return previous
             if previous and kind == 'lyrics' and previous['state'] in ('queued', 'processing'):
                 return previous

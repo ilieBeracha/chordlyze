@@ -1,28 +1,43 @@
 import SwiftUI
 
-/// Home tab: what the account has been playing, cross-referenced with the
-/// analyzed library, and the songs analyzed most recently. Spotify playback
-/// shows as a mini-player above the tab bar; the page itself does not change
-/// between playing and idle.
+/// A short route back to music, followed by personal songs and recent listening.
 struct HomeView: View {
-    @EnvironmentObject var auth: SpotifyAuth
+    @EnvironmentObject private var auth: SpotifyAuth
     @ObservedObject private var nowPlaying = SpotifyNowPlaying.shared
-    /// This account's songs. Charts anyone made are joined separately.
-    @State private var library: [BackendClient.LibraryItem] = []
-    @State private var catalog: [BackendClient.LibraryItem] = []
+    @ObservedObject private var takes = PracticeTakeStore.shared
+    @ObservedObject private var artworkColors = ArtworkColor.shared
+    @State private var fallbackArtwork: HomeArtwork?
+    @StateObject private var collection: MusicCollection
     @State private var plays: [RecentPlays.Song] = []
-    @State private var recent: [SpotifyAPI.RecentPlay] = []
-    @State private var playCount = 0
-    /// The token predates the recently-played scope; a reconnect grants it.
-    @State private var playsNeedReconnect = false
-    @State private var likedCount: Int?
-    @State private var topCount: Int?
-    @State private var loaded = false
-    @State private var error: String?
+    @State private var playsError: String?
+    @State private var needsReconnect = false
+    @State private var loadingPlays = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var openSearch: () -> Void
+    var openLibrary: () -> Void
+    var openPractice: () -> Void
+    private let preview: Bool
 
-    /// Any chart on the server: a played song with a chart is ready to follow.
-    private var analyzedByTrack: [String: BackendClient.LibraryItem] {
-        Dictionary(catalog.map { ($0.trackId, $0) }, uniquingKeysWith: { a, _ in a })
+    init(openSearch: @escaping () -> Void, openLibrary: @escaping () -> Void, openPractice: @escaping () -> Void,
+         fetch: @escaping () async throws -> [BackendClient.LibraryItem] = { try await BackendClient.library() },
+         preview: Bool = false) {
+        self.openSearch = openSearch; self.openLibrary = openLibrary; self.openPractice = openPractice
+        self.preview = preview
+        _collection = StateObject(wrappedValue: MusicCollection(fetch: fetch))
+    }
+
+    private var ambientArtwork: HomeArtwork? {
+        HomeArtwork.active(
+            playing: preview ? nil : nowPlaying.playing.map { HomeArtwork(id: $0.track.id, url: $0.track.album.artworkURL) },
+            isPlaying: !preview && nowPlaying.playing?.isPlaying == true,
+            fallback: fallbackArtwork)
+    }
+
+    private var ambientColor: Color? {
+        // Debug fixtures use a clearly labeled sample wash; real sessions
+        // always extract their colors from the selected album artwork.
+        if preview && !collection.items.isEmpty { return Color(red: 0.32, green: 0.18, blue: 0.14) }
+        return ambientArtwork.flatMap { artworkColors.color(for: $0.id) }
     }
 
     var body: some View {
@@ -30,459 +45,205 @@ struct HomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     header
-                    statTiles
-                    insights
-                    playedRecently
-                    lastAnalyzed
-                    if nowPlaying.needsReauth {
-                        reconnectRow("Spotify stopped answering. Reconnect to see what's playing.")
-                    } else if nowPlaying.playing == nil {
-                        spotifyPrompt
+                    if collection.loading && collection.items.isEmpty {
+                        ProgressView("Loading your music…").frame(maxWidth: .infinity, minHeight: 180)
+                    } else if let song = collection.items.first {
+                        featuredSong(song)
+                    } else {
+                        firstSong
                     }
-                    if let error {
-                        Text(error).font(.footnote).foregroundStyle(Palette.destructive)
+                    quickActions
+                    if !preview, let take = takes.takes.first { latestTake(take) }
+                    if let error = collection.error {
+                        MusicNotice(title: "Couldn’t refresh your library", message: error,
+                                    actionTitle: "Try again") { Task { await collection.load() } }
+                    }
+                    if !collection.items.isEmpty { yourSongs }
+                    if !preview { recentlyPlayed }
+                }.padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 32)
+            }
+            .modifier(MusicSurface(ambient: ambientColor))
+            .safeAreaInset(edge: .bottom, spacing: 0) { miniPlayer }
+            .refreshable { await reload() }
+            .task(id: auth.grants) { await reload() }
+            .task(id: ambientArtwork?.id) {
+                if let artwork = ambientArtwork { await artworkColors.load(trackID: artwork.id, url: artwork.url) }
+            }
+            .onAppear { if !preview { takes.reload() } }
+            .onChange(of: collection.items.map(\.id)) { _, _ in chooseFallbackArtwork() }
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Home").font(MusicStyle.font(38, bold: true, relativeTo: .largeTitle)).tracking(-1.3)
+                    .accessibilityAddTraits(.isHeader)
+                Text("A little practice. More music.").font(MusicStyle.font(15)).foregroundStyle(MusicStyle.secondary)
+            }
+            Spacer()
+            NavigationLink { ProfileView() } label: {
+                Image(systemName: "person.crop.circle").font(.system(size: 25, weight: .regular))
+                    .frame(width: 44, height: 44).foregroundStyle(MusicStyle.ink)
+            }.buttonStyle(MusicPressStyle()).accessibilityLabel("Profile and settings")
+        }
+    }
+
+    private func featuredSong(_ song: BackendClient.LibraryItem) -> some View {
+        NavigationLink { SavedAnalysisView(item: song) } label: {
+            VStack(alignment: .leading, spacing: 22) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Back to your music").font(MusicStyle.font(14, bold: true))
+                        if let key = song.key {
+                            Text(key).font(MusicStyle.font(48, bold: true, relativeTo: .largeTitle))
+                                .tracking(-2).foregroundStyle(MusicStyle.accent)
+                                .accessibilityLabel("Key, \(key)")
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                    MusicArtwork(url: song.artworkURL, size: 88)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(song.title ?? "Unknown song")
+                        .font(MusicStyle.font(32, bold: true, relativeTo: .title)).tracking(-1).lineLimit(3)
+                    Text(song.artist ?? "").font(MusicStyle.font(16)).foregroundStyle(MusicStyle.secondary)
+                }
+                MusicRule()
+                HStack(alignment: .firstTextBaseline) {
+                    Text([song.difficulty?.level.capitalized, song.chordCount.map { "\($0) chords" }]
+                        .compactMap { $0 }.joined(separator: " · "))
+                        .font(MusicStyle.font(13)).foregroundStyle(MusicStyle.secondary)
+                    Spacer()
+                    Label("Open song", systemImage: "arrow.right").font(MusicStyle.font(15, bold: true))
+                        .foregroundStyle(MusicStyle.accent)
+                }
+            }.padding(22).foregroundStyle(MusicStyle.ink)
+                .background(MusicStyle.surface, in: RoundedRectangle(cornerRadius: 20))
+                .contentShape(RoundedRectangle(cornerRadius: 20))
+        }.buttonStyle(MusicPressStyle())
+    }
+
+    private var firstSong: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            Image(systemName: "music.note.list").font(.system(size: 36)).foregroundStyle(MusicStyle.accent)
+            Text("Start with a\nsong you love.")
+                .font(MusicStyle.font(38, bold: true, relativeTo: .largeTitle)).tracking(-1.4)
+            Text("Find its chords. Play a passage. Make it yours.")
+                .font(MusicStyle.font(16)).foregroundStyle(MusicStyle.secondary)
+            Button(action: openSearch) {
+                Label("Find a song", systemImage: "arrow.right").font(MusicStyle.font(16, bold: true))
+                    .frame(minHeight: 48).padding(.horizontal, 20)
+                    .foregroundStyle(.black).background(MusicStyle.accent, in: Capsule())
+            }.buttonStyle(MusicPressStyle())
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(24)
+            .background(MusicStyle.surface, in: RoundedRectangle(cornerRadius: 20))
+    }
+
+    private var quickActions: some View {
+        HStack(alignment: .top, spacing: 0) {
+            Button(action: openSearch) { quickAction("Find a song", detail: "Search & discover", icon: "magnifyingglass") }
+            Rectangle().fill(MusicStyle.rule).frame(width: 1)
+            Button(action: openPractice) { quickAction("Practice", detail: "Drills & recordings", icon: "guitars") }
+        }.fixedSize(horizontal: false, vertical: true).buttonStyle(MusicPressStyle())
+            .padding(.vertical, 18)
+            .overlay(alignment: .top) { MusicRule() }.overlay(alignment: .bottom) { MusicRule() }
+    }
+
+    private func quickAction(_ title: String, detail: String, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Image(systemName: icon).font(.system(size: 21)).padding(.bottom, 5).foregroundStyle(MusicStyle.accent)
+            Text(title).font(MusicStyle.font(16, bold: true)).foregroundStyle(MusicStyle.ink)
+            Text(detail).font(MusicStyle.font(12)).foregroundStyle(MusicStyle.secondary)
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).contentShape(Rectangle())
+    }
+
+    private func latestTake(_ take: PracticeTake) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            MusicSectionHeading(title: "Latest recording")
+            NavigationLink { ScrollView { SavedTakeView(take: take) } } label: {
+                MusicSongRow(title: take.song.title, artist: take.song.artist,
+                             artwork: take.song.artwork.flatMap(URL.init),
+                             detail: "\(take.createdAt.formatted(date: .abbreviated, time: .omitted)) · \(Int(take.plan.rate * 100))% pace")
+            }.buttonStyle(MusicPressStyle())
+            MusicRule()
+        }
+    }
+
+    private var yourSongs: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                MusicSectionHeading(title: "Your songs")
+                Button("See all", action: openLibrary).font(MusicStyle.font(14, bold: true))
+                    .frame(minHeight: 44).fixedSize().buttonStyle(MusicPressStyle())
+            }
+            CatalogRows(items: Array(collection.items.prefix(3)))
+        }
+    }
+
+    private var recentlyPlayed: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            MusicSectionHeading(title: "Recently played", detail: "Spotify")
+            if needsReconnect {
+                MusicNotice(title: "Reconnect Spotify", message: "Reconnect to see your recent listening.", actionTitle: "Reconnect") { auth.login() }
+            } else if let playsError {
+                MusicNotice(title: "Recent listening is unavailable", message: playsError, actionTitle: "Try again") { Task { await loadPlays() } }
+            } else if loadingPlays && plays.isEmpty {
+                ProgressView("Loading recent songs…").frame(maxWidth: .infinity, minHeight: 60)
+            } else if plays.isEmpty {
+                Text("Songs you play on Spotify will appear here.").font(MusicStyle.font(15)).foregroundStyle(MusicStyle.secondary)
+            } else {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(plays.prefix(4))) { song in
+                        NavigationLink { ChordView(track: song.track) } label: {
+                            MusicSongRow(title: song.track.name, artist: song.track.artistNames,
+                                         artwork: song.track.album.artworkURL, detail: RecentPlays.relativeTime(song.lastPlayed))
+                        }.buttonStyle(MusicPressStyle())
+                        MusicRule()
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 62)
-                .padding(.bottom, 32)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .ignoresSafeArea(edges: .top)
-            .background(Color.black.ignoresSafeArea())
-            .safeAreaInset(edge: .bottom, spacing: 0) { miniPlayer }
-            .navigationDestination(for: TrackSource.self) { source in
-                TracksView(api: SpotifyAPI(auth: auth), source: source)
-            }
-            .toolbar(.hidden, for: .navigationBar)
-            .refreshable {
-                nowPlaying.resume()
-                await reload()
-            }
-            // Every token grant (launch refresh, reconnect) restarts the
-            // poller and reloads; a no-op for the poller while it runs.
-            .task(id: auth.grants) {
-                nowPlaying.start(api: SpotifyAPI(auth: auth))
-                await reload()
             }
         }
+    }
+
+    private var miniPlayer: some View {
+        Group {
+            if !preview, let playing = nowPlaying.playing {
+                MiniPlayer(playing: playing, nowPlaying: nowPlaying,
+                           store: SongSheetStore.shared(for: SongDescriptor(track: playing.track)))
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            }
+        }.animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 1), value: nowPlaying.playing == nil)
     }
 
     private func reload() async {
-        let api = SpotifyAPI(auth: auth)
-        async let saved = try? BackendClient.library()
-        async let charts = try? BackendClient.catalog()
-        async let liked = try? api.savedTracksTotal()
-        async let top = try? api.topTracksTotal()
+        if preview { await collection.load(); chooseFallbackArtwork(); return }
+        nowPlaying.start(api: SpotifyAPI(auth: auth))
+        async let songs: () = collection.load()
+        async let listening: () = loadPlays()
+        _ = await (songs, listening)
+        chooseFallbackArtwork()
+    }
+
+    private func chooseFallbackArtwork() {
+        let recent = plays.prefix(8).map { HomeArtwork(id: $0.track.id, url: $0.track.album.artworkURL) }
+        let saved = collection.items.prefix(8).map { HomeArtwork(id: $0.trackId, url: $0.artworkURL) }
+        fallbackArtwork = HomeArtwork.fallback(current: fallbackArtwork, recent: recent, saved: saved)
+    }
+
+    private func loadPlays() async {
+        loadingPlays = true
+        defer { loadingPlays = false }
         do {
-            let recent = try await api.recentlyPlayed()
-            self.recent = recent
+            let recent = try await SpotifyAPI(auth: auth).recentlyPlayed()
+            guard !Task.isCancelled else { return }
             plays = RecentPlays.songs(recent)
-            playCount = recent.count
-            playsNeedReconnect = false
-            error = nil
+            needsReconnect = false; playsError = nil
         } catch {
+            guard !Task.isCancelled else { return }
             let code = (error as NSError).code
-            if code == 401 || code == 403 {
-                playsNeedReconnect = true
-            } else {
-                self.error = "Could not load recent plays: \(error.localizedDescription)"
-            }
+            needsReconnect = code == 401 || code == 403
+            playsError = MusicLoadError.message(error)
         }
-        library = (await saved) ?? []
-        catalog = (await charts) ?? []
-        likedCount = await liked
-        topCount = await top
-        loaded = true
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        HStack(spacing: 0) {
-            Text("Home")
-                .font(.system(size: 30, weight: .bold))
-                .tracking(-0.4)
-                .foregroundStyle(.white)
-            Spacer()
-            NavigationLink {
-                ProfileView()
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 22))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-            }
-            .buttonStyle(.plain)
-            .padding(.trailing, -11)
-        }
-    }
-
-    // MARK: - Stats
-
-    /// One card, three columns: the library the app made, and the two
-    /// Spotify collections it can browse.
-    private var statTiles: some View {
-        HStack(spacing: 0) {
-            NavigationLink { LibraryView() } label: {
-                statTile(count: loaded ? library.count : nil, label: "Analyzed", icon: "waveform")
-            }.buttonStyle(.plain)
-            statDivider
-            NavigationLink(value: TrackSource.liked) {
-                statTile(count: likedCount, label: "Liked", icon: "heart.fill")
-            }.buttonStyle(.plain)
-            statDivider
-            NavigationLink(value: TrackSource.top) {
-                statTile(count: topCount, label: "Top", icon: "chart.bar.fill")
-            }.buttonStyle(.plain)
-        }
-        .padding(.vertical, 4)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.homeCard))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.white.opacity(0.06)))
-    }
-
-    private var statDivider: some View {
-        Rectangle().fill(Color.white.opacity(0.08)).frame(width: 0.5).padding(.vertical, 14)
-    }
-
-    private func statTile(count: Int?, label: String, icon: String) -> some View {
-        VStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.spotifyGreen)
-            Text(count.map { $0.formatted() } ?? "—")
-                .font(.system(size: 24, weight: .heavy, design: .rounded))
-                .foregroundStyle(.white)
-                .monospacedDigit()
-                .contentTransition(.numericText())
-            Text(label)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Palette.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
-        .contentShape(Rectangle())
-    }
-
-    // MARK: - Insights
-
-    /// Two small charts from data already on the page: plays per day with the
-    /// analyzed share, and what the analyzed library looks like. Hidden
-    /// while there is nothing to draw; never seeded.
-    @ViewBuilder private var insights: some View {
-        if !recent.isEmpty || !library.isEmpty {
-            VStack(spacing: 12) {
-                if !recent.isEmpty { listeningCard }
-                if !library.isEmpty { libraryCard }
-            }
-        }
-    }
-
-    private var listeningCard: some View {
-        let days = RecentPlays.daily(recent, analyzed: Set(analyzedByTrack.keys))
-        let peak = max(1, days.map(\.total).max() ?? 1)
-        let analyzed = days.reduce(0) { $0 + $1.analyzed }
-        let oldest = recent.map(\.playedAt).min()
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Listening").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
-                Spacer()
-                Text(oldest.map { "last \(recent.count) plays, since \(RecentPlays.relativeTime($0))" } ?? "")
-                    .font(.system(size: 12)).foregroundStyle(Palette.secondary)
-            }
-            HStack(alignment: .bottom, spacing: 8) {
-                ForEach(days, id: \.date) { day in
-                    VStack(spacing: 6) {
-                        ZStack(alignment: .bottom) {
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(Palette.gray5)
-                                .frame(height: max(3, 56 * CGFloat(day.total) / CGFloat(peak)))
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(Color.spotifyGreen)
-                                .frame(height: day.analyzed == 0 ? 0 : max(3, 56 * CGFloat(day.analyzed) / CGFloat(peak)))
-                        }
-                        .frame(maxWidth: .infinity, alignment: .bottom)
-                        .accessibilityLabel("\(day.total) plays, \(day.analyzed) analyzed")
-                        Text(day.date.formatted(.dateTime.weekday(.narrow)))
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Palette.tertiary)
-                    }
-                }
-            }
-            .frame(height: 74, alignment: .bottom)
-            HStack(spacing: 6) {
-                Circle().fill(Color.spotifyGreen).frame(width: 6, height: 6)
-                Text("\(analyzed) of \(recent.count) plays were songs you can practice")
-                    .font(.system(size: 12)).foregroundStyle(Palette.secondary)
-            }
-        }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.homeCard))
-    }
-
-    private struct Bucket: Identifiable {
-        let name: String
-        let count: Int
-        var id: String { name }
-    }
-
-    private var difficultyBuckets: [Bucket] {
-        ["easy", "medium", "hard"].map { level in
-            Bucket(name: level, count: library.filter { $0.difficulty?.level == level }.count)
-        }
-    }
-
-    private var keyBuckets: [Bucket] {
-        Dictionary(grouping: library.compactMap(\.key), by: { $0 })
-            .map { Bucket(name: $0.key, count: $0.value.count) }
-            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.name < $1.name }
-            .prefix(4).map { $0 }
-    }
-
-    private var libraryCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Your \(library.count) analyzed songs").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
-            difficultyBar(difficultyBuckets)
-            keyBars(keyBuckets)
-        }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.homeCard))
-    }
-
-    @ViewBuilder private func difficultyBar(_ levels: [Bucket]) -> some View {
-        let graded = levels.reduce(0) { $0 + $1.count }
-        if graded > 0 {
-            VStack(alignment: .leading, spacing: 8) {
-                GeometryReader { geo in
-                    HStack(spacing: 2) {
-                        ForEach(levels.filter { $0.count > 0 }) { level in
-                            Rectangle().fill(Palette.difficulty(level.name))
-                                .frame(width: max(2, geo.size.width * CGFloat(level.count) / CGFloat(graded)))
-                        }
-                    }
-                    .clipShape(Capsule())
-                }
-                .frame(height: 8)
-                HStack(spacing: 14) {
-                    ForEach(levels) { level in
-                        HStack(spacing: 5) {
-                            Circle().fill(Palette.difficulty(level.name)).frame(width: 6, height: 6)
-                            Text("\(level.count) \(level.name)").font(.system(size: 12)).foregroundStyle(Palette.secondary)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder private func keyBars(_ keys: [Bucket]) -> some View {
-        let top = CGFloat(max(1, keys.first?.count ?? 1))
-        if !keys.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(keys) { key in
-                    HStack(spacing: 10) {
-                        Text(key.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.nearWhite)
-                            .frame(width: 64, alignment: .leading).lineLimit(1)
-                        GeometryReader { geo in
-                            Capsule().fill(Color.spotifyGreen.opacity(0.75))
-                                .frame(width: max(4, geo.size.width * CGFloat(key.count) / top))
-                        }
-                        .frame(height: 6)
-                        Text("\(key.count)").font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Palette.secondary).monospacedDigit()
-                            .frame(width: 28, alignment: .trailing)
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Played recently
-
-    private var playedRecently: some View {
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                sectionLabel("Played recently")
-                Spacer()
-                if !plays.isEmpty {
-                    Text("\(plays.count) songs")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Palette.secondary)
-                }
-            }
-            if playsNeedReconnect {
-                reconnectRow("Reconnect Spotify to see what you played.")
-            } else if plays.isEmpty {
-                emptyRow(loaded ? "Nothing played yet." : "Loading your plays…")
-            } else {
-                rowList(Array(plays.prefix(5))) { song in
-                    NavigationLink {
-                        ChordView(track: song.track)
-                    } label: {
-                        songRow(artwork: song.track.album.artworkURL, title: song.track.name,
-                                meta: "\(song.track.artistNames) · \(RecentPlays.relativeTime(song.lastPlayed))",
-                                plays: song.count, saved: analyzedByTrack[song.track.id])
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
-
-    // MARK: - Last analyzed
-
-    private var lastAnalyzed: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                sectionLabel("Last analyzed")
-                Spacer()
-                NavigationLink {
-                    LibraryView()
-                } label: {
-                    HStack(spacing: 3) {
-                        Text("All songs")
-                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
-                    }
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.spotifyGreen)
-                    .frame(minHeight: 44)
-                }
-                .buttonStyle(.plain)
-            }
-            if library.isEmpty {
-                emptyRow(loaded ? "Analyze a song from Search or a playlist to see it here." : "Loading your library…")
-            } else {
-                rowList(Array(library.prefix(3))) { item in
-                    NavigationLink {
-                        SavedAnalysisView(item: item)
-                    } label: {
-                        songRow(artwork: item.artworkURL, title: item.title ?? "Unknown song",
-                                meta: item.artist ?? "", saved: item)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
-
-    // MARK: - Rows
-
-    /// Rows separated by a hairline that starts after the artwork, as a list does.
-    private func rowList<Item: Identifiable, Row: View>(_ items: [Item], @ViewBuilder row: @escaping (Item) -> Row) -> some View {
-        VStack(spacing: 0) {
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                row(item)
-                if index < items.count - 1 {
-                    Rectangle().fill(Palette.separator).frame(height: 0.5).padding(.leading, 65)
-                }
-            }
-        }
-    }
-
-    private func songRow(artwork url: URL?, title: String, meta: String, plays: Int = 1,
-                         saved: BackendClient.LibraryItem?) -> some View {
-        HStack(spacing: 13) {
-            artwork(url, size: 52, radius: 8)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                HStack(spacing: 6) {
-                    Text(meta)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Palette.secondary)
-                        .lineLimit(1)
-                    if plays > 1 {
-                        Text("×\(plays)")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .foregroundStyle(Palette.secondaryAlt)
-                            .padding(.vertical, 1).padding(.horizontal, 6)
-                            .background(Capsule().fill(Color.white.opacity(0.08)))
-                    }
-                }
-            }
-            Spacer(minLength: 8)
-            if let key = saved?.key {
-                KeyBadge(key: key, difficulty: saved?.difficulty?.level)
-            } else {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Palette.faint)
-            }
-        }
-        .padding(.vertical, 10)
-        .contentShape(Rectangle())
-    }
-
-    private func emptyRow(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 13))
-            .foregroundStyle(Palette.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 12)
-            .padding(.horizontal, 14)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.homeCard))
-    }
-
-    // MARK: - Spotify
-
-    private var spotifyPrompt: some View {
-        HStack(spacing: 10) {
-            Circle().fill(Palette.faint).frame(width: 6, height: 6)
-            Text("Play something on Spotify to follow chords live")
-                .font(.system(size: 13))
-                .foregroundStyle(Palette.secondary)
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 14)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                .foregroundStyle(Palette.gray5)
-        )
-    }
-
-    /// A token without a scope this build needs, or one Spotify revoked.
-    private func reconnectRow(_ text: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(Palette.warning)
-            Text(text)
-                .font(.system(size: 13))
-                .foregroundStyle(.white)
-            Spacer()
-            Button("Reconnect") { auth.login() }
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.black)
-                .padding(.vertical, 7)
-                .padding(.horizontal, 12)
-                .background(Capsule().fill(Color.spotifyGreen))
-                .buttonStyle(.plain)
-        }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.08)))
-    }
-
-    /// Above the tab bar while Spotify plays; the page above does not move.
-    private var miniPlayer: some View {
-        VStack(spacing: 0) {
-            if let playing = nowPlaying.playing {
-                MiniPlayer(playing: playing, nowPlaying: nowPlaying,
-                           store: SongSheetStore.shared(for: SongDescriptor(track: playing.track)))
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.easeOut(duration: 0.3), value: nowPlaying.playing == nil)
-    }
-
-    private func sectionLabel(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 20, weight: .bold))
-            .tracking(-0.2)
-            .foregroundStyle(.white)
     }
 }
 

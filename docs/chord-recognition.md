@@ -1,5 +1,9 @@
 # Chord recognition, version 2
 
+The chord recognizer described here is unchanged. Analysis version 3 adds
+[audio-derived bars and song sections](song-structure.md) and upgrades cached
+charts on request.
+
 This milestone connects recorded practice to the richer recognizer already used for whole-song charts, fixes scoring errors, and makes model upgrades traceable. Backend audio regressions use synthetic voicings; the separate [live drill milestone](live-drill-detection.md) now includes a real-guitar benchmark. The [initial audit](audits/2026-09-04-chord-detection.md) separates measured results from proposed later work.
 
 ## Runtime

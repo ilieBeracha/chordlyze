@@ -16,6 +16,8 @@ struct LiveNowView: View {
     @State private var lastPosition: Double = 0
     @State private var selectedChord: SelectedChord?
     @State private var seekDenied = false
+    @State private var showSongMap = false
+    private var beatGrid: BeatGrid? { store.beatGrid }
     /// A–B repeat: when the song reaches the end, Spotify is sent back to the
     /// start. The range lives on the store; only the arming is view state.
     @State private var loopStart: Double?
@@ -37,6 +39,11 @@ struct LiveNowView: View {
                                      identifier: "chord-rail-toggle") {
                             withAnimation(.easeInOut(duration: 0.25)) { showRail.toggle() }
                         }
+                        if let grid = beatGrid, !grid.bars.isEmpty, onSeek != nil {
+                            HeaderCircle(icon: "map", on: false, label: "Song map and bar loops", identifier: "song-map") {
+                                showSongMap = true
+                            }
+                        }
                         if onSeek != nil {
                             HeaderCircle(icon: "repeat", on: store.loop != nil || loopStart != nil,
                                          label: store.loop != nil ? "Clear loop" : loopStart == nil ? "Loop from here" : "Loop until here",
@@ -51,8 +58,8 @@ struct LiveNowView: View {
                         Text(playbackNote).font(.system(size: 13)).foregroundStyle(Palette.secondary)
                             .padding(.horizontal, 20).padding(.bottom, 6)
                     }
-                    if seekDenied {
-                        Text("Spotify could not seek. Check playback permissions or Premium.").font(.caption)
+                    if seekDenied, playbackNote == nil {
+                        Text("Spotify did not confirm the jump. Check playback in Spotify, then try again.").font(.caption)
                             .foregroundStyle(Palette.secondary).padding(.horizontal, 20).padding(.bottom, 6)
                     }
                     if showRail {
@@ -92,7 +99,7 @@ struct LiveNowView: View {
                         if value >= loop.upperBound, loopArmed {
                             loopArmed = false
                             Task { seekDenied = !(await onSeek(store.timing.spotifyTime(loop.lowerBound))) }
-                        } else if value < loop.upperBound - 1 {
+                        } else if value < loop.upperBound - min(1, (loop.upperBound - loop.lowerBound) / 2) {
                             loopArmed = true
                         }
                     }
@@ -102,6 +109,17 @@ struct LiveNowView: View {
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
+        .sheet(isPresented: $showSongMap) {
+            if let grid = beatGrid, let onSeek {
+                SongMapSheet(grid: grid, position: lastPosition, onJump: { time in
+                    store.loop = nil; loopStart = nil
+                    Task { seekDenied = !(await onSeek(store.timing.spotifyTime(time))) }
+                }, onLoop: { range in
+                    store.loop = range; loopStart = nil; loopArmed = true
+                    Task { seekDenied = !(await onSeek(store.timing.spotifyTime(range.lowerBound))) }
+                })
+            }
+        }
         .chordDiagram($selectedChord)
         .observes(store)
     }

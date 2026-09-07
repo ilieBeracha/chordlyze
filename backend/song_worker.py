@@ -19,6 +19,7 @@ import numpy as np
 import soundfile as sf
 from chordlyze_backend.genre import lookup_genre
 from chordlyze_backend.analysis.beats import track_beats
+from chordlyze_backend.analysis.rhythm import worker as rhythm_worker
 from chordlyze_backend.analysis.engine import recognize_audio
 from chordlyze_backend.analysis.ismir import close, ismir_available, warm
 from chordlyze_backend.fulltrack import fetch_full_track
@@ -50,6 +51,7 @@ def warm_recognizer() -> float:
     on silence, so the first real song does not pay start-up costs."""
     started = time.monotonic()
     warm()
+    rhythm_worker.warm()
     descriptor, name = tempfile.mkstemp(prefix='chordlyze-warmup-', suffix='.wav')
     os.close(descriptor)
     path = Path(name)
@@ -245,7 +247,7 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
         source_info = {}
         audio = fetch_full_track(song['title'], song.get('artist') or '', song['duration'],
                                  source_info=source_info, checkpoint=checkpoint,
-                                 save_checkpoint=save_checkpoint, cancelled=cancelled)
+                                 save_checkpoint=save_checkpoint, cancelled=cancelled, isrc=song.get('isrc'))
         phase('download')
         if cancelled():
             return 'abandoned'
@@ -280,7 +282,9 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
             **identity, **recognition.metadata(), 'title': song['title'],
             'artist': song.get('artist'), 'album': song.get('album'),
             'artwork': song.get('artwork'), 'isrc': song.get('isrc'),
-            'song_duration': song['duration'], 'source': 'youtube', 'audio_source': source_info,
+            'song_duration': song['duration'],
+            'source': 'bandcamp' if source_info.get('provider') == 'bandcamp' else 'youtube',
+            'audio_source': source_info,
             'segments': [segment.to_dict() for segment in recognition.segments],
             'tempo': tempo, 'genre': genre,
         })
@@ -383,6 +387,7 @@ def main():
         run_loops(client, stopping, aligner, concurrency=concurrency, once=args.once)
     finally:
         close()
+        rhythm_worker.close()
 
 
 if __name__ == '__main__':

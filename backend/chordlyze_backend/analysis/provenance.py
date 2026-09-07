@@ -6,7 +6,7 @@ Legacy results remain readable but are queued for reanalysis by the worker.
 """
 from __future__ import annotations
 
-ANALYSIS_VERSION = 2
+ANALYSIS_VERSION = 3
 ISMIR_COMMIT = "481f4ce703f8822b99f4037e9104ba1760e21ea3"
 MODEL_REVISIONS = {
     "madmom": "27f032e-cnn-crf-10fps-v1",

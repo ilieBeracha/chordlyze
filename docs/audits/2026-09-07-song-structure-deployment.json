@@ -1,0 +1,25 @@
+{
+  "verified_at": "2026-09-07T11:33:15.240074+00:00",
+  "app": "chordlyze-api",
+  "fly_release": 53,
+  "release": "2026-09-07-song-structure-v3-858a81574562",
+  "analysis_version": 3,
+  "image": "registry.fly.io/chordlyze-api:deployment-01M1XSV5BKHD15J6W5DD8Y7GQK",
+  "image_digest": "sha256:2b6d31a24739492b9474a7e73af66599272fb0a73db44ce172d13f8d4d7ba804",
+  "source_sha256": "858a81574562e7e0623c8d1984c3c66659ffa75d0e277309711d77e2e41a5000",
+  "health": "ok",
+  "worker_online": true,
+  "library_generation_before": "d547948414b641659cf90a0e9e2f001e",
+  "library_generation_after": "d547948414b641659cf90a0e9e2f001e",
+  "smoke": {
+    "release": "2026-09-07-song-structure-v3-858a81574562",
+    "bpm": 120.0,
+    "beats": 32,
+    "bars": 15,
+    "sections": 1,
+    "rhythm_model": "beat-this-1.1.0-final0-minimal-v1",
+    "structure_model": "bar-chroma-mfcc-novelty-v1"
+  },
+  "previous_image": "registry.fly.io/chordlyze-api:deployment-01M1XGDDJQEH714QA4V21HTSVS",
+  "scope": "Fly API and song worker; no iOS TestFlight submission"
+}

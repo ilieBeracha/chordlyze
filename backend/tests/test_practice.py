@@ -199,3 +199,53 @@ def test_slow_practice_silence_and_partial_recording_remain_in_denominator():
 def test_invalid_practice_settings_rejected(kwargs):
     with pytest.raises(ValueError):
         score_take(REF, REF, **kwargs)
+
+
+def test_constant_shift_separates_matched_changes_from_time_accuracy():
+    detected = [_seg(r['start'] + .4, min(16, r['end'] + .4), r['label']) for r in REF]
+    result = score_take(REF, detected, take_duration=16)
+    assert result['accuracy'] == .9  # No silent offset correction or score inflation.
+    assert result['matched_changes'] == result['total_changes'] == 3
+    assert result['avg_offset'] == .4
+    assert result['consistent_offset'] == {'seconds': .4, 'spread': 0., 'samples': 3}
+
+
+def test_variable_timing_and_missing_chords_do_not_claim_constant_sync_offset():
+    detected = [_seg(0, 4.1, 'G:maj'), _seg(4.1, 8.8, 'D:maj'),
+                _seg(8.8, 12.2, 'E:min'), _seg(12.2, 16, 'C:maj')]
+    assert score_take(REF, detected)['consistent_offset'] is None
+    result = score_take(REF, [_seg(0, 16, 'F#:maj')])
+    assert result['matched_changes'] == 0 and result['total_changes'] == 3
+    assert result['consistent_offset'] is None
+    assert score_take(REF[:2], REF[:2])['consistent_offset'] is None
+
+
+@pytest.mark.parametrize('scale', [.9, 1.04, 1.1])
+def test_calibrated_chart_scale_applies_to_entire_take(scale):
+    detected = [_seg(r['start'] * scale, r['end'] * scale, r['label']) for r in REF]
+    result = score_take(REF, detected, take_duration=16 * scale, timing_scale=scale)
+    assert result['accuracy'] == 1 and result['avg_timing_error'] == 0
+    assert result['timing_scale'] == scale and result['covered_end'] == 16
+    assert result['sections'][-1]['end'] == 16
+
+
+@pytest.mark.parametrize('scale', [.89, 1.11, float('nan'), float('inf')])
+def test_invalid_calibration_scale_is_rejected(scale):
+    with pytest.raises(ValueError): score_take(REF, REF, timing_scale=scale)
+
+
+def test_early_constant_shift_is_not_mislabeled_as_late():
+    detected = [_seg(max(0, r['start'] - .4), r['end'] - .4, r['label']) for r in REF]
+    result = score_take(REF, detected, take_duration=15.6)
+    assert result['consistent_offset']['seconds'] == -.4
+    assert result['avg_lag'] == 0 and result['matched_changes'] == 3
+
+
+def test_early_and_late_matching_windows_do_not_bias_average_toward_late():
+    detected = [_seg(0, 2, 'G:maj'), _seg(2, 10, 'D:maj'),
+                _seg(10, 12, 'E:min'), _seg(12, 16, 'C:maj')]
+    result = score_take(REF, detected, take_duration=16)
+    assert result['matched_changes'] == 3
+    assert result['avg_offset'] == 0
+    assert result['avg_early'] == result['avg_lag']
+    assert result['consistent_offset'] is None

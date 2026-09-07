@@ -74,6 +74,11 @@ struct DrillDetectorTests {
                     detector.reset()
                     let frames = feed(detector, tone(notes, sr: sr, cents: cents))
                     check(frames.last?.current == name, "\(sr) \(name) at \(cents) cents recognized")
+                    let accepted = frames.filter { $0.current != nil }
+                    check(accepted.allSatisfy { $0.recognizedAt != nil && $0.recognizedAt! <= $0.time }, "Acceptance keeps captured-audio time")
+                    for (previous, next) in zip(frames, frames.dropFirst()) where previous.current != nil && previous.current == next.current {
+                        check(previous.recognizedAt == next.recognizedAt, "Sustained recognition cannot move its timestamp with UI delivery")
+                    }
                     check(frames.compactMap(\.current).allSatisfy { $0 == name }, "\(name) never becomes its rival")
                 }
             }

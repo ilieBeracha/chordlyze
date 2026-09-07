@@ -1,0 +1,37 @@
+{
+  "macos_rhythm_only": {
+    "audio_seconds": 1200,
+    "elapsed_seconds": 20.106210500001907,
+    "parent_peak_rss_bytes": 639156224,
+    "child_peak_rss_bytes": 1237483520,
+    "beat_count": 2400,
+    "bar_count": 1199
+  },
+  "macos_with_chord_model_resident": {
+    "audio_seconds": 1200,
+    "elapsed_seconds": 21.456872000009753,
+    "chord_model_resident": true,
+    "container_peak_bytes": null,
+    "parent_peak_rss_bytes": 428441600,
+    "child_peak_rss_bytes": 1577025536,
+    "beat_count": 2400,
+    "bar_count": 1199
+  },
+  "linux_amd64_offline_4g": {
+    "audio_seconds": 1200,
+    "elapsed_seconds": 147.39200556799187,
+    "chord_model_resident": true,
+    "container_peak_bytes": 2494529536,
+    "parent_peak_rss_bytes": 720048128,
+    "child_peak_rss_bytes": 1229160448,
+    "beat_count": 2400,
+    "bar_count": 1199,
+    "memory_limit_bytes": 4294967296,
+    "cpus": 2,
+    "swap_enabled": false,
+    "network": "none",
+    "image_manifest": "sha256:77d124826d9fbbab182859f73206e099ddca2b1b0acd362327afd4f19dc17b34",
+    "note": "Docker Desktop linux/amd64; chord model loaded, no concurrent chord or lyric inference."
+  },
+  "script_sha256": "7456fcdb4741f050841442532d876b0aac7998e2cb0522055e0a619d7523fa2a"
+}

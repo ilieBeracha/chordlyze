@@ -124,10 +124,16 @@ def test_exhausted_jobs_stop_retrying_until_user_retries(cache, monkeypatch):
 
 
 @pytest.mark.parametrize('failure', [False, True])
-def test_worker_uses_lease_and_cleans_audio_on_success_and_failure(cache, monkeypatch, failure):
+@pytest.mark.parametrize('provider', ['bandcamp', 'apify', None])
+def test_worker_uses_lease_and_cleans_audio_on_success_and_failure(cache, monkeypatch, failure, provider):
     audio = cache / 'download.wav'
     audio.write_bytes(b'test')
-    monkeypatch.setattr(song_worker, 'fetch_full_track', lambda *args, **kwargs: audio)
+    def fetch(*args, **kwargs):
+        assert 'isrc' in kwargs
+        if provider:
+            kwargs['source_info']['provider'] = provider
+        return audio
+    monkeypatch.setattr(song_worker, 'fetch_full_track', fetch)
     def recognize(*args, **kwargs):
         if failure:
             raise RuntimeError('inference failed')
@@ -145,6 +151,8 @@ def test_worker_uses_lease_and_cleans_audio_on_success_and_failure(cache, monkey
     path, body = client.calls[-1]
     assert body['lease'] == job['lease'] and body['library_generation'] == job['generation']
     assert path == ('/internal/jobs/finish' if failure else '/analysis/submit')
+    if not failure:
+        assert body['source'] == ('bandcamp' if provider == 'bandcamp' else 'youtube')
 
 
 def test_missing_audio_is_reported_as_unavailable(cache, monkeypatch):

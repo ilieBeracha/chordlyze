@@ -9,23 +9,30 @@ struct PracticePlan: Codable, Equatable {
     let rate: Double
     let transpose: Int
     let capo: Int
+    /// Captured chart-to-Spotify scale. Optional so older saved takes decode.
+    let timingScale: Double?
+    let chartRevision: String?
+    var chartRate: Double { rate / (timingScale ?? 1) }
 
-    init(start: Double, end: Double, rate: Double = 1, transpose: Int = 0, capo: Int = 0) throws {
+    init(start: Double, end: Double, rate: Double = 1, transpose: Int = 0, capo: Int = 0, timingScale: Double = 1, chartRevision: String? = nil) throws {
         guard start.isFinite, end.isFinite, rate.isFinite, start >= 0, end > start,
-              (0.5...1).contains(rate), (-12...12).contains(transpose), (0...9).contains(capo) else {
+              (0.5...1).contains(rate), timingScale.isFinite, (0.9...1.1).contains(timingScale),
+              (-12...12).contains(transpose), (0...9).contains(capo) else {
             throw NSError(domain: "Practice", code: 1, userInfo: [NSLocalizedDescriptionKey: "Choose a valid time range, key and pace before recording."])
         }
         self.start = start
-        self.end = min(end, start + 600 * rate)
+        self.end = min(end, start + 600 * rate / timingScale)
         self.rate = rate
         self.transpose = transpose
         self.capo = capo
+        self.timingScale = timingScale
+        self.chartRevision = chartRevision
     }
 
-    var recordingDuration: Double { (end - start) / rate }
-    func position(elapsed: Double) -> Double { min(end, start + max(0, elapsed) * rate) }
+    var recordingDuration: Double { (end - start) / chartRate }
+    func position(elapsed: Double) -> Double { min(end, start + max(0, elapsed) * chartRate) }
     func beats(_ songBeats: [Double]) -> [Double] {
-        songBeats.filter { $0 >= start && $0 < end }.map { ($0 - start) / rate }
+        songBeats.filter { $0 >= start && $0 < end }.map { ($0 - start) / chartRate }
     }
 }
 
@@ -52,7 +59,8 @@ final class PracticeTakeStore: ObservableObject {
     init(directory: URL? = nil,
          submit: @escaping (URL, PracticeTake) async throws -> BackendClient.PracticeReport = { url, take in
              try await BackendClient.submitPracticeTake(fileURL: url, trackID: take.song.id,
-                 offset: take.plan.start, transpose: take.plan.transpose, playbackRate: take.plan.rate)
+                 offset: take.plan.start, transpose: take.plan.transpose, playbackRate: take.plan.rate,
+                 timingScale: take.plan.timingScale ?? 1, chartRevision: take.plan.chartRevision)
          }) {
         self.directory = directory ?? FileManager.default.urls(for: .applicationSupportDirectory,
             in: .userDomainMask)[0].appendingPathComponent("PracticeTakes", isDirectory: true)

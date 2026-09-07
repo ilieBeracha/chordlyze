@@ -7,12 +7,13 @@ reference change. Bass voicing remains the player's choice.
 from __future__ import annotations
 
 import math
+import statistics
 from dataclasses import dataclass, replace
 
 from .analysis.chord import Chord, parse_label
 
-SCORING_VERSION = 2
-EARLY_WINDOW = 0.5
+SCORING_VERSION = 3
+EARLY_WINDOW = 3.0
 LATE_WINDOW = 3.0
 
 
@@ -65,7 +66,7 @@ def _timing(offsets: list[float]) -> dict:
 def score_take(reference: list[dict], detected: list[dict], offset: float = 0.0, *,
                take_duration: float | None = None, comparison: str = "root_quality",
                supported_qualities: set[str] | None = None,
-               transpose: int = 0, playback_rate: float = 1.0) -> dict:
+               transpose: int = 0, playback_rate: float = 1.0, timing_scale: float = 1.0) -> dict:
     """Score a take whose second zero is song second offset.
 
     The API supplies duration measured from decoded audio, independent of
@@ -81,15 +82,18 @@ def score_take(reference: list[dict], detected: list[dict], offset: float = 0.0,
         raise ValueError("transpose must be an integer between -12 and 12")
     if not math.isfinite(playback_rate) or not 0.5 <= playback_rate <= 1:
         raise ValueError("playback rate must be between 0.5 and 1")
+    if not math.isfinite(timing_scale) or not 0.9 <= timing_scale <= 1.1:
+        raise ValueError("timing scale must be between 0.9 and 1.1")
+    chart_rate = playback_rate / timing_scale
     if take_duration is not None and (not math.isfinite(take_duration) or take_duration <= 0):
         raise ValueError("take duration must be positive and finite")
     # Score in performed seconds, preserving real early/late timing windows.
     # Song second s occurs at performed second s / playback_rate. Capo shape
     # changes are deliberately absent: only the sounding key shifts.
-    ref = [replace(r, start=r.start / playback_rate, end=r.end / playback_rate,
+    ref = [replace(r, start=r.start / chart_rate, end=r.end / chart_rate,
                    chord=r.chord.transposed(transpose) if r.chord else None)
            for r in _segments(reference, comparison)]
-    offset = offset / playback_rate
+    offset = offset / chart_rate
     det = _segments(detected, comparison, offset)
     if not any(r.chord for r in ref):
         return {"error": "no reference chords"}
@@ -129,6 +133,7 @@ def score_take(reference: list[dict], detected: list[dict], offset: float = 0.0,
         row["count"] += 1
 
     transitions: dict[tuple[str, str], dict] = {}
+    matched_times = []
     last_match = -1
     for prev, cur in zip(ref, ref[1:]):
         t = cur.start
@@ -150,6 +155,7 @@ def score_take(reference: list[dict], detected: list[dict], offset: float = 0.0,
         else:
             last_match = match
             row["offsets"].append(det[match].start - t)
+            matched_times.append(t)
 
     transition_rows = [{"from": row["from"], "to": row["to"], "misses": row["misses"],
                         "count": row["count"], **_timing(row["offsets"])}
@@ -169,19 +175,32 @@ def score_take(reference: list[dict], detected: list[dict], offset: float = 0.0,
             if b > a:
                 total += b - a
                 hit += hit_time(r, a, b)
-        sections.append({"start": round(start * playback_rate, 3), "end": round(end * playback_rate, 3),
+        sections.append({"start": round(start * chart_rate, 3), "end": round(end * chart_rate, 3),
                          "accuracy": round(hit / total, 3) if total else None})
 
     offsets = [x for row in transitions.values() for x in row["offsets"]]
+    total_changes = sum(row['count'] for row in transitions.values())
+    consistent_offset = None
+    # Describe a supported constant shift, never silently remove it: consistently
+    # late playing and a device/recording offset cannot be distinguished here.
+    if len(offsets) >= 3 and len(offsets) >= total_changes * .75 and max(matched_times) - min(matched_times) >= 8:
+        median = statistics.median(offsets)
+        spread = max(abs(value - median) for value in offsets)
+        if .1 <= abs(median) <= 1.5 and spread <= .15:
+            consistent_offset = {'seconds': round(median, 3), 'spread': round(spread, 3), 'samples': len(offsets)}
     return {
         "scoring_version": SCORING_VERSION,
         "comparison": comparison,
         "transpose": transpose,
         "playback_rate": playback_rate,
+        "timing_scale": timing_scale,
+        "matched_changes": len(offsets),
+        "total_changes": total_changes,
+        "consistent_offset": consistent_offset,
         "accuracy": round(correct_time / total_time, 3),
         **_timing(offsets),
-        "covered_start": round(span0 * playback_rate, 3),
-        "covered_end": round(span1 * playback_rate, 3),
+        "covered_start": round(span0 * chart_rate, 3),
+        "covered_end": round(span1 * chart_rate, 3),
         "scored_duration": round(total_time, 3),
         "per_chord": sorted(
             [{"name": r["name"], "accuracy": round(r["hit"] / r["total"], 3), "count": r["count"]}

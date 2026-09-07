@@ -21,6 +21,7 @@ struct PracticeView: View {
 
     private enum Phase: Equatable { case intro, starting, countdown(Int), recording, uploading, saved, failed(String) }
     @State private var phase: Phase = .intro
+    @State private var needsSpotifyDevice = false
     @State private var recorder = TakeRecorder()
     @State private var metronome = Metronome()
     @ObservedObject private var takes = PracticeTakeStore.shared
@@ -70,7 +71,7 @@ struct PracticeView: View {
             case .intro: intro
             case .starting:
                 VStack(spacing: 30) {
-                    ProgressView(nowPlaying.playbackDevice.map { "Starting Spotify on \($0)…" } ?? "Finding Spotify on this phone…").tint(.white)
+                    ProgressView(nowPlaying.playbackDevice.map { "Waiting for Spotify on \($0)…" } ?? "Finding Spotify on this phone…").tint(.white)
                     Button("Cancel") { abandon(); phase = .intro }.frame(minHeight: 44)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             case .countdown(let n):
@@ -101,11 +102,18 @@ struct PracticeView: View {
                     }.padding(.bottom, 24)
                 }
             case .failed(let message):
-                VStack(spacing: 18) {
-                    Text(message).multilineTextAlignment(.center)
-                    Button("Back to setup") { phase = .intro }.frame(minHeight: 44)
-                    BackCircle()
-                }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
+                ScrollView {
+                    VStack(spacing: 18) {
+                        Text(message).multilineTextAlignment(.center)
+                        if needsSpotifyDevice {
+                            SpotifyDeviceRecoveryView(nowPlaying: nowPlaying, trackID: trackID, retryTitle: "Retry practice") {
+                                start(spotify: true)
+                            }
+                        }
+                        Button("Back to setup") { phase = .intro }.frame(minHeight: 44)
+                        BackCircle()
+                    }.padding(24)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .background(Color.black.ignoresSafeArea())
@@ -267,6 +275,7 @@ struct PracticeView: View {
 
     private func start(spotify: Bool) {
         guard countIn == nil else { return }
+        needsSpotifyDevice = false
         countIn = Task { await begin(spotify: spotify) }
     }
 
@@ -305,7 +314,8 @@ struct PracticeView: View {
             // interrupt playback for a moment right as the take begins.
             try recorder.prime()
             let setup = try PracticePlan(start: spotify ? rangeStart : barStart, end: rangeEnd, rate: rate,
-                transpose: songStore.manualShift, capo: songStore.capoMode ? songStore.capo : 0)
+                transpose: songStore.manualShift, capo: songStore.capoMode ? songStore.capo : 0,
+                timingScale: spotify ? songStore.timing.scale : 1, chartRevision: songStore.analysis?.chartRevision)
             let plan: PracticePlan
             if spotify {
                 plan = try await startWithSpotify(setup)
@@ -313,12 +323,13 @@ struct PracticeView: View {
                 if let grid {
                     // Count in the bar before the take at the song's own spacing,
                     // then click every beat of the range, beat 1 accented.
-                    let period = grid.period / rate
+                    let period = grid.period(at: setup.start) / rate
+                    let countIn = grid.beatsInBar(at: setup.start)
                     let clicks = grid.clicks(from: setup.start, to: setup.end)
-                    let recordAt = try metronome.start(countIn: BeatGrid.beatsPerBar, period: period,
+                    let recordAt = try metronome.start(countIn: countIn, period: period,
                         beats: clicks.map { $0.offset / rate },
                         downbeats: Set(clicks.indices.filter { clicks[$0].downbeat }))
-                    for n in [4, 3, 2, 1] {
+                    for n in stride(from: countIn, through: 1, by: -1) {
                         phase = .countdown(n)
                         try await Task.sleep(until: recordAt - .seconds(Double(n - 1) * period), clock: .continuous)
                     }
@@ -347,6 +358,7 @@ struct PracticeView: View {
         } catch {
             metronome.stop()
             _ = recorder.stop()
+            needsSpotifyDevice = (error as? SpotifyNowPlaying.PlayError)?.needsDeviceRecovery == true
             phase = .failed("Could not start: \(error.localizedDescription)")
         }
     }
@@ -359,7 +371,12 @@ struct PracticeView: View {
         let lead = min(3, setup.start)
         try await nowPlaying.play(trackID: trackID, at: songStore.timing.spotifyTime(setup.start - lead))
         try Task.checkCancellation()
+        let deadline = ContinuousClock.now.advanced(by: .seconds(15))
         while true {
+            try Task.checkCancellation()
+            guard ContinuousClock.now < deadline, nowPlaying.connectionMessage == nil, !nowPlaying.needsReauth else {
+                throw NSError(domain: "Practice", code: 4, userInfo: [NSLocalizedDescriptionKey: "Lost Spotify playback before the take. Try starting again."])
+            }
             guard let position = spotifyChartPosition() else {
                 throw NSError(domain: "Practice", code: 2, userInfo: [NSLocalizedDescriptionKey: "Spotify stopped before the recording started."])
             }
@@ -370,7 +387,7 @@ struct PracticeView: View {
         guard let start = spotifyChartPosition(), start < setup.end else {
             throw NSError(domain: "Practice", code: 3, userInfo: [NSLocalizedDescriptionKey: "Spotify is already past the end of this range."])
         }
-        return try PracticePlan(start: start, end: setup.end, capo: setup.capo)
+        return try PracticePlan(start: start, end: setup.end, capo: setup.capo, timingScale: setup.timingScale ?? 1, chartRevision: setup.chartRevision)
     }
 
     /// Every detector snapshot, in take order. The snapshot time is seconds
@@ -378,7 +395,8 @@ struct PracticeView: View {
     private func judge(_ snapshot: DrillSnapshot, plan: PracticePlan) {
         guard phase == .recording, feedback != nil else { return }
         let chartTime = plan.position(elapsed: snapshot.time)
-        if let index = feedback!.observe(current: snapshot.current, chartTime: chartTime) {
+        if let index = feedback!.observe(current: snapshot.current, chartTime: chartTime, chartRate: plan.chartRate,
+                                         recognizedAt: snapshot.recognizedAt.map { plan.position(elapsed: $0) }) {
             let target = feedback!.targets[index]
             lastJudged = PracticeFeedback.describe(target, feedback!.verdicts[index]!)
         }
@@ -402,7 +420,7 @@ struct PracticeView: View {
         let reason: String
         if let playing = spotifyThisTrack, playing.isPlaying {
             pausedSince = nil
-            guard let live = spotifyChartPosition(), abs(live - (activeTake.plan.start + elapsed)) > 2.5 else { return }
+            guard let live = spotifyChartPosition(), abs(live - activeTake.plan.position(elapsed: elapsed)) > 2.5 else { return }
             reason = "Spotify moved to another position. The partial take was saved."
         } else if let playing = nowPlaying.playing, playing.track.id != trackID {
             reason = "Spotify changed songs. The partial take was saved."
@@ -470,7 +488,7 @@ private final class FeedbackTap: @unchecked Sendable {
     }
 }
 
-/// Where the bar is right now: four dots, the current beat lit, beat 1 larger.
+/// The current bar's detected beat count; legacy charts retain four dots.
 struct BeatDots: View {
     let grid: BeatGrid
     let position: () -> Double?
@@ -479,7 +497,7 @@ struct BeatDots: View {
         TimelineView(.periodic(from: .now, by: 0.05)) { _ in
             let current = position().flatMap { grid.beatInBar(at: $0) }
             HStack(spacing: 6) {
-                ForEach(1...BeatGrid.beatsPerBar, id: \.self) { beat in
+                ForEach(1...grid.beatsInBar(at: position() ?? 0), id: \.self) { beat in
                     Circle()
                         .fill(beat == current ? Color.spotifyGreen : Palette.faint)
                         .frame(width: beat == 1 ? 10 : 7, height: beat == 1 ? 10 : 7)

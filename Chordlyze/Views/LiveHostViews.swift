@@ -124,3 +124,77 @@ struct WaitingView: View {
         .toolbar(.hidden, for: .tabBar)
     }
 }
+
+/// Shared by practice and automatic synchronization when Connect can't see
+/// the phone. Opening Spotify is explicit; returning only checks its device.
+struct SpotifyDeviceRecoveryView: View {
+    let trackID: String
+    var retryTitle = "Retry playback"
+    var onRetry: () -> Void
+    @StateObject private var recovery: SpotifyDeviceRecovery
+    @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
+
+    @MainActor init(nowPlaying: SpotifyNowPlaying, trackID: String, retryTitle: String, onRetry: @escaping () -> Void) {
+        self.trackID = trackID
+        self.retryTitle = retryTitle
+        self.onRetry = onRetry
+        _recovery = StateObject(wrappedValue: SpotifyDeviceRecovery(checkDevice: { try await nowPlaying.checkPracticeDevice() }))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            #if targetEnvironment(simulator)
+            Label("Use a physical iPhone", systemImage: "iphone")
+                .font(.headline)
+            Text("The iOS Simulator cannot run the Spotify app. To play on your phone, run Chordlyze there and open Spotify using the same account.")
+                .font(.subheadline).foregroundStyle(.secondary)
+            #else
+            Label("Connect Spotify on this phone", systemImage: "iphone.and.arrow.forward")
+                .font(.headline)
+            Text("In Spotify, select this phone in the device picker and start the song. Then return here. Use the same Spotify account in both apps.")
+                .font(.subheadline).foregroundStyle(.secondary)
+            #endif
+            switch recovery.state {
+            case .checking:
+                ProgressView("Looking for this phone…")
+            case .ready(let name):
+                Label("Ready on \(name)", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green).accessibilityIdentifier("spotify-device-ready")
+                Button(retryTitle, action: onRetry).buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("spotify-retry-playback")
+            case .failed(let message):
+                Text(message).font(.footnote).foregroundStyle(.orange)
+                    .accessibilityIdentifier("spotify-device-error")
+            case .waitingForSpotify:
+                Text("Return from Spotify when this phone is selected. We’ll check the connection without starting a recording.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            case .idle: EmptyView()
+            }
+            if case .ready = recovery.state { } else {
+                #if !targetEnvironment(simulator)
+                Button("Open Spotify", systemImage: "arrow.up.forward.app") {
+                    let attempt = recovery.openRequested()
+                    openURL(URL(string: "spotify:track:\(trackID)")!) { opened in
+                        recovery.openCompleted(opened, attempt: attempt)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(recovery.state == .checking)
+                .accessibilityIdentifier("open-spotify-recovery")
+                #endif
+                Button("Check connection again") { recovery.retry() }
+                    .disabled(recovery.state == .checking)
+                    .accessibilityIdentifier("check-spotify-device")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .background(RoundedRectangle(cornerRadius: 18).fill(Color.white.opacity(0.06)))
+        .task(id: recovery.state == .checking) {
+            if recovery.state == .checking { await recovery.check() }
+        }
+        .onChange(of: scenePhase) { _, phase in recovery.sceneChanged(active: phase == .active) }
+        .onDisappear { recovery.cancel() }
+    }
+}

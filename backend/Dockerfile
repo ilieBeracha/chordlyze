@@ -22,6 +22,12 @@ ENV CHORDLYZE_ISMIR_DIR=/opt/chordlyze/ismir2019 \
     CHORDLYZE_TORCH_THREADS=2
 RUN PYTHON=python3.11 bash scripts/setup_ismir.sh "$CHORDLYZE_ISMIR_DIR"
 
+COPY requirements-rhythm.txt .
+COPY scripts/setup_rhythm.sh ./scripts/setup_rhythm.sh
+COPY chordlyze_backend/analysis/rhythm.py chordlyze_backend/analysis/rhythm_worker.py ./chordlyze_backend/analysis/
+ENV CHORDLYZE_RHYTHM_DIR=/opt/chordlyze/rhythm
+RUN PYTHON=python3.11 bash scripts/setup_rhythm.sh "$CHORDLYZE_RHYTHM_DIR"
+
 COPY chordlyze_backend ./chordlyze_backend
 COPY song_worker.py ./song_worker.py
 COPY scripts/reset_song_library.py scripts/claim_library.py scripts/backfill_genres.py scripts/refresh_lyrics.py ./scripts/

@@ -18,7 +18,25 @@ metronome's beat grid and displayed timeline follow that pace; recording stops
 at the end of the range. After the result, return and choose **Practice this
 section again** to keep the range and pace for another attempt.
 
+Charts with detected bars also have a **Song map** button. Select a recurring
+section or a numbered bar range and choose **Record selected bars** to open
+setup with those boundaries. See [song structure](song-structure.md).
+
 ## Looping a passage in Live
+
+A temporary song-status connection failure keeps an already loaded full chart
+usable, including chord diagrams, Live following and passage selection. The sheet
+offers **Reconnect** and continues retrying status reads without requesting new
+analysis. Loops and transposition remain in place. This preserves the chart in
+memory; it does not add offline music playback or persist sheets across app
+restarts. Explicit server resets still clear the reference, and unknown-offset
+previews cannot become practice charts during an outage.
+
+Lyrics attached to the analyzed recording take priority over catalog lookups,
+including words transcribed by the worker. Refreshing or reopening the sheet
+does not replace them with estimated timing. A replacement recording (identified
+by its audio hash), or a library reset, invalidates the old recording's word times
+and allows fresh lyrics to load.
 
 Live has an A–B repeat for rehearsing a change before recording it: tap
 **Loop** at the passage start, then **B** at its end (or long-press a line and
@@ -46,32 +64,20 @@ back to the take's own clock. Pausing, seeking or changing songs saves the
 partial recording without silently submitting it. Spotify playback needs 100%
 pace and the original key; the metronome path is the only way to slow down.
 
-Measured against the Spotify desktop client's own clock, the app's playhead
-agrees within about 0.1 s, so a chord that highlights late is a chart matter,
-not a polling one: recognized boundaries land slightly after the change and
-players read ahead of the beat. **Key & capo** therefore has a global
-"Show chords ahead" lead (`chordLead` in UserDefaults, default 0 s since word timing arrived) applied
-to the Live and Practice display only; the take stays anchored to Spotify's
-reported position so scoring remains in real song time.
+Spotify's reported clock is an estimate of playback position, not a measurement of when sound reaches the player's ears. Matching the desktop clock does not establish headphone timing. **Key & capo → Calibrate by ear** fits the chart to the audible Spotify recording. Practice captures that map's starting chart position and scale for the whole take, including saved retries and backend scoring; changing calibration later does not reinterpret an old take.
 
-Charts are analyzed from a matched YouTube recording, not the Spotify master.
-When the recording's length differs from the Spotify track by more than a
-second, the sheet, Live and Practice show an edition warning, and **Key &
-capo** offers a timing offset (±5 s in 0.25 s steps) that Live and Practice add
-to Spotify's position before reading the chart. Like transpose and capo, the
-offset lives on the in-memory song document.
+**Show chords ahead** moves only the visual cue, never the scoring clock. Its default and Reset value are both zero. Calibration and this display lead are separate controls.
 
 Playing along with Spotify is the one primary action. **Practice slower,
 without the song** reveals the pace picker (50% or 75%) and the metronome
 take; **Play along with the song instead** returns. The metronome take
-requires pausing Spotify. The backend tracks beats
-but not bars, so the app infers them (`BeatGrid`): in 4/4 the beat phase that
-most chord changes land on is taken as beat 1. Chord boundaries within a
-third of a beat of a beat are drawn on the beat, on every surface, so chords
-change where the click lands; scoring still uses the recognized boundaries.
-The take begins on the downbeat at or before the chosen start, four clicks
-at the song's own spacing count in the bar before it, beat 1 is accented, and
-the recording bar shows four beat dots. Changing pace scales the clicks and
+requires pausing Spotify. New charts use audio-derived beats and downbeats.
+Legacy beat-only charts retain the four-beat chord-phase fallback. Chord
+boundaries within a third of a local beat are drawn on that beat on every
+surface; scoring still uses the recognized boundaries. The take begins on
+the downbeat at or before the chosen start. Count-in length, accents and dots
+follow the selected bar's detected beat count and local spacing, with a
+four-click fallback where meter is unknown. Changing pace scales the clicks and
 never modifies Spotify playback speed. Each take is limited to 600 real
 seconds. Charts without beat data use a visual count-in and no click.
 
@@ -100,20 +106,13 @@ the .m4a and handed to `ChordDrillDetector` in its general form (any chord in
 the vocabulary, same 70 ms dwell), so the detector's sample time is the frame's
 position in the file: feedback and the backend score the same timeline.
 
-`PracticeFeedback` judges each chart chord in the take from detector strums
-(the moment the detector starts reporting a chord it was not reporting). A
-strum's chart time is its take time through the plan, minus 0.35 s of detector
-latency (window plus dwell; at slower paces this is slightly overcorrected).
-Matching is by pitch-class set after transposition, so voicing, bass note and
-spelling do not matter. Verdicts: **hit** with an offset (within 0.25 s is "on
-time"; a strum up to 0.5 s before a change belongs to the coming chord),
-**wrong** naming what was heard, upgraded to a late hit if the right chord
-follows, and **held** for a repeated chord after a hit. A chord the detector
-never accepted stays unjudged: the detector is conservative and its silence is
-not evidence. During the take, chips show a corner dot (green on time, amber
-early/late, red wrong) and the bottom bar names the latest verdict with a
-running hit count. The saved-take screen repeats the totals; backend scoring
-remains the full result.
+`PracticeFeedback` judges each chart chord from the first accepted chord timestamp in captured audio. The detector retains this timestamp across coalesced UI updates, so a busy main thread cannot move the reported strum later. Its 0.35-second analysis-delay correction remains an estimate, not a measured device calibration. It is applied in real seconds before chart-rate conversion. Live timing labels therefore say "estimated ... vs chart" or "near chart change" rather than asserting that the player was late. A chord already sounding when the take begins is held, not a missed earlier transition.
+
+Matching uses pitch-class sets after transposition. Silence and uncertain detections remain unjudged in live feedback; confirmed wrong chords name what was heard. Matching chords can upgrade an earlier wrong verdict. Actual detector latency still depends on evidence quality and device input; no software constant establishes the player's acoustic timing.
+
+The server independently recognizes the recorded take. Scoring version 3 reports **chord changes matched** separately from **time matching chart**. A correct change can be early or late; its match does not erase its timing error. Server matching uses symmetric three-second windows, bounded by neighboring reference intervals and take coverage, with one-to-one detected-onset assignment. This avoids the previous asymmetric early/late selection bias. The original duration-overlap `accuracy`, per-chord and section values remain unchanged and explicitly labeled as time matching the chart.
+
+When at least three matched changes span eight seconds, cover at least 75% of expected transitions, and all lie within 0.15 seconds of their median, an offset of 0.1–1.5 seconds is reported as a **consistent offset**. It is descriptive: device/recording sync and consistently early/late playing cannot be distinguished from chord detections alone. No automatic shift is subtracted and no original accuracy is inflated. Old saved reports retain the original overlap metric, with corrected labeling; re-score a saved recording to obtain the new diagnostics.
 
 ## Key and capo
 
@@ -124,21 +123,22 @@ capo restores the sounding pitch and does not add another scoring shift.
 Settings are captured at record start, so retrying later uses the original take's
 key, capo, start position and pace. Reports and drills name sounding chords.
 
-`POST /practice_take` accepts two optional multipart fields:
+`POST /practice_take` accepts these optional multipart fields:
 
 - `transpose`: integer semitones, -12 through 12; default 0. The UI uses -6…6.
 - `playback_rate`: finite song-seconds per performed second, 0.5 through 1;
   default 1.
+- `timing_scale`: captured chart-to-playback calibration scale, 0.9 through 1.1; default 1.
 
 For a take starting at song second `offset`, performed time `t` corresponds to
-`offset + t * playback_rate`. Scoring transforms the reference into performed
+`offset + t * playback_rate / timing_scale`. Scoring transforms the reference into performed
 seconds so timing errors and matching windows remain real seconds. Report
 section boundaries and `covered_start`/`covered_end` remain original song times;
 `scored_duration` measures performed seconds. Rich chord qualities are preserved;
 legacy charts continue to disclose major/minor comparison.
 
-Reports echo `transpose` and `playback_rate`. The client rejects mismatched values;
-missing values are only compatible with original-key, original-pace takes.
+Reports echo `transpose`, `playback_rate` and `timing_scale`. The client rejects mismatched values;
+missing values are only compatible with original-key, original-pace, identity-scale takes.
 Deploy the updated backend before distributing the updated iOS app. An older
 backend cannot silently grade a transposed or slowed take as original practice:
 the client keeps that recording for a later retry.
@@ -185,3 +185,10 @@ instrument recording, interrupted playback, offline retry and report navigation.
 wherever it is told, so the play-confirm-record flow can be checked offline.
 Sync feel against real Spotify audio, Premium and no-device errors need a
 physical device with the Spotify app.
+
+## Correcting the reference chart
+
+See [Personal chord corrections](chord-corrections.md) for editing individual
+occurrences, restoring the original and how corrections reach practice scoring.
+New takes retain their chart revision so a later correction cannot silently change
+what an existing recording is graded against.

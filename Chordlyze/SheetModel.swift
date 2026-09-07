@@ -35,6 +35,9 @@ enum SheetModel {
         var id: Double { start }
         func contains(_ time: Double) -> Bool { time >= start && time < end }
         var isInstrumental: Bool { kind == .instrumental }
+        /// Timing gaps remain in the model for playback, but do not create blank
+        /// rows on screen. SongSheetStatus explains missing analysis once.
+        var hasVisibleContent: Bool { !text.isEmpty || !chords.isEmpty }
     }
     static let minInstrumental: Double = 2
     static let rowLength: Double = 8
@@ -207,36 +210,105 @@ enum SheetModel {
     }
 }
 
-/// The chart's beat times with bars inferred on top. The backend tracks
-/// beats but not downbeats; in 4/4, chord changes land on beat 1 far more
-/// than elsewhere, so the beat phase most changes fall on is taken as the
-/// downbeat. Everything the metronome and the sheet do with beats goes
-/// through here so they agree.
+/// One timing model for the chart, navigation and metronome. New analyses use
+/// detected beat positions; legacy 4/4 inference remains readable but never
+/// qualifies as a detected bar map or enables exact bar-range selection.
 struct BeatGrid: Equatable {
-    static let beatsPerBar = 4
-    /// How far off a beat a chord boundary may be and still count as on it.
+    static let beatsPerBar = 4 // Legacy fallback only.
     static let snapShare = 0.34
-
     let beats: [Double]
-    /// Median beat spacing, in seconds.
     let period: Double
-    /// Index into `beats` of a downbeat; every fourth beat from it is one.
     let phase: Int
+    let positions: [Int]?
+    let bars: [ChordAnalysis.Tempo.Bar]
+    let sections: [ChordAnalysis.Tempo.Section]
+    var isEstimated: Bool { positions == nil }
 
     init?(tempo: ChordAnalysis.Tempo?, chords: [ChordSegment]) {
-        guard let tempo, tempo.beats.count >= Self.beatsPerBar * 2 else { return nil }
-        let beats = tempo.beats.filter(\.isFinite).sorted()
-        let gaps = zip(beats, beats.dropFirst()).map { $1 - $0 }.filter { $0 > 0 }.sorted()
-        guard gaps.count >= Self.beatsPerBar, gaps[gaps.count / 2] > 0.15 else { return nil }
-        self.beats = beats
+        guard let tempo, tempo.beats.count >= (tempo.rhythmVersion == nil ? 8 : 2),
+              tempo.beats.allSatisfy({ $0.isFinite && $0 >= 0 }),
+              zip(tempo.beats, tempo.beats.dropFirst()).allSatisfy({ $0 < $1 }) else { return nil }
+        beats = tempo.beats
+        let gaps = zip(beats, beats.dropFirst()).map { $1 - $0 }.sorted()
+        guard gaps[gaps.count / 2] > 0.15 else { return nil }
         period = gaps[gaps.count / 2]
-        var votes = [Int](repeating: 0, count: Self.beatsPerBar)
-        for chord in chords where chord.label != "N" {
-            guard let index = Self.nearestIndex(beats, to: chord.start),
-                  abs(beats[index] - chord.start) <= period * Self.snapShare else { continue }
-            votes[index % Self.beatsPerBar] += 1
+        if tempo.rhythmVersion != nil {
+            let p = tempo.beatPositions ?? []
+            let validPositions = tempo.rhythmVersion == 1 && p.count == beats.count && p.allSatisfy { (0...12).contains($0) }
+            positions = validPositions ? p : []
+            phase = validPositions ? p.firstIndex(of: 1) ?? 0 : 0
+            let candidates = tempo.bars ?? []
+            let times = beats
+            let indices = Dictionary(uniqueKeysWithValues: times.enumerated().map { ($0.element, $0.offset) })
+            let valid = validPositions && candidates.enumerated().allSatisfy { index, bar in
+                guard bar.start.isFinite, bar.end.isFinite, bar.start < bar.end,
+                      (2...12).contains(bar.beats), let a = indices[bar.start],
+                      let b = indices[bar.end], b-a == bar.beats,
+                      Array(p[a..<b]) == Array(1...bar.beats), p[b] == 1,
+                      index == 0 || candidates[index-1].end <= bar.start else { return false }
+                let gaps = zip(times[a..<b], times[(a+1)...b]).map { $1-$0 }
+                return gaps.max()! <= gaps.min()! * 1.8
+            }
+            bars = valid ? candidates : []
+            let checkedBars = bars
+            let proposed = tempo.sections ?? []
+            var previousEnd = 0
+            var occurrences: [String: Int] = [:]
+            let validSections = proposed.allSatisfy { section in
+                guard section.startBar == previousEnd+1, section.endBar >= section.startBar,
+                      section.endBar <= checkedBars.count, !section.label.isEmpty,
+                      section.label.count <= 3, section.label.allSatisfy({ $0.isASCII && $0.isUppercase }),
+                      section.start == checkedBars[section.startBar-1].start,
+                      section.end == checkedBars[section.endBar-1].end else { return false }
+                let range = Array(checkedBars[(section.startBar-1)..<section.endBar])
+                guard zip(range, range.dropFirst()).allSatisfy({ $0.end == $1.start }) else { return false }
+                occurrences[section.label, default: 0] += 1
+                guard section.occurrence == occurrences[section.label] else { return false }
+                previousEnd = section.endBar
+                return true
+            }
+            sections = validSections && previousEnd == bars.count ? proposed : []
+        } else {
+            positions = nil
+            bars = []; sections = []
+            var votes = [Int](repeating: 0, count: Self.beatsPerBar)
+            for chord in chords where chord.label != "N" {
+                guard let index = Self.nearestIndex(beats, to: chord.start),
+                      abs(beats[index] - chord.start) <= period * Self.snapShare else { continue }
+                votes[index % Self.beatsPerBar] += 1
+            }
+            phase = votes.indices.max { votes[$0] < votes[$1] || (votes[$0] == votes[$1] && $0 > $1) } ?? 0
         }
-        phase = votes.indices.max { votes[$0] < votes[$1] || (votes[$0] == votes[$1] && $0 > $1) } ?? 0
+    }
+
+    /// One-based, inclusive bar selection. Refuse a selection spanning a gap.
+    func barRange(first: Int, last: Int) -> ClosedRange<Double>? {
+        guard first >= 1, last >= first, last <= bars.count else { return nil }
+        let range = Array(bars[(first-1)..<last])
+        guard zip(range, range.dropFirst()).allSatisfy({ $0.end == $1.start }) else { return nil }
+        return bars[first-1].start...bars[last-1].end
+    }
+
+    func barNumber(at time: Double) -> Int? {
+        bars.firstIndex { $0.start <= time && time < $0.end }.map { $0+1 }
+    }
+
+    func beatsInBar(at time: Double) -> Int {
+        if let index = barNumber(at: time) { return bars[index-1].beats }
+        if let bar = bars.last(where: { $0.start <= time }) ?? bars.first { return bar.beats }
+        if let positions, let index = beatIndex(at: time), positions.contains(1) {
+            var first = index
+            while first > 0 && positions[first] != 1 { first -= 1 }
+            let last = positions[(first+1)...].firstIndex(of: 1) ?? positions.endIndex
+            return max(1, positions[first..<last].max() ?? 4)
+        }
+        return Self.beatsPerBar
+    }
+
+    /// Use the nearby beat spacing for count-in even when tempo changes later.
+    func period(at time: Double) -> Double {
+        guard let i = beatIndex(at: time), i+1 < beats.count else { return period }
+        return beats[i+1]-beats[i]
     }
 
     static func nearestIndex(_ beats: [Double], to time: Double) -> Int? {
@@ -251,11 +323,15 @@ struct BeatGrid: Equatable {
         return time - beats[low - 1] <= beats[low] - time ? low - 1 : low
     }
 
-    func isDownbeat(_ index: Int) -> Bool { (index - phase) % Self.beatsPerBar == 0 }
+    func isDownbeat(_ index: Int) -> Bool {
+        guard beats.indices.contains(index) else { return false }
+        if let positions { return positions.indices.contains(index) && positions[index] == 1 }
+        return (index - phase) % Self.beatsPerBar == 0
+    }
 
     /// The nearest beat when the time is within a third of a beat of it.
     func snap(_ time: Double) -> Double {
-        guard let index = Self.nearestIndex(beats, to: time), abs(beats[index] - time) <= period * Self.snapShare else { return time }
+        guard let index = Self.nearestIndex(beats, to: time), abs(beats[index] - time) <= period(at: time) * Self.snapShare else { return time }
         return beats[index]
     }
 
@@ -269,14 +345,17 @@ struct BeatGrid: Equatable {
         return low == 0 ? nil : low - 1
     }
 
-    /// 1...4 within the bar at `time`; nil before the first beat.
+    /// Detected position within the bar; nil before the first beat or when unknown.
     func beatInBar(at time: Double) -> Int? {
-        beatIndex(at: time).map { ((($0 - phase) % Self.beatsPerBar) + Self.beatsPerBar) % Self.beatsPerBar + 1 }
+        guard let index = beatIndex(at: time) else { return nil }
+        if let positions { return positions.indices.contains(index) && positions[index] > 0 ? positions[index] : nil }
+        return (((index - phase) % Self.beatsPerBar) + Self.beatsPerBar) % Self.beatsPerBar + 1
     }
 
     /// The downbeat at or just before `time`, so a take begins on beat 1.
     /// Before the first downbeat, the first downbeat.
     func downbeat(atOrBefore time: Double) -> Double {
+        if let positions, !positions.contains(1) { return beatIndex(at: time).map { beats[$0] } ?? beats[0] }
         if let index = beatIndex(at: time) {
             var k = index
             while k >= 0 { if isDownbeat(k) { return beats[k] }; k -= 1 }
@@ -308,9 +387,15 @@ struct TimingMap: Codable, Equatable {
     var verifiedError: Double? = nil
     var chartAudioSha256: String? = nil
     var spotifyTrackID: String? = nil
+    var chartRevision: String? = nil
+    var method: String? = nil
+    var matchScore: Double? = nil
+    var matchMargin: Double? = nil
+    var driftMeasured: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
-        case offset, scale, anchors
+        case offset, scale, anchors, method
+        case chartRevision = "chart_revision", matchScore = "match_score", matchMargin = "match_margin", driftMeasured = "drift_measured"
         case verifiedError = "verified_error", chartAudioSha256 = "chart_audio_sha256", spotifyTrackID = "spotify_track_id"
     }
 
@@ -344,8 +429,26 @@ struct TimingMap: Codable, Equatable {
     }
 
     /// Stale when the chart or the Spotify recording it was made for changed.
-    func matches(chartAudioSha256: String?, spotifyTrackID: String?) -> Bool {
+    func matches(chartAudioSha256: String?, spotifyTrackID: String?, chartRevision: String? = nil) -> Bool {
         (self.chartAudioSha256 == nil || self.chartAudioSha256 == chartAudioSha256)
             && (self.spotifyTrackID == nil || spotifyTrackID == nil || self.spotifyTrackID == spotifyTrackID)
+            && (self.chartRevision == nil || self.chartRevision == chartRevision)
+    }
+}
+
+/// Three separated windows, rather than an entire song upload. Playback must
+/// remain continuous within a window; a seek or stale clock invalidates it.
+enum AutomaticSyncPlan {
+    struct Window: Equatable { let start: Double; let duration: Double }
+    static func windows(duration: Double) -> [Window] {
+        guard duration.isFinite, duration >= 45 else { return [] }
+        let length = min(22, max(12, duration * 0.16))
+        return [0.15, 0.5, 0.85].map {
+            Window(start: max(0, min(duration - length - 1, duration * $0 - length / 2)), duration: length)
+        }
+    }
+    static func uninterrupted(start: Double, position: Double, elapsed: Double) -> Bool {
+        start.isFinite && position.isFinite && elapsed.isFinite && elapsed >= 0
+            && abs(position - start - elapsed) <= 0.65
     }
 }

@@ -2,6 +2,8 @@
 
 Search, saved songs, the home song sheet, Live and recorded Practice use one `SongSheetStore` and one `ChordSheetView`. Chords appear above lyric tokens, once, where they start. A chord that continues into the next row is not repeated there. Timestamped blank lines retain instrumental chord rows. A long lyric line remains intact instead of turning into empty eight-second continuation rows. Hebrew and Arabic use the same token layout in right-to-left order.
 
+When analysis is unavailable, lyric-only rows do not reserve an empty chord slot or repeat dash placeholders. Rows with neither lyrics nor chords remain in the timing model for playback, but take no space in the sheet. The status panel explains the missing analysis once; instrumental rows with actual chords stay visible.
+
 Live follows Spotify playback automatically. Search and Library show the static sheet; Practice uses the same rows with the take's clock. This does not turn Spotify Live into microphone-based song identification. On-device chord drills remain a separate instrument exercise.
 
 ## Accounts and libraries
@@ -78,6 +80,13 @@ requests.
 
 ## Loading and timing
 
+Analysis version 3 includes an audio-derived [song map](song-structure.md).
+Sheet and Live expose detected sections and inclusive bar ranges for navigation,
+Spotify looping and recording setup. Selection uses source-audio boundaries;
+seeks apply the saved timing calibration. Only complete detected bars are
+selectable. Install `scripts/setup_rhythm.sh` alongside the chord recognizer;
+export `CHORDLYZE_RHYTHM_DIR` when using a custom local path. Docker installs it.
+
 Opening a song posts its recording metadata to `/song/request`, then follows `/song/{track_id}`. Lyrics load independently while a complete chart is prepared. Reopening a ready song reuses the chart. Concurrent views share a document and subscriber count; the last departure cancels work. Reentry starts fresh requests. Old, canceled responses cannot replace the current song.
 
 Full song duration and album information travel from Spotify/iTunes through Search, Library and lyrics lookup. Both exact and search lyric matches are checked against title, artist and duration. A 30-second iTunes preview starts at an unknown offset and is never positioned against the whole song.
@@ -87,6 +96,8 @@ Known lyrics and known chords can load at different times. Missing data is shown
 Spotify polling starts immediately, runs separately from analysis, and honors rate-limit delays. A monotonic clock advances between polls, freezes on pause and resynchronizes on seeks or song changes. Connection failures retry automatically, and background/foreground transitions restart polling. Extrapolation stops after 15 seconds without a successful playback sample. A view-owned `TimelineView` redraws and scrolls Live; screens do not share a disconnectable timer.
 
 ## Full-song worker
+
+Before searching YouTube, the worker checks `backend/chordlyze_backend/recording_sources.json` for a reviewed artist-hosted public stream keyed by ISRC. Each entry requires the artist's HTTPS Bandcamp track URL, title, artist and full recording duration. Adding an entry requires checking the artist's release and matching recording metadata; this is a curated registry, not automatic Bandcamp discovery. The extractor revalidates title, artist and duration before and after downloading, and the recognizer independently validates decoded duration before publication. Missing public streams fall through to the existing YouTube search. Downloads have a 100 MiB size cap, a 120-second progress deadline, socket timeouts, cancellation and temporary-file cleanup. Provenance records `source: bandcamp` and the artist URL. The initial entry restores the 317.72-second album recording of [Shadows by Zero 7 and Lou Stone](https://zero7.bandcamp.com/track/shadows), whose shorter official video was correctly rejected by the duration gate.
 
 The Fly API stores a durable request queue on its existing volume. A separate Fly `worker` process searches and downloads a matching full recording through Apify, then runs the pinned five-model recognizer. The worker has no HTTP service and does not participate in Fly proxy autostop. It restarts after exits and operates independently of the development Mac and Codex. The volume is mounted only by the API process; the worker claims jobs over the authenticated API.
 

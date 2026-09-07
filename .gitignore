@@ -2,6 +2,8 @@
 build/
 xcuserdata/
 backend/.venv/
+backend/.venv-rhythm/
+backend/rhythm-models/
 backend/analysis_cache/
 **/__pycache__/
 *.xcarchive
