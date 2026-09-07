@@ -21,7 +21,7 @@ struct LiveNowView: View {
     @State private var loopStart: Double?
     @State private var loopArmed = true
     /// The strip of chord fingerings above the words; a bottom-bar toggle.
-    @AppStorage("liveChordRail") private var showRail = true
+    @AppStorage("chordRail") private var showRail = false
 
     var body: some View {
         ScrollViewReader { proxy in
