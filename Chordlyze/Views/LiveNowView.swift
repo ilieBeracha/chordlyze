@@ -20,6 +20,8 @@ struct LiveNowView: View {
     /// start. The range lives on the store; only the arming is view state.
     @State private var loopStart: Double?
     @State private var loopArmed = true
+    /// The strip of chord fingerings above the words; a bottom-bar toggle.
+    @AppStorage("liveChordRail") private var showRail = true
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -40,6 +42,11 @@ struct LiveNowView: View {
                     if seekDenied {
                         Text("Spotify could not seek. Check playback permissions or Premium.").font(.caption)
                             .foregroundStyle(Palette.secondary).padding(.horizontal, 20).padding(.bottom, 6)
+                    }
+                    if showRail {
+                        ChordRailView(events: SheetModel.events(store.analysis), position: position, transposeBy: store.shift,
+                                      onTap: { selectedChord = SelectedChord(name: $0) })
+                            .transition(.move(edge: .top).combined(with: .opacity))
                     }
                     ScrollView {
                         ChordSheetView(store: store, playhead: position, style: .live,
@@ -62,6 +69,15 @@ struct LiveNowView: View {
                         Text(mmss(position)).font(.system(size: 13, weight: .semibold, design: .monospaced))
                             .foregroundStyle(.white).accessibilityIdentifier("live-position")
                         ProgressView(value: position, total: max(1, duration)).tint(.spotifyGreen)
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.25)) { showRail.toggle() }
+                        } label: {
+                            Image(systemName: "guitars").font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(showRail ? Color.spotifyGreen : Palette.secondary)
+                                .frame(width: 32, height: 32).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain).accessibilityIdentifier("chord-rail-toggle")
+                        .accessibilityLabel(showRail ? "Hide chord shapes" : "Show chord shapes")
                         if onSeek != nil { loopControl(at: wordPosition) } else {
                             Text("Live").font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.secondary)
                         }

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		009820070DB7146D2866EE23 /* ChordRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04726B3D35A67D70A04F5F98 /* ChordRowView.swift */; };
+		0EBD92DFF0F818BFF68F319A /* ChordRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA4357F4F07A866C24993E81 /* ChordRail.swift */; };
 		10FC0A4E94368041EFDFFAD3 /* PracticeTakeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41C7BD8A07B26C51461140CF /* PracticeTakeStore.swift */; };
 		16944B0A1CCA81BDCF36660A /* ReportCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0F811F0C5F3043C10F537F8 /* ReportCardView.swift */; };
 		217111167168D9268C97AA0C /* SpotifyAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E4FF07B614A2CF0ABCC7DAC /* SpotifyAPI.swift */; };
@@ -87,6 +88,7 @@
 		C2632D6D5B8D8A2C886C3E9D /* LiveNowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveNowView.swift; sourceTree = "<group>"; };
 		C3F7DB20D8B369A5FA269126 /* Chord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chord.swift; sourceTree = "<group>"; };
 		C984E0CBEB1E577640330B5A /* ChordLyricLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordLyricLine.swift; sourceTree = "<group>"; };
+		DA4357F4F07A866C24993E81 /* ChordRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordRail.swift; sourceTree = "<group>"; };
 		E1243AB5316165B94E89C1FE /* BackendClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendClient.swift; sourceTree = "<group>"; };
 		E1614B50A45FA29707012533 /* DrillAudioWorker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrillAudioWorker.swift; sourceTree = "<group>"; };
 		F0F811F0C5F3043C10F537F8 /* ReportCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportCardView.swift; sourceTree = "<group>"; };
@@ -111,6 +113,7 @@
 				0AD4733C8A8B5EB4A0653594 /* CatalogBrowseView.swift */,
 				084B36CA9E995C690A1D8FEE /* ChordDiagramSheet.swift */,
 				C984E0CBEB1E577640330B5A /* ChordLyricLine.swift */,
+				DA4357F4F07A866C24993E81 /* ChordRail.swift */,
 				04726B3D35A67D70A04F5F98 /* ChordRowView.swift */,
 				F25A477EBBECFCAB181FC4B9 /* ChordSheetView.swift */,
 				1876BBFA097772E3C9CF64D3 /* ChordView.swift */,
@@ -250,6 +253,7 @@
 				DC87311DE722AD2BC2AB3ACA /* ChordDrillListener.swift in Sources */,
 				EABAEF37B1E0E250E3F39AB5 /* ChordLyricLine.swift in Sources */,
 				3817F5E6B10603979A96BA3F /* ChordMath.swift in Sources */,
+				0EBD92DFF0F818BFF68F319A /* ChordRail.swift in Sources */,
 				009820070DB7146D2866EE23 /* ChordRowView.swift in Sources */,
 				80ABEDD4F7DCA0F55379787E /* ChordShapes.swift in Sources */,
 				C2D3DBA369FE2FCC2F82E0E9 /* ChordSheetView.swift in Sources */,

@@ -75,6 +75,18 @@ enum SheetModel {
     static func activeRow(_ rows: [Row], at time: Double) -> Row? {
         rows.first { $0.contains(time) }
     }
+    /// The chord rail: the sounding chord (or, in a gap, the first to come)
+    /// and the next changes of chord after it, up to `count` in all. Events
+    /// that show the same chord as the one before them are one entry.
+    static func changes(_ events: [Event], from time: Double, count: Int) -> [Event] {
+        var out: [Event] = []
+        for event in events where event.end > time {
+            if let last = out.last, last.chord == event.chord { continue }
+            out.append(event)
+            if out.count == count { break }
+        }
+        return out
+    }
     /// The next change of chord after `time`: a following event with the same
     /// chord (a bass or voicing the sheet shows alike) is not "next".
     static func nextEvent(_ events: [Event], after time: Double) -> Event? {

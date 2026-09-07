@@ -11,7 +11,7 @@ struct ChordDiagramSheet: View {
                 .foregroundStyle(.white)
                 .padding(.top, 24)
 
-            if let shape = ChordShapes.guitar[chord] {
+            if let shape = ChordShapes.guitar(chord) {
                 GuitarDiagram(shape: shape)
                     .frame(width: 190, height: 220)
             } else {
