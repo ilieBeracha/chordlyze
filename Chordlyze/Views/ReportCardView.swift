@@ -148,6 +148,7 @@ struct ReportCardView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .toolbar(.hidden, for: .tabBar)
         .chordDiagram($selectedChord)
     }
 

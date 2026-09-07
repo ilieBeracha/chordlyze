@@ -110,7 +110,7 @@ struct PracticeView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .toolbar(phase == .recording || isCounting ? .hidden : .visible, for: .tabBar)
+        .toolbar(.hidden, for: .tabBar)
         .observes(songStore)
         .onAppear {
             guard !initialized else { return }

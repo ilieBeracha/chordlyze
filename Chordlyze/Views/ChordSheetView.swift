@@ -39,6 +39,7 @@ struct AnalysisTabsView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .toolbar(.hidden, for: .tabBar)
         .chordDiagram($selectedChord)
         .sheet(isPresented: $showSettings) { SongPlayingSettings(store: store, nowPlaying: nowPlaying) }
         .navigationDestination(isPresented: Binding(get: { practiceRange != nil },
