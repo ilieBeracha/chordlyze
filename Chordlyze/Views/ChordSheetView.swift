@@ -9,8 +9,6 @@ struct AnalysisTabsView: View {
     @State private var selectedChord: SelectedChord?
     @State private var showSettings = false
     @State private var practiceRange: ClosedRange<Double>?
-    @State private var starting = false
-    @State private var startError: String?
     @State private var lastPosition = 0.0
     @State private var seekDenied = false
     /// A–B repeat: the range lives on the store; only the arming is view state.
@@ -132,24 +130,12 @@ struct AnalysisTabsView: View {
         }
     }
 
-    /// One row under the header: play along with the song, practice, key
-    /// and capo, save. While the song is up, Play along has nothing to do
-    /// and goes away.
+    /// One row under the header: practice, key and capo, save. The page
+    /// follows the song when it plays in Spotify; it does not start playback
+    /// itself.
     private func toolbar(playhead: Double?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                if playhead == nil {
-                    Button {
-                        playAlong()
-                    } label: {
-                        Label(starting ? "Starting…" : "Play along", systemImage: "play.fill")
-                            .font(.system(size: 14, weight: .bold)).foregroundStyle(.black)
-                            .frame(maxWidth: .infinity, minHeight: 42)
-                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.spotifyGreen))
-                    }
-                    .buttonStyle(.plain).disabled(starting)
-                    .accessibilityIdentifier("play-along")
-                }
                 if let chart = store.analysis {
                     NavigationLink {
                         PracticeView(analysis: chart, title: store.song.title, artist: store.song.artist,
@@ -168,7 +154,7 @@ struct AnalysisTabsView: View {
                 }
                 .buttonStyle(.plain).accessibilityIdentifier("save-toggle")
             }
-            if let note = startError ?? store.saveError ?? (seekDenied ? "Spotify could not seek. Check playback permissions or Premium." : nil) {
+            if let note = store.saveError ?? (seekDenied ? "Spotify could not seek. Check playback permissions or Premium." : nil) {
                 Text(note).font(.footnote).foregroundStyle(Palette.warning)
             }
         }
@@ -178,21 +164,6 @@ struct AnalysisTabsView: View {
         Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
             .frame(maxWidth: .infinity, minHeight: 42)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.card))
-    }
-
-    /// Start the song on this phone's Spotify; the page lights up in place
-    /// once the poller sees it.
-    private func playAlong() {
-        starting = true
-        startError = nil
-        Task {
-            do {
-                try await nowPlaying.play(trackID: store.song.id, at: 0)
-            } catch {
-                startError = error.localizedDescription
-            }
-            starting = false
-        }
     }
 
     /// The loop circle: first tap marks A, the second marks B and starts the
