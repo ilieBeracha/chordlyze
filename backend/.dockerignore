@@ -7,3 +7,6 @@ __pycache__/
 .env
 .env.*
 worker-logs/
+
+.venv-rhythm/
+rhythm-models/

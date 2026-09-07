@@ -10,7 +10,7 @@ import Foundation
 struct PracticeFeedback: Equatable {
     enum Verdict: Equatable {
         /// Matching chord heard; `offset` is seconds after the chart change
-        /// (negative = early), detector latency already removed.
+        /// (negative = early), estimated detector latency removed.
         case hit(offset: Double)
         /// A different chord was heard while this one should have sounded.
         case wrong(heard: String)
@@ -24,7 +24,7 @@ struct PracticeFeedback: Equatable {
         let mask: UInt16
     }
 
-    /// Analysis window plus dwell before the detector reports a strum.
+    /// Approximate analysis window plus dwell; not device/headphone calibration.
     static let detectorLatency = 0.35
     /// A strum this far before the chart change counts for the next chord.
     static let earlyWindow = 0.5
@@ -34,9 +34,13 @@ struct PracticeFeedback: Equatable {
     let targets: [Target]
     private(set) var verdicts: [Int: Verdict] = [:]
     private var lastHeard: String?
+    private var lastRecognizedAt: Double?
+    private let takeStart: Double
+    private var chartRate = 1.0
 
     /// Sounding chords the take covers, transposed like the scoring reference.
     init(chords: [ChordSegment], start: Double, end: Double, transpose: Int = 0) {
+        takeStart = start
         targets = chords.compactMap { segment in
             guard segment.end > start, segment.start < end,
                   let chord = segment.chord?.transposed(by: transpose),
@@ -54,10 +58,15 @@ struct PracticeFeedback: Equatable {
     /// detector starts reporting a chord it was not reporting just before.
     /// Returns the index of the target whose verdict changed.
     @discardableResult
-    mutating func observe(current: String?, chartTime: Double) -> Int? {
-        defer { lastHeard = current }
-        guard let current, current != lastHeard else { return nil }
-        return heard(current, at: chartTime - Self.detectorLatency)
+    mutating func observe(current: String?, chartTime: Double, chartRate: Double = 1,
+                          recognizedAt: Double? = nil) -> Int? {
+        defer { lastHeard = current; lastRecognizedAt = recognizedAt }
+        guard chartRate.isFinite, chartRate > 0 else { return nil }
+        self.chartRate = chartRate
+        guard let current, current != lastHeard || recognizedAt != lastRecognizedAt else { return nil }
+        // Subtract real detector seconds before mapping to the chart's pace.
+        // UI delivery can be delayed; the first accepted audio frame cannot.
+        return heard(current, at: (recognizedAt ?? chartTime) - Self.detectorLatency * chartRate)
     }
 
     /// A strum of `name` at chart second `time`.
@@ -65,17 +74,19 @@ struct PracticeFeedback: Equatable {
     mutating func heard(_ name: String, at time: Double) -> Int? {
         guard let chord = Chord(display: name), let mask = Self.mask(chord) else { return nil }
         let sounding = targets.firstIndex { $0.start <= time && time < $0.end }
-        let next = targets.firstIndex { $0.start > time && $0.start - time <= Self.earlyWindow }
+        let next = targets.firstIndex { $0.start > time && $0.start - time <= Self.earlyWindow * chartRate }
         // An early strum of the coming chord belongs to it, not to the current one.
         if let next, targets[next].mask == mask, verdicts[next] == nil {
-            return set(next, .hit(offset: time - targets[next].start))
+            return set(next, .hit(offset: (time - targets[next].start) / chartRate))
         }
         guard let sounding else { return nil }
         let target = targets[sounding]
         if target.mask == mask {
+            // The player cannot change to a chord before their take began.
+            if target.start < takeStart { return set(sounding, .held) }
             switch verdicts[sounding] {
             case .hit: return nil
-            default: return set(sounding, .hit(offset: time - target.start))
+            default: return set(sounding, .hit(offset: (time - target.start) / chartRate))
             }
         }
         guard verdicts[sounding] == nil else { return nil }
@@ -106,8 +117,8 @@ struct PracticeFeedback: Equatable {
 
     static func describe(_ target: Target, _ verdict: Verdict) -> String {
         switch verdict {
-        case .hit(let offset) where abs(offset) <= onTimeTolerance: return "\(target.name) on time"
-        case .hit(let offset): return String(format: "%@ %@ by %.1f s", target.name, offset < 0 ? "early" : "late", abs(offset))
+        case .hit(let offset) where abs(offset) <= onTimeTolerance: return "\(target.name) matched · near chart change"
+        case .hit(let offset): return String(format: "%@ matched · estimated %+.1f s vs chart", target.name, offset)
         case .wrong(let heard): return "\(target.name) expected, heard \(heard)"
         case .held: return "\(target.name) held"
         }

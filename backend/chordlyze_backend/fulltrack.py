@@ -1,8 +1,8 @@
 """Full-song audio for whole-track chord analysis.
 
 The iTunes preview is a 30 s slice at an unknown offset, so chords from it
-can't be placed on the song timeline. A YouTube upload whose length matches
-the track gives the whole song from 0:00. A result must carry the song's
+can't be placed on the song timeline. A reviewed artist stream or YouTube upload
+whose length matches the track gives the whole song from 0:00. A result must carry the song's
 title and last as long as the track (the album version is the same length
 everywhere); live/cover/remix variants are filtered out.
 """
@@ -94,7 +94,7 @@ def _search_youtube(title: str, artist: str, *, blocked_ok: bool = True) -> list
 
 def fetch_full_track(title: str, artist: str, duration: float, *, source_info: dict | None = None,
                      checkpoint: dict | None = None, save_checkpoint=None,
-                     cancelled=lambda: False) -> Path | None:
+                     cancelled=lambda: False, isrc: str | None = None) -> Path | None:
     """Download the matching upload's audio to a temp file; None when no
     result matches. Provider failures raise a sanitized AudioProviderError in
     cloud mode or yt_dlp.utils.DownloadError in local development."""
@@ -102,6 +102,15 @@ def fetch_full_track(title: str, artist: str, duration: float, *, source_info: d
 
     if cancelled():
         raise DownloadCancelled()
+    # Prefer an explicitly reviewed artist stream for an exact recording when
+    # the public video catalog only carries a shorter edit or live version.
+    from .artist_recordings import source_for, fetch_artist_recording
+    reviewed = source_for(isrc, title, artist, duration)
+    if reviewed:
+        audio = fetch_artist_recording(reviewed, title, artist, duration,
+                                       source_info=source_info, cancelled=cancelled)
+        if audio is not None:
+            return audio
     provider = os.environ.get('CHORDLYZE_AUDIO_PROVIDER', 'yt_dlp')
     if provider == 'apify':
         client = ApifyAudio()

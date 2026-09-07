@@ -44,7 +44,9 @@ struct SongStatus: Decodable {
     let saved: Bool?
     /// This account's calibration of the chart to the Spotify recording.
     let timing: TimingMap?
+    var timingRevision: String? = nil
     enum CodingKeys: String, CodingKey {
+        case timingRevision = "timing_revision"
         case song, analysis, lyrics, job, saved, timing, libraryGeneration = "library_generation"
     }
 }
@@ -70,10 +72,45 @@ struct ChordAnalysis: Decodable, Equatable {
     let album: String?
     /// Identity of the analyzed recording; a calibration is tied to it.
     let audioSha256: String?
+    var chartRevision: String? = nil
+    var correctionsStale: Bool? = nil
+    var canUndo: Bool? = nil
+    var boundariesEdited: Bool? = nil
 
     struct Tempo: Decodable, Equatable {
         let bpm: Double
         let beats: [Double]
+        var beatPositions: [Int]? = nil
+        var bars: [Bar]? = nil
+        var sections: [Section]? = nil
+        var rhythmVersion: Int? = nil
+        var rhythmModel: String? = nil
+        var structureModel: String? = nil
+
+        enum CodingKeys: String, CodingKey {
+            case bpm, beats, bars, sections
+            case beatPositions = "beat_positions", rhythmVersion = "rhythm_version"
+            case rhythmModel = "rhythm_model", structureModel = "structure_model"
+        }
+        struct Bar: Decodable, Equatable {
+            let start: Double
+            let end: Double
+            let beats: Int
+        }
+        struct Section: Decodable, Equatable, Identifiable {
+            let start: Double
+            let end: Double
+            let startBar: Int
+            let endBar: Int
+            let label: String
+            let occurrence: Int
+            var id: Double { start }
+            var title: String { "Section \(label) · \(occurrence)" }
+            enum CodingKeys: String, CodingKey {
+                case start, end, label, occurrence
+                case startBar = "start_bar", endBar = "end_bar"
+            }
+        }
     }
 
     enum CodingKeys: String, CodingKey {
@@ -82,6 +119,8 @@ struct ChordAnalysis: Decodable, Equatable {
         case analyzedEnd = "analyzed_end"
         case audioDuration = "audio_duration", songDuration = "song_duration", audioSha256 = "audio_sha256"
         case chords, source, difficulty, tempo, album
+        case chartRevision = "chart_revision", correctionsStale = "corrections_stale"
+        case canUndo = "can_undo", boundariesEdited = "boundaries_edited"
     }
 
     /// Last second the chords cover. Playback past it has no chord information.
@@ -111,6 +150,10 @@ struct ChordSegment: Decodable, Identifiable, Equatable {
     let end: Double
     let label: String
     let roman: String?
+    var originalLabel: String? = nil
+    enum CodingKeys: String, CodingKey {
+        case start, end, label, roman, originalLabel = "original_label"
+    }
 
     var id: Double { start }
     var duration: Double { end - start }
@@ -285,6 +328,78 @@ enum BackendClient {
         return result
     }
 
+    static func correctChord(trackID: String, segment: ChordSegment, name: String?, revision: String) async throws -> SongStatus {
+        var request = URLRequest(url: Config.backendBaseURL.appendingPathComponent("library/\(trackID)/chords"),
+                                 cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "chart_revision": revision, "start": segment.start, "end": segment.end,
+            "name": name.map { $0 as Any } ?? NSNull()])
+        guard let result: SongStatus = try await fetch(request) else {
+            throw BackendError(status: 404, detail: "This song has no chart to correct yet.")
+        }
+        return result
+    }
+
+    struct BoundaryEdit: Encodable {
+        enum Operation: String, Encodable { case move, split, merge, undo, restore }
+        let operation: Operation
+        var start: Double? = nil
+        var end: Double? = nil
+        var at: Double? = nil
+        var edge = "end"
+        var name: String? = nil
+        var chartRevision: String
+        enum CodingKeys: String, CodingKey {
+            case operation, start, end, at, edge, name, chartRevision = "chart_revision"
+        }
+    }
+
+    static func editBoundary(trackID: String, edit: BoundaryEdit) async throws -> SongStatus {
+        var request = URLRequest(url: Config.backendBaseURL.appendingPathComponent("library/\(trackID)/chords/boundary"), timeoutInterval: 20)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(edit)
+        guard let result: SongStatus = try await fetch(request) else {
+            throw BackendError(status: 404, detail: "No chart to edit yet.")
+        }
+        return result
+    }
+
+    struct SyncClip {
+        let file: URL
+        let spotifyStart: Double
+    }
+
+    static func synchronizationRequest(trackID: String, clips: [SyncClip], chartRevision: String, timingRevision: String) throws -> URLRequest {
+        let boundary = "chordlyze-sync-\(UUID().uuidString)"
+        var request = URLRequest(url: Config.backendBaseURL.appendingPathComponent("library/\(trackID)/synchronize"), timeoutInterval: 240)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        var data = Data()
+        func append(_ text: String) { data.append(Data(text.utf8)) }
+        let positions = String(data: try JSONEncoder().encode(clips.map(\.spotifyStart)), encoding: .utf8)!
+        for (name, value) in [("positions", positions), ("chart_revision", chartRevision), ("timing_revision", timingRevision)] {
+            append("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n")
+        }
+        for clip in clips {
+            append("--\(boundary)\r\nContent-Disposition: form-data; name=\"files\"; filename=\"sample.m4a\"\r\nContent-Type: audio/mp4\r\n\r\n")
+            data.append(try Data(contentsOf: clip.file))
+            append("\r\n")
+        }
+        append("--\(boundary)--\r\n")
+        request.httpBody = data
+        return request
+    }
+
+    static func synchronize(trackID: String, clips: [SyncClip], chartRevision: String, timingRevision: String) async throws -> SongStatus {
+        guard let result: SongStatus = try await fetch(synchronizationRequest(trackID: trackID, clips: clips, chartRevision: chartRevision, timingRevision: timingRevision)) else {
+            throw BackendError(status: 404, detail: "No chart to synchronize yet.")
+        }
+        return result
+    }
+
     // MARK: - Practice
 
     struct PracticeReport: Codable, Identifiable {
@@ -333,6 +448,22 @@ enum BackendClient {
         let comparison: String?
         let transpose: Int?
         let playbackRate: Double?
+        let timingScale: Double?
+        var referenceChartRevision: String? = nil
+        let matchedChanges: Int?
+        let totalChanges: Int?
+        let consistentOffset: ConsistentOffset?
+        struct ConsistentOffset: Codable {
+            let seconds: Double
+            let spread: Double
+            let samples: Int
+        }
+        var changeMatchRate: Double? {
+            guard let matchedChanges, let totalChanges, totalChanges > 0 else { return nil }
+            return Double(matchedChanges) / Double(totalChanges)
+        }
+        var displayScore: Double { changeMatchRate ?? accuracy }
+        var scoreLabel: String { changeMatchRate == nil ? "time matching chart" : "chord changes matched" }
         let perChord: [ChordScore]
         let transitions: [Transition]
         let sections: [Section]
@@ -340,6 +471,10 @@ enum BackendClient {
         enum CodingKeys: String, CodingKey {
             case accuracy, transitions, sections, comparison, transpose
             case playbackRate = "playback_rate"
+            case timingScale = "timing_scale"
+            case referenceChartRevision = "reference_chart_revision"
+            case matchedChanges = "matched_changes", totalChanges = "total_changes"
+            case consistentOffset = "consistent_offset"
             case takeId = "take_id"
             case avgLag = "avg_lag"
             case avgTimingError = "avg_timing_error"
@@ -349,20 +484,20 @@ enum BackendClient {
 
     /// Upload a practice recording; the backend scores it against the track's chart.
     /// `offset`: song second that take second 0 corresponds to (Spotify sync).
-    static func submitPracticeTake(fileURL: URL, trackID: String, offset: Double, transpose: Int = 0, playbackRate: Double = 1) async throws -> PracticeReport {
+    static func submitPracticeTake(fileURL: URL, trackID: String, offset: Double, transpose: Int = 0, playbackRate: Double = 1, timingScale: Double = 1, chartRevision: String? = nil) async throws -> PracticeReport {
         let request = try await authorized(practiceTakeRequest(fileURL: fileURL, trackID: trackID, offset: offset,
-            transpose: transpose, playbackRate: playbackRate))
+            transpose: transpose, playbackRate: playbackRate, timingScale: timingScale, chartRevision: chartRevision))
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             let detail = String(data: data, encoding: .utf8) ?? ""
             throw BackendError(status: (response as? HTTPURLResponse)?.statusCode ?? 0,
                 detail: "Scoring failed: \(detail)")
         }
-        return try practiceReport(data, transpose: transpose, playbackRate: playbackRate)
+        return try practiceReport(data, transpose: transpose, playbackRate: playbackRate, timingScale: timingScale, chartRevision: chartRevision)
     }
 
     static func practiceTakeRequest(fileURL: URL, trackID: String, offset: Double,
-                                    transpose: Int, playbackRate: Double) throws -> URLRequest {
+                                    transpose: Int, playbackRate: Double, timingScale: Double = 1, chartRevision: String? = nil) throws -> URLRequest {
         let boundary = "chordlyze-\(UUID().uuidString)"
         var req = URLRequest(url: Config.backendBaseURL.appendingPathComponent("practice_take"))
         req.httpMethod = "POST"
@@ -379,6 +514,12 @@ enum BackendClient {
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"playback_rate\"\r\n\r\n\(playbackRate)\r\n".data(using: .utf8)!)
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"timing_scale\"\r\n\r\n\(timingScale)\r\n".data(using: .utf8)!)
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        if let chartRevision {
+            body.append("Content-Disposition: form-data; name=\"chart_revision\"\r\n\r\n\(chartRevision)\r\n".data(using: .utf8)!)
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        }
         body.append("Content-Disposition: form-data; name=\"file\"; filename=\"take.m4a\"\r\n".data(using: .utf8)!)
         body.append("Content-Type: application/octet-stream\r\n\r\n".data(using: .utf8)!)
         body.append(fileData)
@@ -387,10 +528,13 @@ enum BackendClient {
         return req
     }
 
-    static func practiceReport(_ data: Data, transpose: Int, playbackRate: Double) throws -> PracticeReport {
+    static func practiceReport(_ data: Data, transpose: Int, playbackRate: Double, timingScale: Double = 1, chartRevision: String? = nil) throws -> PracticeReport {
         let report = try JSONDecoder().decode(PracticeReport.self, from: data)
+        if let chartRevision, report.referenceChartRevision != chartRevision {
+            throw BackendError(status: 409, detail: "The service did not score the chart used for this take. Your audio is saved.")
+        }
         guard ((report.transpose ?? 0) == transpose),
-              ((report.playbackRate ?? 1) == playbackRate) else {
+              ((report.playbackRate ?? 1) == playbackRate), ((report.timingScale ?? 1) == timingScale) else {
             throw BackendError(status: 409, detail: "Scoring needs a service update for this key or pace. Your take is saved; retry after the service is updated.")
         }
         return report

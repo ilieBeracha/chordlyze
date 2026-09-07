@@ -17,8 +17,6 @@ struct ChordLyricLine: View {
     var style: ChordRowView.Style = .live
     /// Live: this is the line being sung.
     var active = false
-    /// No chord is known for this line yet (not merely held from the previous row).
-    var pending = false
     var onChordTap: ((String) -> Void)? = nil
     var onLyricTap: (() -> Void)? = nil
     var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
@@ -76,14 +74,6 @@ struct ChordLyricLine: View {
                     if hasChords {
                         chordRow(token.chords)
                             .frame(minHeight: style == .sheet ? 24 : 30, alignment: .bottomLeading)
-                    } else if token.id == 0, pending {
-                        Text("—")
-                            .font(style.chordFont)
-                            .foregroundStyle(Palette.tertiary)
-                            .frame(minHeight: style == .sheet ? 24 : 30, alignment: .bottomLeading)
-                            .accessibilityLabel("Chords not available yet")
-                    } else {
-                        Color.clear.frame(height: style == .sheet ? 24 : 30)
                     }
                     Text(token.word)
                         .font(style.wordFont(active: active))

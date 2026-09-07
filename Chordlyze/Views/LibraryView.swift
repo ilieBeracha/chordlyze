@@ -1,178 +1,140 @@
 import SwiftUI
 
-/// Analyzed library, "key column" (design 5a): full-bleed rows on black with
-/// album art and a two-line key badge (large root, small mode).
+/// Library contains only this account's requested, saved, or practiced songs.
 struct LibraryView: View {
     var isRoot = false
-    enum SortMode: String, CaseIterable, Identifiable {
-        case recent, alpha, key
-        var id: String { rawValue }
-        var label: String {
-            switch self {
-            case .recent: return "Recent"
-            case .alpha: return "A–Z"
-            case .key: return "Key"
-            }
-        }
+    var findSong: (() -> Void)? = nil
+    @StateObject private var collection: MusicCollection
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var query = ""
+    @State private var filter: MusicFilter = .all
+    @AppStorage("librarySort") private var sortRaw = MusicSort.recent.rawValue
+
+    init(isRoot: Bool = false, findSong: (() -> Void)? = nil,
+         fetch: @escaping () async throws -> [BackendClient.LibraryItem] = { try await BackendClient.library() }) {
+        self.isRoot = isRoot
+        self.findSong = findSong
+        _collection = StateObject(wrappedValue: MusicCollection(fetch: fetch))
     }
 
-    enum Scope: String, CaseIterable, Identifiable {
-        case mine, everyone
-        var id: String { rawValue }
-        var label: String { self == .mine ? "My songs" : "Browse" }
+    private var songs: [BackendClient.LibraryItem] {
+        MusicQuery.apply(collection.items, query: query, filter: filter, sort: MusicSort.restored(sortRaw))
     }
-
-    @State private var items: [BackendClient.LibraryItem] = []
-    @State private var error: String?
-    @State private var loading = true
-    @AppStorage("librarySort") private var sortRaw = SortMode.recent.rawValue
-    /// Mine: songs this account requested, saved or practiced. Everyone:
-    /// every chart on the server, ready to open and save.
-    @State private var scope: Scope = .mine
-
-    private var sortMode: SortMode { SortMode(rawValue: sortRaw) ?? .recent }
-    private var sorted: [BackendClient.LibraryItem] {
-        switch sortMode {
-        case .recent:
-            return items
-        case .alpha:
-            return items.sorted {
-                ($0.title ?? "").localizedCaseInsensitiveCompare($1.title ?? "") == .orderedAscending
-            }
-        case .key:
-            return items.sorted { ($0.key ?? "\u{10FFFF}") < ($1.key ?? "\u{10FFFF}") }
-        }
-    }
-    private var distinctKeys: Int { Set(items.compactMap(\.key)).count }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                header
-                    .padding(.horizontal, 20)
-                Picker("Library", selection: $scope) {
-                    ForEach(Scope.allCases) { Text($0.label).tag($0) }
+            VStack(alignment: .leading, spacing: 24) {
+                MusicHeader(title: "Your library", subtitle: "Saved and analyzed songs.", isRoot: isRoot)
+                summary
+                MusicSearchField(prompt: "Search your library", text: $query)
+                MusicFilters(selection: $filter)
+                if let error = collection.error {
+                    MusicNotice(title: "Couldn’t refresh your songs", message: error,
+                                actionTitle: "Try again") { Task { await collection.load() } }
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 20).padding(.top, 12)
-                .onChange(of: scope) { _, _ in Task { loading = true; await load() } }
-
-                if loading {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 60)
-                } else if let error {
-                    errorView(error)
-                } else if scope == .everyone {
-                    CatalogBrowseView(items: items)
-                        .padding(.top, 16)
-                } else if items.isEmpty {
-                    ContentUnavailableView(scope == .mine ? "No saved songs yet" : "No charts yet", systemImage: "music.note",
-                                           description: Text(scope == .mine
-                                               ? "Analyze a song, or save one from All charts, to find it here."
-                                               : "Every song anyone analyzes shows up here."))
-                        .padding(.top, 40)
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(sorted) { item in
-                            NavigationLink {
-                                SavedAnalysisView(item: item)
-                            } label: {
-                                SongRow(artworkURL: item.artworkURL,
-                                        title: item.title ?? "Unknown song",
-                                        artist: item.artist ?? "") {
-                                    if let key = item.key {
-                                        KeyBadge(key: key, difficulty: item.difficulty?.level)
-                                    }
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
+                if collection.loading && collection.items.isEmpty {
+                    ProgressView("Loading your songs…").frame(maxWidth: .infinity, minHeight: 100)
+                } else if collection.items.isEmpty && collection.error == nil {
+                    VStack(alignment: .leading, spacing: 18) {
+                        MusicNotice(title: "Start with a song you love", message: "Find a song in Search, then save its chart or request an analysis. It will appear here.")
+                        discoveryLink
                     }
-                    .padding(.top, 16)
-                    .animation(.default, value: sortRaw)
+                } else if !collection.items.isEmpty {
+                    songList
                 }
-            }
+                spotifyCollections
+            }.padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 32)
         }
-        .background(Color.black.ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
-        .refreshable { await load() }
-        .task { await load() }
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        HStack(spacing: 14) {
-            if !isRoot { BackCircle() }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(scope == .mine ? "Saved songs" : "Browse charts")
-                    .font(.system(size: 26, weight: .bold))
-                    .tracking(-0.3)
-                    .foregroundStyle(.white)
-                if !items.isEmpty {
-                    Text(scope == .mine ? "\(items.count) songs · \(distinctKeys) keys"
-                                        : "\(items.count) charts from every account")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            if scope == .mine { sortMenu }
+        .scrollDismissesKeyboard(.interactively)
+        .modifier(MusicSurface())
+        .refreshable { await collection.load() }
+        .task {
+            sortRaw = MusicSort.restored(sortRaw).rawValue
+            await collection.load()
         }
     }
 
-    private var sortMenu: some View {
-            Menu {
-                Picker("Sort", selection: $sortRaw) {
-                    ForEach(SortMode.allCases) { mode in
-                        Text(mode.label).tag(mode.rawValue)
+    private var summaryText: String {
+        if collection.items.isEmpty {
+            if collection.loading { return "Loading songs…" }
+            if collection.error != nil { return "Songs unavailable" }
+        }
+        return "\(collection.items.count) saved \(collection.items.count == 1 ? "song" : "songs")"
+    }
+
+    private var summary: some View {
+        (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(alignment: .bottom))) {
+            Text(summaryText)
+                .font(MusicStyle.font(15)).foregroundStyle(MusicStyle.secondary)
+            Spacer()
+            discoveryLink
+        }.padding(.bottom, 22).overlay(alignment: .bottom) { MusicRule() }
+    }
+
+    @ViewBuilder private var discoveryLink: some View {
+        if let findSong {
+            Button(action: findSong) { Label("Find a song", systemImage: "plus").frame(minHeight: 44) }
+                .font(MusicStyle.font(15, bold: true)).buttonStyle(MusicPressStyle())
+        } else {
+            NavigationLink { SearchView() } label: { Label("Find a song", systemImage: "plus").frame(minHeight: 44) }
+                .font(MusicStyle.font(15, bold: true)).buttonStyle(MusicPressStyle())
+        }
+    }
+
+    private var songList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("\(songs.count) \(songs.count == 1 ? "song" : "songs")")
+                    .font(MusicStyle.font(14)).foregroundStyle(MusicStyle.secondary)
+                Spacer()
+                Menu {
+                    Picker("Sort songs", selection: $sortRaw) {
+                        ForEach(MusicSort.allCases) { Text($0.rawValue).tag($0.rawValue) }
                     }
+                } label: {
+                    Label(MusicSort.restored(sortRaw).rawValue,
+                          systemImage: "arrow.up.arrow.down")
+                        .font(MusicStyle.font(13, bold: true)).frame(minHeight: 44)
+                }.accessibilityLabel("Sort songs, \(sortRaw)")
+            }
+            if songs.isEmpty {
+                MusicNotice(title: "No matching songs", message: "Try another title, artist, key, or filter.", actionTitle: "Clear filters") {
+                    query = ""; filter = .all
+                }.padding(.top, 12)
+            } else {
+                CatalogRows(items: songs)
+            }
+        }
+    }
+
+    private var spotifyCollections: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            MusicRule()
+            MusicSectionHeading(title: "From Spotify")
+            HStack(spacing: 12) {
+                NavigationLink { SpotifyCollectionDestination(source: .liked) } label: {
+                    collectionButton("Liked songs", icon: "heart")
                 }
-            } label: {
-                Text("Sort")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.spotifyGreen)
-                    .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
-            }
-    }
-
-    // MARK: - States
-
-    private func errorView(_ message: String) -> some View {
-        VStack(spacing: 16) {
-            Text(message)
-                .font(.system(size: 13))
-                .foregroundStyle(Palette.secondary)
-                .multilineTextAlignment(.center)
-            Button {
-                Task { await load() }
-            } label: {
-                Text("Retry")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.black)
-                    .padding(.vertical, 11)
-                    .padding(.horizontal, 26)
-                    .background(Capsule().fill(Color.spotifyGreen))
-            }
-            .buttonStyle(.plain)
+                NavigationLink { SpotifyCollectionDestination(source: .top) } label: {
+                    collectionButton("Top tracks", icon: "chart.bar")
+                }
+            }.buttonStyle(MusicPressStyle())
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 60)
-        .padding(.horizontal, 30)
     }
 
-    // MARK: - Data
-
-    private func load() async {
-        do {
-            items = try await (scope == .mine ? BackendClient.library() : BackendClient.catalog())
-            error = nil
-        } catch {
-            self.error = "Could not load library: \(error.localizedDescription)"
-        }
-        loading = false
+    private func collectionButton(_ title: String, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Image(systemName: icon).font(.system(size: 22))
+            Text(title).font(MusicStyle.font(15, bold: true))
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(18)
+            .background(MusicStyle.surface, in: RoundedRectangle(cornerRadius: 14))
     }
+}
+
+private struct SpotifyCollectionDestination: View {
+    @EnvironmentObject private var auth: SpotifyAuth
+    let source: TrackSource
+    var body: some View { TracksView(api: SpotifyAPI(auth: auth), source: source) }
 }
 
 struct SavedAnalysisView: View {

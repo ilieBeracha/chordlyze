@@ -16,6 +16,13 @@ final class SongSheetStore: ObservableObject {
         var save: (String, Bool) async throws -> Void = { try await BackendClient.setSaved(trackID: $0, $1) }
         var saveTiming: (String, TimingMap?) async throws -> Void = { try await BackendClient.setTiming(trackID: $0, $1) }
         var sleep: (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
+        var editBoundary: (String, BackendClient.BoundaryEdit) async throws -> SongStatus = { try await BackendClient.editBoundary(trackID: $0, edit: $1) }
+        var synchronize: (String, [BackendClient.SyncClip], String, String) async throws -> SongStatus = {
+            try await BackendClient.synchronize(trackID: $0, clips: $1, chartRevision: $2, timingRevision: $3)
+        }
+        var correctChord: (String, ChordSegment, String?, String) async throws -> SongStatus = {
+            try await BackendClient.correctChord(trackID: $0, segment: $1, name: $2, revision: $3)
+        }
     }
     private static var documents: [String: SongSheetStore] = [:]
     static func shared(for song: SongDescriptor) -> SongSheetStore {
@@ -30,6 +37,8 @@ final class SongSheetStore: ObservableObject {
 
     @Published private(set) var song: SongDescriptor
     @Published private(set) var analysis: ChordAnalysis?
+    /// Validate timing once per document update, not on every playback frame.
+    private(set) var beatGrid: BeatGrid?
     @Published private(set) var rows: [SheetModel.Row] = []
     @Published private(set) var state = "loading"
     @Published private(set) var message = "Checking this song…"
@@ -40,6 +49,7 @@ final class SongSheetStore: ObservableObject {
     /// bookmark toggles it. The chart itself is shared by every account.
     @Published private(set) var saved = false
     @Published private(set) var saveError: String?
+    @Published private(set) var savingCorrection = false
     /// Chord display shared by every surface, so the sheet, Live and Practice
     /// name the same chords: capo mode favors open shapes, manual shift transposes.
     @Published var capoMode = false
@@ -49,6 +59,8 @@ final class SongSheetStore: ObservableObject {
     /// server, since it absorbs the listener's own output delay.
     @Published private(set) var timing: TimingMap = .identity
     @Published private(set) var timingError: String?
+    @Published private(set) var timingIsStale = false
+    private(set) var timingRevision: String?
     /// Live A–B repeat in chart time. On the document, not the view, so a
     /// blink in Spotify's poll that rebuilds Live does not drop it.
     @Published var loop: ClosedRange<Double>?
@@ -63,6 +75,9 @@ final class SongSheetStore: ObservableObject {
     private var lyricKey: String?
     private var libraryGeneration: String?
     private var lines: [LyricLine] = []
+    /// Lyrics attached to this recording's chart outrank catalog timing,
+    /// whether the worker aligned existing words or transcribed new ones.
+    private var hasRecordingLyrics = false
     private var nextLyricRetry: ContinuousClock.Instant?
 
     init(song: SongDescriptor, analysis: ChordAnalysis? = nil, service: Service = Service()) {
@@ -73,7 +88,9 @@ final class SongSheetStore: ObservableObject {
     }
 
     var busy: Bool { ["loading", "queued", "processing"].contains(state) }
-    var canPractice: Bool { analysis != nil && state == "ready" }
+    /// A status outage does not invalidate the full chart already in memory.
+    /// Explicit missing/unavailable responses still disable its actions.
+    var canPractice: Bool { analysis?.isPreview == false && (state == "ready" || state == "connection") }
     var shift: Int { (capoMode ? -capo : 0) + manualShift }
     /// "Capo 2", "+1", "Capo 2 +1", or nil when chords show as analyzed.
     var chordNote: String? {
@@ -94,7 +111,8 @@ final class SongSheetStore: ObservableObject {
     }
     /// Label of the one action that requests analysis; nil while nothing can be requested.
     var actionTitle: String? {
-        busy || state == "ready" ? nil : (state == "missing" ? "Analyze" : "Retry")
+        if state == "connection" { return "Reconnect" }
+        return busy || state == "ready" ? nil : (state == "missing" ? "Analyze" : "Retry")
     }
 
     /// SwiftUI owns this subscription through .task. Last departure cancels
@@ -124,23 +142,31 @@ final class SongSheetStore: ObservableObject {
     }
 
     /// A calibration stops applying when the chart it was made on is gone.
-    var timingIsStale: Bool {
-        !timing.isIdentity && !timing.matches(chartAudioSha256: analysis?.audioSha256, spotifyTrackID: nil)
-    }
     var timingNote: String? {
+        if timingIsStale { return "Timing belongs to an earlier chart. Synchronize again." }
+        if timing.method == "automatic" {
+            return timing.driftMeasured == true ? "Automatically synchronized, including drift." : "Automatically synchronized; offset measured."
+        }
         if timing.isIdentity { return nil }
-        if timingIsStale { return "Calibration is from an earlier chart. Calibrate again." }
         if let error = timing.verifiedError { return String(format: "Calibrated by ear, checked within %.2f s.", error) }
         return "Adjusted by hand."
     }
 
     /// Saves a calibration (nil clears it) for this account on the server.
     func setTiming(_ map: TimingMap?) async {
+        guard !savingCorrection else { timingError = "Another change is still saving."; return }
         let previous = timing
+        let wasStale = timingIsStale
+        savingCorrection = true
+        revision += 1
+        task?.cancel(); task = nil
+        defer { savingCorrection = false; if observers > 0 { start() } }
+        timingIsStale = false
         timing = map ?? .identity
         timingError = nil
         do { try await service.saveTiming(song.id, map) } catch {
             timing = previous
+            timingIsStale = wasStale
             timingError = "Could not save the timing: \(error.localizedDescription)"
         }
     }
@@ -150,6 +176,9 @@ final class SongSheetStore: ObservableObject {
         var map = timing
         map.offset -= delta
         map.verifiedError = nil
+        map.method = "manual"
+        map.matchScore = nil; map.matchMargin = nil; map.driftMeasured = nil
+        map.chartRevision = analysis?.chartRevision
         map.chartAudioSha256 = analysis?.audioSha256
         await setTiming(map.isIdentity ? nil : map)
     }
@@ -171,7 +200,54 @@ final class SongSheetStore: ObservableObject {
         loadLyrics(force: true)
     }
 
+    /// Commit one occurrence in the recording's original key. Never let an
+    /// already-running status read undo the saved response, even if it ignores cancellation.
+    func correctChord(_ segment: ChordSegment, name: String?, expectedRevision: String) async throws {
+        guard !savingCorrection else { throw BackendError(status: 409, detail: "A chord is still saving.") }
+        guard analysis?.chartRevision == expectedRevision else {
+            throw BackendError(status: 409, detail: "The chart changed. Reopen the chord before saving again.")
+        }
+        try await commitChange { try await self.service.correctChord(self.song.id, segment, name, expectedRevision) }
+    }
+
+    func editBoundary(_ edit: BackendClient.BoundaryEdit) async throws {
+        guard analysis?.chartRevision == edit.chartRevision else {
+            throw BackendError(status: 409, detail: "The chart changed. Reopen the chord before editing.")
+        }
+        try await commitChange { try await self.service.editBoundary(self.song.id, edit) }
+    }
+
+    func synchronize(clips: [BackendClient.SyncClip], chartRevision: String, timingRevision: String) async throws {
+        guard analysis?.chartRevision == chartRevision else {
+            throw BackendError(status: 409, detail: "The chart changed while listening. Synchronize again.")
+        }
+        try await commitChange {
+            let result = try await self.service.synchronize(self.song.id, clips, chartRevision, timingRevision)
+            guard result.timing?.method == "automatic", result.timing?.chartRevision == chartRevision else {
+                throw BackendError(status: 409, detail: "The service did not confirm synchronization. Reopen the song to check timing.")
+            }
+            return result
+        }
+    }
+
+    private func commitChange(_ action: () async throws -> SongStatus) async throws {
+        guard !savingCorrection else { throw BackendError(status: 409, detail: "Another change is still saving.") }
+        savingCorrection = true
+        revision += 1
+        task?.cancel(); task = nil
+        defer {
+            savingCorrection = false
+            if observers > 0 { start() }
+        }
+        let result = try await action()
+        guard result.analysis?.chartRevision != nil else {
+            throw BackendError(status: 409, detail: "The service did not confirm the change. Reopen the song to check it.")
+        }
+        apply(result)
+    }
+
     private func start(request: Bool = false) {
+        guard !savingCorrection else { return }
         revision += 1
         let token = revision
         task?.cancel()
@@ -199,7 +275,7 @@ final class SongSheetStore: ObservableObject {
                     }
                     failures += 1
                     state = "connection"
-                    message = "Reconnecting…"
+                    message = canPractice ? "Reconnecting… Your loaded chart is still available." : "Reconnecting…"
                 }
                 do { try await service.sleep(failures > 0 ? min(30, Double(failures * 3)) : (state == "ready" || state == "missing" ? 15 : 3)) }
                 catch { return }
@@ -210,10 +286,13 @@ final class SongSheetStore: ObservableObject {
     private func apply(_ status: SongStatus) {
         let oldSong = song
         let reset = libraryGeneration != nil && libraryGeneration != status.libraryGeneration
-        if let previous = libraryGeneration, previous != status.libraryGeneration {
+        let recordingChanged = analysis?.audioSha256 != status.analysis?.audioSha256
+            || (analysis?.audioSha256 == nil && analysis != status.analysis)
+        if reset || (hasRecordingLyrics && recordingChanged) {
             lines = []
             lyricsResult = nil
             lyricKey = nil
+            hasRecordingLyrics = false
         }
         libraryGeneration = status.libraryGeneration
         if let metadata = status.song {
@@ -224,12 +303,13 @@ final class SongSheetStore: ObservableObject {
         }
         let changed = analysis != status.analysis
         analysis = status.analysis
-        if let aligned = status.lyrics, aligned.synced, aligned != lyricsResult {
+        if let aligned = status.lyrics, aligned.synced, aligned != lyricsResult || !hasRecordingLyrics {
             // Lyrics timed to the analyzed recording beat any catalog lookup.
             lyricRevision += 1
             lyricTask?.cancel(); lyricTask = nil
             lyricKey = lyricLookupKey
             lyricsResult = aligned
+            hasRecordingLyrics = true
             lines = aligned.lines
             lyricsLoading = false
             lyricsFailed = false
@@ -237,7 +317,12 @@ final class SongSheetStore: ObservableObject {
         }
         state = status.job.state
         if let flag = status.saved { saved = flag }
-        if status.saved != nil { timing = status.timing ?? .identity }
+        if status.saved != nil {
+            let candidate = status.timing ?? .identity
+            timingIsStale = !candidate.matches(chartAudioSha256: analysis?.audioSha256, spotifyTrackID: song.id, chartRevision: analysis?.chartRevision)
+            timing = timingIsStale ? .identity : candidate
+            timingRevision = status.timingRevision
+        }
         // Three states the user sees: not analyzed, analyzing, ready.
         switch state {
         case "ready": message = ""
@@ -253,11 +338,9 @@ final class SongSheetStore: ObservableObject {
     }
 
     private var lyricLookupKey: String { "\(song.title)|\(song.artist)|\(song.album ?? "")|\(song.duration ?? 0)" }
-    private var hasAlignedLyrics: Bool { lyricsResult?.matched == "aligned" }
-
     private func loadLyrics(force: Bool = false) {
         let key = lyricLookupKey
-        guard !hasAlignedLyrics, force || key != lyricKey else { return }
+        guard !hasRecordingLyrics, force || key != lyricKey else { return }
         lyricKey = key
         lyricRevision += 1
         let token = lyricRevision
@@ -298,6 +381,7 @@ final class SongSheetStore: ObservableObject {
     }
 
     private func rebuild() {
+        beatGrid = BeatGrid(tempo: analysis?.tempo, chords: analysis?.chords ?? [])
         rows = SheetModel.build(analysis: analysis, lines: lines,
                                 duration: song.duration ?? analysis?.songDuration)
         capo = ChordMath.autoCapo(names: analysis?.chords.filter { $0.label != "N" }

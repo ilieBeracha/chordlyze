@@ -19,6 +19,8 @@ struct TimingCalibrationView: View {
     @State private var checkNudge = 0.0
     @State private var message: String?
     @State private var busy = false
+    @State private var chartRevision: String?
+    private var chartChanged: Bool { chartRevision != store.analysis?.chartRevision }
 
     /// Lead-in before the change on every replay.
     static let leadIn = 3.0
@@ -39,10 +41,12 @@ struct TimingCalibrationView: View {
                 } else {
                     Text("This chart has too few chord changes to calibrate.").foregroundStyle(Palette.secondary)
                 }
+                if chartChanged { Text("The chart changed. Reopen calibration to start again.").foregroundStyle(.orange) }
                 if let message { Text(message).font(.footnote).foregroundStyle(Palette.warning) }
             }
             .padding(24)
         }
+        .onAppear { if chartRevision == nil { chartRevision = store.analysis?.chartRevision } }
         .background(Color.black.ignoresSafeArea())
         .navigationTitle("").toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .topLeading) { BackCircle().padding(.leading, 20).padding(.top, 8) }
@@ -120,6 +124,8 @@ struct TimingCalibrationView: View {
                         if index == 0 { step = .anchor(1) } else {
                             fitted = TimingMap.fit(anchors, chartAudioSha256: store.analysis?.audioSha256,
                                                    spotifyTrackID: nowPlaying.playing?.track.id ?? store.song.id)
+                            fitted?.chartRevision = chartRevision
+                            fitted?.method = "manual"
                             checkNudge = 0
                             step = .check
                         }
@@ -146,7 +152,7 @@ struct TimingCalibrationView: View {
                     .font(.footnote).monospacedDigit().foregroundStyle(Palette.secondary)
             }
             Button("Sounds right, save") {
-                guard var map = fitted else { return }
+                guard !chartChanged, var map = fitted else { return }
                 map.offset += checkNudge
                 map.verifiedError = abs(checkNudge)
                 busy = true
@@ -157,7 +163,7 @@ struct TimingCalibrationView: View {
                     if store.timingError == nil { step = .done }
                 }
             }
-            .buttonStyle(.borderedProminent).tint(.spotifyGreen).disabled(busy)
+            .buttonStyle(.borderedProminent).tint(.spotifyGreen).disabled(busy || chartChanged)
         }
     }
 
@@ -166,7 +172,7 @@ struct TimingCalibrationView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("This chart has no third change to check the fit on.").font(.footnote).foregroundStyle(Palette.secondary)
             Button("Save") {
-                guard let map = fitted else { return }
+                guard !chartChanged, let map = fitted else { return }
                 busy = true
                 Task {
                     await store.setTiming(map)
@@ -175,7 +181,7 @@ struct TimingCalibrationView: View {
                     if store.timingError == nil { step = .done }
                 }
             }
-            .buttonStyle(.borderedProminent).tint(.spotifyGreen).disabled(busy)
+            .buttonStyle(.borderedProminent).tint(.spotifyGreen).disabled(busy || chartChanged)
         }
     }
 

@@ -54,15 +54,39 @@ struct PracticeReportContract {
             _ = try BackendClient.practiceReport(accepted, transpose: 0, playbackRate: 1)
             fatalError("Mismatched server settings must fail")
         } catch {}
+        let separated = Data("""
+        {"take_id":"separate","accuracy":0.8,"matched_changes":4,"total_changes":4,
+         "consistent_offset":{"seconds":0.4,"spread":0.03,"samples":4},"timing_scale":1.04,
+         "per_chord":[],"transitions":[],"sections":[],"transpose":0,"playback_rate":1}
+        """.utf8)
+        let calibratedReport = try BackendClient.practiceReport(separated, transpose: 0, playbackRate: 1, timingScale: 1.04)
+        precondition(calibratedReport.displayScore == 1 && calibratedReport.accuracy == 0.8)
+        precondition(calibratedReport.scoreLabel == "chord changes matched" && calibratedReport.consistentOffset?.seconds == 0.4)
+        precondition(report.changeMatchRate == nil && report.scoreLabel == "time matching chart")
+        do {
+            _ = try BackendClient.practiceReport(legacy, transpose: 0, playbackRate: 1, timingScale: 1.04)
+            fatalError("An old server cannot discard calibration")
+        } catch {}
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: file) }
         try Data("test audio".utf8).write(to: file)
         let request = try BackendClient.practiceTakeRequest(fileURL: file, trackID: "song", offset: 12,
-            transpose: -2, playbackRate: 0.75)
+            transpose: -2, playbackRate: 0.75, timingScale: 1.04, chartRevision: "personal-chart")
         let body = String(data: request.httpBody!, encoding: .utf8)!
         precondition(body.contains("name=\"transpose\"\r\n\r\n-2\r\n"))
         precondition(body.contains("name=\"playback_rate\"\r\n\r\n0.75\r\n"))
         precondition(body.contains("name=\"offset\"\r\n\r\n12.0\r\n"))
+        precondition(body.contains("name=\"timing_scale\"\r\n\r\n1.04\r\n"))
+        precondition(body.contains("name=\"chart_revision\"\r\n\r\npersonal-chart\r\n"))
+        do {
+            _ = try BackendClient.practiceReport(legacy, transpose: 0, playbackRate: 1, chartRevision: "personal-chart")
+            fatalError("A server cannot discard the chart revision")
+        } catch {}
+        let revisionReport = Data("""
+        {"take_id":"new","accuracy":1,"per_chord":[],"transitions":[],"sections":[],
+         "reference_chart_revision":"personal-chart"}
+        """.utf8)
+        _ = try BackendClient.practiceReport(revisionReport, transpose: 0, playbackRate: 1, chartRevision: "personal-chart")
         precondition(body.contains("test audio") && !body.contains("capo"))
         print("Practice report contract: legacy decoding, timing, request fields and server compatibility passed")
     }

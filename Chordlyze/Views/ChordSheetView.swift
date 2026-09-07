@@ -8,6 +8,8 @@ struct AnalysisTabsView: View {
     @StateObject private var store: SongSheetStore
     @State private var selectedChord: SelectedChord?
     @State private var showSettings = false
+    @State private var showSongMap = false
+    @State private var navigationTime: Double?
     @State private var practiceRange: ClosedRange<Double>?
     @State private var lastPosition = 0.0
     @State private var seekDenied = false
@@ -27,6 +29,7 @@ struct AnalysisTabsView: View {
 
     /// Spotify has this song up, playing or paused, whoever started it.
     private var songIsUp: Bool { store.canPractice && nowPlaying.playing?.track.id == store.song.id }
+    private var beatGrid: BeatGrid? { store.beatGrid }
     private var duration: Double { store.song.duration ?? store.analysis?.coverageEnd ?? 0 }
     private func clamp(_ time: Double) -> Double { max(0, min(time, duration > 0 ? duration : .infinity)) }
 
@@ -37,6 +40,11 @@ struct AnalysisTabsView: View {
                     HeaderCircle(icon: "guitars", on: showRail, label: showRail ? "Hide chord shapes" : "Show chord shapes",
                                  identifier: "chord-rail-toggle") {
                         withAnimation(.easeInOut(duration: 0.25)) { showRail.toggle() }
+                    }
+                    if let grid = beatGrid, !grid.bars.isEmpty {
+                        HeaderCircle(icon: "map", on: false, label: "Song map and bar loops", identifier: "song-map") {
+                            showSongMap = true
+                        }
                     }
                     if songIsUp {
                         HeaderCircle(icon: "repeat", on: store.loop != nil || loopStart != nil,
@@ -66,12 +74,27 @@ struct AnalysisTabsView: View {
         .toolbar(.hidden, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
         .chordDiagram($selectedChord)
+        .sheet(isPresented: $showSongMap) {
+            if let grid = beatGrid {
+                SongMapSheet(grid: grid, position: lastPosition, onJump: { time in
+                    store.loop = nil; loopStart = nil
+                    navigationTime = nil
+                    Task { @MainActor in
+                        navigationTime = time
+                        if songIsUp { seekDenied = !(await nowPlaying.seek(to: store.timing.spotifyTime(time))) }
+                    }
+                }, onLoop: songIsUp ? { range in
+                    store.loop = range; loopStart = nil; loopArmed = true
+                    Task { seekDenied = !(await nowPlaying.seek(to: store.timing.spotifyTime(range.lowerBound))) }
+                } : nil, onPractice: { practiceRange = $0 })
+            }
+        }
         .sheet(isPresented: $showSettings) { SongPlayingSettings(store: store, nowPlaying: nowPlaying) }
         .navigationDestination(isPresented: Binding(get: { practiceRange != nil },
             set: { if !$0 { practiceRange = nil } })) {
             if let range = practiceRange, let chart = store.analysis {
                 PracticeView(analysis: chart, title: store.song.title, artist: store.song.artist,
-                    album: store.song.album, trackID: store.song.id, songStore: store, initialRange: range)
+                    album: store.song.album, trackID: store.song.id, songStore: store, initialRange: range, nowPlaying: nowPlaying)
             }
         }
         .onChange(of: songIsUp) { _, up in if !up { loopStart = nil } }
@@ -110,6 +133,10 @@ struct AnalysisTabsView: View {
                     .padding(.horizontal, 24).padding(.top, 16)
                     .padding(.bottom, playhead == nil ? 40 : 320)  // the last lines can roll up to the reading height too
                 }
+                .onChange(of: navigationTime) { _, time in
+                    guard let time, let row = SheetModel.activeRow(store.rows, at: time) else { return }
+                    withAnimation { proxy.scrollTo(row.id, anchor: .top) }
+                }
                 .refreshable { store.refresh() }
                 .onChange(of: activeID, initial: true) { _, id in
                     // The line being sung settles a third of the way down, so what
@@ -139,7 +166,7 @@ struct AnalysisTabsView: View {
                 if let chart = store.analysis {
                     NavigationLink {
                         PracticeView(analysis: chart, title: store.song.title, artist: store.song.artist,
-                                     album: store.song.album, trackID: store.song.id, songStore: store)
+                                     album: store.song.album, trackID: store.song.id, songStore: store, nowPlaying: nowPlaying)
                     } label: { tool("Practice") }
                     .buttonStyle(.plain)
                 }
@@ -154,7 +181,13 @@ struct AnalysisTabsView: View {
                 }
                 .buttonStyle(.plain).accessibilityIdentifier("save-toggle")
             }
-            if let note = store.saveError ?? (seekDenied ? "Spotify could not seek. Check playback permissions or Premium." : nil) {
+            if nowPlaying.isControlling {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Waiting for Spotify…").font(.footnote).foregroundStyle(Palette.secondary)
+                }.accessibilityIdentifier("spotify-control-pending")
+            }
+            if let note = store.saveError ?? nowPlaying.controlMessage {
                 Text(note).font(.footnote).foregroundStyle(Palette.warning)
             }
         }
@@ -181,11 +214,11 @@ struct AnalysisTabsView: View {
 
     /// Back to the start once per pass; re-arm after the jump lands.
     private func loopCheck(at value: Double) {
-        guard let loop = store.loop else { return }
+        guard let loop = store.loop, nowPlaying.playing?.isPlaying == true, !nowPlaying.isControlling else { return }
         if value >= loop.upperBound, loopArmed {
             loopArmed = false
             Task { seekDenied = !(await nowPlaying.seek(to: store.timing.spotifyTime(loop.lowerBound))) }
-        } else if value < loop.upperBound - 1 {
+        } else if value < loop.upperBound - min(1, (loop.upperBound - loop.lowerBound) / 2) {
             loopArmed = true
         }
     }
@@ -279,7 +312,7 @@ struct SongSheetStatus: View {
                     }
                     .foregroundStyle(Palette.secondaryAlt)
                     Button { store.retry() } label: {
-                        Text(title == "Analyze" ? "Analyze this song" : "Retry analysis")
+                        Text(title == "Analyze" ? "Analyze this song" : title == "Reconnect" ? "Reconnect" : "Retry analysis")
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
@@ -325,6 +358,7 @@ struct SongSheetStatus: View {
 /// Shared rendering: lyrics never disappear because chords are still loading.
 /// Chord names follow the document's shift on every surface.
 struct ChordSheetView: View {
+    @State private var editingRow: SheetModel.Row?
     @ObservedObject var store: SongSheetStore
     var playhead: Double? = nil
     var style: ChordRowView.Style = .sheet
@@ -341,7 +375,7 @@ struct ChordSheetView: View {
         LazyVStack(alignment: .leading, spacing: style == .live ? 22 : 20) {
             // A wordless row with no chord change of its own is the previous chord
             // still sounding: nothing to draw, so it takes no space.
-            ForEach(store.rows.filter { !$0.text.isEmpty || !$0.chords.isEmpty || $0.kind == .uncovered }) { row in
+            ForEach(store.rows.filter(\.hasVisibleContent)) { row in
                 ChordRowView(row: row, transposeBy: store.shift, playhead: playhead,
                              style: style, onChordTap: onChordTap, onLyricTap: { onRowTap?(row) }, verdict: verdict,
                              wordPlayhead: wordPlayhead)
@@ -349,11 +383,24 @@ struct ChordSheetView: View {
                     .id(row.id)
                     .accessibilityIdentifier("song-row-\(row.start)")
                     .contextMenu {
+                        if store.analysis?.chartRevision != nil {
+                            Button("Correct chords in this passage", systemImage: "pencil") { editingRow = row }
+                        }
                         if let onPracticeRow, row.start < (store.analysis?.coverageEnd ?? 0) {
                             Button("Practice this passage", systemImage: "mic.fill") { onPracticeRow(row) }
                         }
                         if let onLoopRow, row.start < (store.analysis?.coverageEnd ?? 0) {
                             Button("Loop this line", systemImage: "repeat") { onLoopRow(row) }
+                        }
+                    }
+            }
+        }
+        .sheet(item: $editingRow) { row in
+            NavigationStack {
+                ChordCorrectionsView(store: store, range: row.start...row.end)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { editingRow = nil }
                         }
                     }
             }
@@ -375,6 +422,16 @@ struct SongPlayingSettings: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Chord corrections") {
+                    NavigationLink {
+                        ChordCorrectionsView(store: store)
+                    } label: {
+                        Label("Correct chords", systemImage: "pencil")
+                    }
+                    .disabled(store.analysis?.chartRevision == nil || store.analysis?.isPreview != false)
+                    Text("Correct a chord once for this song's sheet, Live and practice.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 Section("Sounding key") {
                     LabeledContent("Play in", value: soundingKey)
                     Stepper("Transpose: \(store.manualShift > 0 ? "+" : "")\(store.manualShift) semitones",
@@ -396,6 +453,13 @@ struct SongPlayingSettings: View {
                     Text("Every song, Live and Practice. Off by default; raise it only if chords light after you hear them change.")
                         .font(.footnote).foregroundStyle(.secondary)
                     NavigationLink {
+                        AutomaticSyncView(store: store, nowPlaying: nowPlaying)
+                    } label: {
+                        Label("Automatic sync", systemImage: "waveform")
+                    }
+                    .disabled(!store.canPractice || store.analysis?.chartRevision == nil)
+                    .accessibilityIdentifier("automatic-sync")
+                    NavigationLink {
                         TimingCalibrationView(store: store, nowPlaying: nowPlaying)
                     } label: {
                         LabeledContent("Calibrate by ear", value: store.timing.isIdentity ? "Not calibrated" : "Calibrated")
@@ -414,7 +478,7 @@ struct SongPlayingSettings: View {
                         .font(.footnote).foregroundStyle(store.timingError == nil ? .secondary : Color(Palette.warning))
                 }
                 Button("Reset to original") {
-                    store.manualShift = 0; store.capoMode = false; lead = 0.3
+                    store.manualShift = 0; store.capoMode = false; lead = 0
                     Task { await store.setTiming(nil) }
                 }
             }
@@ -441,6 +505,384 @@ private struct ObservesSongSheet: ViewModifier {
     func body(content: Content) -> some View {
         content.task(id: scenePhase) {
             if scenePhase == .active { await store.observe() }
+        }
+    }
+}
+
+
+/// One bar-range picker shared by static sheets and live playback. All actions
+/// use the exact detected boundary times, transformed only by the playback map.
+struct SongMapSheet: View {
+    let grid: BeatGrid
+    let position: Double
+    let onJump: (Double) -> Void
+    var onLoop: ((ClosedRange<Double>) -> Void)? = nil
+    var onPractice: ((ClosedRange<Double>) -> Void)? = nil
+    @Environment(\.dismiss) private var dismiss
+    @State private var first = 1
+    @State private var last = 1
+
+    private var range: ClosedRange<Double>? { grid.barRange(first: first, last: last) }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if !grid.sections.isEmpty {
+                    Section("Sections") {
+                        ForEach(grid.sections) { section in
+                            Button {
+                                first = section.startBar; last = section.endBar
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(section.title).foregroundStyle(.primary)
+                                        Text("Bars \(section.startBar)–\(section.endBar) · \(mmss(section.start))–\(mmss(section.end))")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if first == section.startBar && last == section.endBar {
+                                        Image(systemName: "checkmark").foregroundStyle(Color.spotifyGreen)
+                                    }
+                                }
+                            }.buttonStyle(.plain).accessibilityIdentifier("song-section-\(section.label)-\(section.occurrence)")
+                        }
+                    }
+                }
+                Section("Bar range") {
+                    Stepper("Start bar · \(first)", value: $first, in: 1...max(1, grid.bars.count))
+                        .onChange(of: first) { _, value in last = max(last, value) }
+                        .accessibilityIdentifier("bar-range-start")
+                    Stepper("End bar · \(last)", value: $last, in: first...max(first, grid.bars.count))
+                        .accessibilityIdentifier("bar-range-end")
+                    if let range {
+                        Text("\(last-first+1) bars · \(preciseTime(range.lowerBound))–\(preciseTime(range.upperBound))")
+                            .monospacedDigit().accessibilityIdentifier("bar-range-times")
+                    } else {
+                        Text("A gap in the detected bars crosses this range. Choose bars on one side of the gap.")
+                            .foregroundStyle(Palette.warning)
+                    }
+                }
+                Section {
+                    Button("Go to start", systemImage: "arrow.right.to.line") {
+                        guard let range else { return }; dismiss(); onJump(range.lowerBound)
+                    }.disabled(range == nil).accessibilityIdentifier("bar-jump")
+                    if let onLoop {
+                        Button("Loop selected bars", systemImage: "repeat") {
+                            guard let range else { return }; dismiss(); onLoop(range)
+                        }.disabled(range == nil).accessibilityIdentifier("bar-loop")
+                    }
+                    if let onPractice {
+                        Button("Record selected bars", systemImage: "mic") {
+                            guard let range else { return }; dismiss(); onPractice(range)
+                        }.disabled(range == nil).accessibilityIdentifier("bar-practice")
+                    }
+                } footer: {
+                    if onLoop == nil { Text("Play this song in Spotify to loop the selected bars.") }
+                    else { Text("Spotify seeks between the selected boundaries. Network and player delays can leave a gap between repeats.") }
+                }
+                Section {
+                    DisclosureGroup("About this map") {
+                        Text("Bar boundaries are estimated from the audio. Matching section letters mark similar passages, not verse or chorus labels. Only complete detected bars are selectable; pickups and an unfinished ending stay outside the map.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Song map")
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .onAppear {
+                first = grid.barNumber(at: position) ?? 1
+                last = min(grid.bars.count, first+3)
+            }
+        }.tint(.spotifyGreen).preferredColorScheme(.dark)
+    }
+
+    private func preciseTime(_ value: Double) -> String {
+        String(format: "%d:%04.1f", Int(value) / 60, value.truncatingRemainder(dividingBy: 60))
+    }
+}
+
+/// Raw occurrences stay editable even when sheet layout hides held or silent chords.
+struct ChordCorrectionsView: View {
+    @ObservedObject var store: SongSheetStore
+    var range: ClosedRange<Double>? = nil
+    @State private var selected: ChordSegment?
+    @State private var editError: String?
+
+    private var segments: [ChordSegment] {
+        (store.analysis?.chords ?? []).filter { segment in
+            guard let range else { return true }
+            return segment.start < range.upperBound && segment.end > range.lowerBound
+        }
+    }
+
+    var body: some View {
+        List {
+            Section {
+                Text("Choose the chord at the time you want to fix. Names here use the recording's original key, before transpose or capo.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                if store.analysis?.boundariesEdited == true { Text("This chart includes your timing edits.").font(.footnote).foregroundStyle(.secondary) }
+                if store.analysis?.correctionsStale == true {
+                    Text("This song has a new analysis. Earlier corrections are no longer applied; check this chart before correcting it again.")
+                        .font(.footnote).foregroundStyle(.orange)
+                }
+            }
+            Section {
+                if store.analysis?.canUndo == true {
+                    Button("Undo last edit", systemImage: "arrow.uturn.backward") { editChart(.undo) }
+                        .disabled(store.savingCorrection)
+                        .accessibilityIdentifier("undo-chord-edit")
+                }
+                if store.analysis?.boundariesEdited == true || store.analysis?.chords.contains(where: { $0.originalLabel != nil }) == true {
+                    Button("Restore analyzed chart", role: .destructive) { editChart(.restore) }
+                        .disabled(store.savingCorrection)
+                    Text("Restores chord names and timing. You can undo this action.").font(.footnote).foregroundStyle(.secondary)
+                }
+                if let editError { Text(editError).foregroundStyle(.orange) }
+            }
+            Section("Chords") {
+                ForEach(segments) { segment in
+                    Button { selected = segment } label: {
+                        HStack {
+                            Text("\(mmss(segment.start))–\(mmss(segment.end))")
+                                .monospacedDigit().foregroundStyle(.secondary)
+                            Spacer()
+                            Text(segment.displayName).fontWeight(.semibold)
+                            if segment.originalLabel != nil {
+                                Image(systemName: "pencil.circle.fill")
+                                    .accessibilityLabel("Corrected")
+                            }
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .accessibilityIdentifier("correct-chord-\(segment.start)")
+                }
+            }
+        }
+        .navigationTitle("Correct chords")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await store.observe() }
+        .sheet(item: $selected) { segment in
+            ChordCorrectionEditor(store: store, segment: segment)
+        }
+    }
+
+    private func editChart(_ operation: BackendClient.BoundaryEdit.Operation) {
+        guard let revision = store.analysis?.chartRevision else { return }
+        editError = nil
+        Task {
+            do { try await store.editBoundary(.init(operation: operation, chartRevision: revision)) }
+            catch { editError = error.localizedDescription }
+        }
+    }
+}
+
+private struct ChordCorrectionEditor: View {
+    @ObservedObject var store: SongSheetStore
+    let segment: ChordSegment
+    @State private var name: String
+    @State private var revision: String
+    @State private var error: String?
+    @Environment(\.dismiss) private var dismiss
+
+    init(store: SongSheetStore, segment: ChordSegment) {
+        self.store = store
+        self.segment = segment
+        _name = State(initialValue: segment.displayName)
+        _revision = State(initialValue: store.analysis?.chartRevision ?? "")
+    }
+
+    private var cleanName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var valid: Bool { cleanName == "N.C." || Chord(display: cleanName)?.quality.intervals != nil }
+    private var changed: Bool { store.analysis?.chartRevision != revision }
+    private var canSave: Bool { valid && cleanName != segment.displayName && !store.savingCorrection && !changed }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("\(mmss(segment.start))–\(mmss(segment.end)) · original key") {
+                    TextField("Chord, e.g. F#m7 or Bb/D", text: $name)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .submitLabel(.done)
+                        .onSubmit { if canSave { save(cleanName) } }
+                        .font(.title2.monospaced()).accessibilityIdentifier("chord-correction-name")
+                    Text("Use N.C. for no chord. Only this occurrence changes.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    if !valid {
+                        Text("Enter a chord such as C, Am7, F# or Bb/D.")
+                            .font(.footnote).foregroundStyle(.orange)
+                    }
+                }
+                Section {
+                    NavigationLink("Edit chord timing") {
+                        ChordBoundaryEditor(store: store, segment: segment, revision: revision) { dismiss() }
+                    }
+                    .disabled(store.savingCorrection || changed)
+                    .accessibilityIdentifier("edit-chord-boundary")
+                }
+                if let original = segment.originalLabel {
+                    Section {
+                        LabeledContent("Originally analyzed", value: Chord(label: original)?.display ?? "N.C.")
+                        Button("Restore original chord") { save(nil) }
+                            .disabled(store.savingCorrection || changed)
+                            .accessibilityIdentifier("restore-chord")
+                    }
+                }
+                if changed {
+                    Text("The chart changed while this editor was open. Close it and select the chord again before saving.")
+                        .foregroundStyle(.orange)
+                }
+                if let error { Text(error).foregroundStyle(.red).accessibilityIdentifier("correction-error") }
+                if store.savingCorrection { ProgressView("Saving correction…") }
+            }
+            .navigationTitle("Correct chord")
+            .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(store.savingCorrection)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.disabled(store.savingCorrection)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save(cleanName) }
+                        .disabled(!canSave)
+                        .accessibilityIdentifier("save-chord-correction")
+                }
+            }
+        }
+    }
+
+    private func save(_ name: String?) {
+        error = nil
+        Task {
+            do {
+                try await store.correctChord(segment, name: name, expectedRevision: revision)
+                dismiss()
+            } catch {
+                if let backend = error as? BackendError {
+                    let object = backend.detail.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+                    self.error = object?["detail"] as? String ?? backend.detail
+                } else {
+                    self.error = "Could not save. Your edit is still here; check the connection and try again."
+                }
+            }
+        }
+    }
+}
+
+private struct ChordBoundaryEditor: View {
+    enum Action: String, CaseIterable, Identifiable {
+        case start = "Move start", end = "Move end", split = "Split chord", merge = "Merge with next"
+        var id: String { rawValue }
+    }
+    @ObservedObject var store: SongSheetStore
+    let segment: ChordSegment
+    let revision: String
+    let onSaved: () -> Void
+    @State private var action = Action.end
+    @State private var at: Double
+    @State private var name: String
+    @State private var error: String?
+
+    init(store: SongSheetStore, segment: ChordSegment, revision: String, onSaved: @escaping () -> Void) {
+        self.store = store; self.segment = segment; self.revision = revision; self.onSaved = onSaved
+        _at = State(initialValue: segment.end)
+        _name = State(initialValue: segment.displayName)
+    }
+    private var index: Int? { store.analysis?.chords.firstIndex(where: { $0.start == segment.start && $0.end == segment.end }) }
+    private var previous: ChordSegment? { index.flatMap { $0 > 0 ? store.analysis?.chords[$0 - 1] : nil } }
+    private var next: ChordSegment? { index.flatMap { $0 + 1 < (store.analysis?.chords.count ?? 0) ? store.analysis?.chords[$0 + 1] : nil } }
+    private var limits: ClosedRange<Double>? {
+        let lo: Double, hi: Double
+        switch action {
+        case .start:
+            guard let previous, abs(previous.end - segment.start) < 0.000001 else { return nil }
+            lo = previous.start + 0.1; hi = segment.end - 0.1
+        case .end, .merge:
+            guard let next, abs(segment.end - next.start) < 0.000001 else { return nil }
+            lo = segment.start + 0.1; hi = next.end - 0.1
+        case .split: lo = segment.start + 0.1; hi = segment.end - 0.1
+        }
+        return lo <= hi ? lo...hi : nil
+    }
+    private var cleanName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var changed: Bool { store.analysis?.chartRevision != revision }
+    private var valid: Bool {
+        guard !changed, !store.savingCorrection, let limits else { return false }
+        if action == .split || action == .merge {
+            guard cleanName == "N.C." || Chord(display: cleanName)?.quality.intervals != nil else { return false }
+        }
+        if action == .merge { return true }
+        return at.isFinite && limits.contains(at) && (action == .split || at != (action == .start ? segment.start : segment.end))
+    }
+    var body: some View {
+        Form {
+            Section {
+                Text("\(segment.displayName) · \(mmss(segment.start))–\(mmss(segment.end))").font(.headline)
+                Picker("Change", selection: $action) {
+                    ForEach(Action.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .onChange(of: action) { _, value in
+                    at = value == .split ? (segment.start + segment.end)/2 : value == .start ? segment.start : segment.end
+                }
+            }
+            Section {
+                if let limits {
+                    if action != .merge {
+                        LabeledContent("Time in seconds") {
+                            TextField("Seconds", value: $at, format: .number.precision(.fractionLength(2)))
+                                .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                                .accessibilityIdentifier("boundary-seconds")
+                        }
+                        Stepper(value: $at, in: limits, step: 0.1) {
+                            Text(String(format: "Change at %.2f s", at)).monospacedDigit()
+                        }
+                        Slider(value: $at, in: limits, step: 0.05).accessibilityLabel("Chord boundary time")
+                    }
+                    if action == .split || action == .merge {
+                        TextField(action == .split ? "Second chord" : "Chord to keep", text: $name)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                            .accessibilityIdentifier("boundary-chord-name")
+                    }
+                    Text(explanation).font(.footnote).foregroundStyle(.secondary)
+                } else {
+                    Text("This change needs an adjacent analyzed chord, or an interval long enough to split.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            Section {
+                Button("Apply change") { save() }.disabled(!valid)
+                    .accessibilityIdentifier("save-boundary-edit")
+                if store.savingCorrection { ProgressView("Saving…") }
+                if changed { Text("The chart changed. Close this editor and select the chord again.").foregroundStyle(.orange) }
+                if let error { Text(error).foregroundStyle(.orange) }
+            }
+        }
+        .navigationTitle("Edit chord timing")
+        .navigationBarTitleDisplayMode(.inline)
+        .interactiveDismissDisabled(store.savingCorrection)
+    }
+    private var explanation: String {
+        switch action {
+        case .start: return "The preceding chord ends where this chord starts. Both sides move together."
+        case .end: return "This chord ends where the next chord starts. Both sides move together."
+        case .split: return "Keep \(segment.displayName) before this time; use the second chord after it."
+        case .merge: return "Replace this chord and \(next?.displayName ?? "the next chord") with one continuous chord."
+        }
+    }
+    private func save() {
+        let operation: BackendClient.BoundaryEdit.Operation = action == .split ? .split : action == .merge ? .merge : .move
+        let edit = BackendClient.BoundaryEdit(operation: operation, start: segment.start, end: segment.end,
+            at: action == .merge ? nil : at, edge: action == .start ? "start" : "end",
+            name: action == .split || action == .merge ? cleanName : nil, chartRevision: revision)
+        error = nil
+        Task {
+            do { try await store.editBoundary(edit); onSaved() }
+            catch {
+                if let backend = error as? BackendError {
+                    let object = backend.detail.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+                    self.error = object?["detail"] as? String ?? backend.detail
+                } else { self.error = "Could not save. Your changes are still here; try again." }
+            }
         }
     }
 }

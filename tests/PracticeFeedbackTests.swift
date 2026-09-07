@@ -33,14 +33,14 @@ private let latency = PracticeFeedback.detectorLatency
         check(feedback.observe(current: nil, chartTime: 15.5) == nil, "Rest between strums")
         check(feedback.observe(current: "Am", chartTime: 15.7 + latency) == 3, "A strum within half a second before the change counts for the coming chord")
         guard case .hit(let early)? = feedback.verdicts[3], early < 0 else { fatalError("Am should be an early hit") }
-        check(PracticeFeedback.describe(feedback.targets[3], feedback.verdicts[3]!) == "Am early by 0.3 s", "Early strums are described in tenths")
+        check(PracticeFeedback.describe(feedback.targets[3], feedback.verdicts[3]!) == "Am matched · estimated -0.3 s vs chart", "Early strums are described in tenths")
 
         check(feedback.observe(current: nil, chartTime: 20.2) == nil, "Rest")
         check(feedback.observe(current: "Dm", chartTime: 20.6 + latency) == 4, "A different chord while F should sound is wrong")
         check(feedback.verdicts[4] == .wrong(heard: "Dm"), "The wrong verdict names what was heard")
         check(feedback.observe(current: nil, chartTime: 21.0) == nil && feedback.observe(current: "F", chartTime: 21.4 + latency) == 4,
               "Correcting to the right chord upgrades wrong to a late hit")
-        check(PracticeFeedback.describe(feedback.targets[4], feedback.verdicts[4]!) == "F late by 1.4 s", "Late hits report how late")
+        check(PracticeFeedback.describe(feedback.targets[4], feedback.verdicts[4]!) == "F matched · estimated +1.4 s vs chart", "Late hits report how late")
         check(feedback.observe(current: nil, chartTime: 21.6) == nil && feedback.observe(current: "Dm", chartTime: 21.8 + latency) == nil,
               "A hit is never downgraded by a later wrong strum")
         check(feedback.hits == 4 && feedback.judged.count == 4, "Hits count on-time, early, late and held; the corrected wrong is now a hit")
@@ -54,6 +54,18 @@ private let latency = PracticeFeedback.detectorLatency
         check(shifted.targets.first?.name == "D" && shifted.heard("D", at: 1) == 0 && shifted.verdicts[0] != nil, "A transposed take expects the sounding chord")
         var plain = PracticeFeedback(chords: segments([(0, 4, "C:maj")]), start: 0, end: 4)
         check(plain.heard("N.C.", at: 1) == nil, "Nonsense from the detector is ignored")
+        var carried = PracticeFeedback(chords: chart, start: 6, end: 10)
+        carried.heard("C", at: 6.1)
+        check(carried.verdicts[0] == .held, "Starting inside a chord cannot create a late transition")
+        var delayedUI = PracticeFeedback(chords: chart, start: 0, end: 20)
+        delayedUI.observe(current: "G", chartTime: 9.8, recognizedAt: 8.1 + latency)
+        guard case .hit(let captured)? = delayedUI.verdicts[1] else { fatalError("Expected G") }
+        check(abs(captured - 0.1) < 1e-8, "UI coalescing cannot move a strum's captured timestamp")
+        check(delayedUI.observe(current: "G", chartTime: 10.8, recognizedAt: 8.1 + latency) == nil, "Repeated delivery retains first recognition")
+        var slowed = PracticeFeedback(chords: chart, start: 0, end: 20)
+        slowed.observe(current: "G", chartTime: 8 + (0.4 + latency) * 0.5, chartRate: 0.5)
+        guard case .hit(let slowOffset)? = slowed.verdicts[1] else { fatalError("Expected slow G") }
+        check(abs(slowOffset - 0.4) < 1e-8, "Detector correction and reported offset use real seconds at half speed")
         print("Practice feedback: \(checks)/\(checks) checks passed")
     }
 }

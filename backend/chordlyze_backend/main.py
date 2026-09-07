@@ -7,6 +7,7 @@ GET  /analysis/track/{id}     — saved analysis for a track (or its ISRC twin).
 GET  /lyrics                  — time-synced lyrics from LRCLIB.
 GET  /library                 — the caller's songs: requested, saved or practiced.
 POST/DELETE /library/{id}     — save or remove one song from the caller's list.
+PUT /library/{id}/chords      — correct or restore one personal chord occurrence.
 GET  /catalog                 — every chart on the server (charts are global).
 POST /practice_take           — score a practice recording against the chart.
 GET  /health                  — liveness.
@@ -34,15 +35,18 @@ import urllib.request
 import uuid
 from pathlib import Path
 from contextlib import asynccontextmanager
-from typing import Annotated
+from typing import Annotated, Literal
 
 import anyio.to_thread
-from fastapi import Depends, FastAPI, Form, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, Form, Header, HTTPException, UploadFile, Request
 from pydantic import BaseModel, Field
 
-from .analysis.beats import track_beats
+from .analysis.beats import track_beats, validate_tempo
+from .analysis.rhythm import worker as rhythm_worker
 from .analysis.difficulty import difficulty
-from .analysis.chord import parse_label
+from .analysis.chord import parse_label, parse_display
+from . import corrections
+from .synchronization import Sample as SyncSample, UncertainSync, align as align_samples
 from .analysis.engine import AudioDecodeError, ChordSegment, merge_adjacent, recognize_audio
 from .analysis.ismir import RecognitionUnavailable, close as close_recognizer
 from .analysis.provenance import (ANALYSIS_VERSION, MODEL_QUALITIES, MODEL_RANK,
@@ -60,6 +64,7 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 async def lifespan(_app):
     yield
     await anyio.to_thread.run_sync(close_recognizer)
+    await anyio.to_thread.run_sync(rhythm_worker.close)
 
 
 app = FastAPI(title="Chordlyze", version="0.5.1", lifespan=lifespan)
@@ -230,7 +235,10 @@ def _submit_analysis(body: SubmittedAnalysis, require_lease: bool = False) -> di
             raise HTTPException(422, str(exc)) from exc
         segments.append(ChordSegment(seg.start, seg.end, chord.label if chord else "N"))
     result = analyze(merge_adjacent(segments))
-    result["tempo"] = body.tempo
+    try:
+        result["tempo"] = validate_tempo(body.tempo, body.audio_duration or segments[-1].end)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     if body.genre:
         result["genre"] = body.genre
     result["source"] = body.source
@@ -265,7 +273,13 @@ def _song_status(track_id: str, isrc: str | None = None, user: str | None = None
     jobs = SongJobs(CACHE_DIR)
     path = _track_cache_path(track_id)
     chart = _read_analysis(path) if path.exists() else _cached_by_isrc(track_id, isrc, None, None)
-    ready = chart and chart.get("source") != "itunes_preview" and is_current(chart, model="ismir2019")
+    # Version 3 adds optional rhythm metadata; version 2's identical chord
+    # recognizer remains usable. Freshness must not erase a playable chart.
+    ready = chart and chart.get("source") != "itunes_preview" and (
+        is_current(chart, model="ismir2019") or (
+            chart.get("analysis_version") == 2
+            and chart.get("model") == "ismir2019"
+            and chart.get("model_revision") == MODEL_REVISIONS["ismir2019"]))
     if ready:
         chart = {**chart, "difficulty": difficulty(chart.get("chords") or [])}
     job = jobs.get(track_id)
@@ -275,12 +289,15 @@ def _song_status(track_id: str, isrc: str | None = None, user: str | None = None
                 "album": chart.get("album"), "duration": chart.get("song_duration") or chart.get("audio_duration"),
                 "isrc": chart.get("isrc"), "artwork": chart.get("artwork")}
     mine = UserLibrary(CACHE_DIR, user) if user else None
+    if ready:
+        chart = corrections.apply(chart, mine.corrections(track_id) if mine else None)
     return {"song": song, "analysis": chart if ready else None,
             "lyrics": chart.get("lyrics") if ready else None,
             "job": {"state": "ready", "worker_online": jobs.worker_online()} if ready else jobs.public(job),
             "library_generation": generation(CACHE_DIR),
             "saved": mine.contains(track_id) if mine else False,
-            "timing": mine.timing(track_id) if mine else None}
+            "timing": mine.timing(track_id) if mine else None,
+            "timing_revision": _timing_revision(mine.timing(track_id) if mine else None)}
 
 
 @app.post("/song/request")
@@ -289,9 +306,12 @@ def request_song(body: SongRequest, user: str = Depends(current_user)) -> dict:
     with library_lock(CACHE_DIR):
         UserLibrary(CACHE_DIR, user).add(body.track_id)
         status = _song_status(body.track_id, body.isrc, user)
-        if status["analysis"] is not None:
+        if status["analysis"] is not None and not status["analysis"]["analysis_stale"]:
             return status
-        SongJobs(CACHE_DIR).request(body.model_dump(exclude={"retry"}), retry=body.retry)
+        # Only an explicit request upgrades a stale chart. Keep serving it
+        # throughout the upgrade, including if a recording cannot be fetched.
+        SongJobs(CACHE_DIR).request(body.model_dump(exclude={"retry"}),
+                                   retry=body.retry or status["analysis"] is not None)
         return _song_status(body.track_id, user=user)
 
 
@@ -638,12 +658,110 @@ def lyrics(title: str, artist: str = "", duration: float | None = None,
 
 # MARK: - Library
 
+class ChordCorrection(BaseModel):
+    chart_revision: str = Field(pattern=r"^[a-f0-9]{64}$")
+    start: float = Field(ge=0, allow_inf_nan=False)
+    end: float = Field(gt=0, allow_inf_nan=False)
+    # Display spelling in the recording's original key; null restores analysis.
+    name: str | None = Field(default=None, min_length=1, max_length=40)
+
+
+def _editable_chart(track_id: str, user: str, expected: str):
+    path = _track_cache_path(track_id)
+    if not path.exists():
+        raise HTTPException(404, "No chart to correct yet.")
+    chart = _read_analysis(path)
+    if chart.get("source") == "itunes_preview":
+        raise HTTPException(409, "A full-song chart is required to correct chords.")
+    mine = UserLibrary(CACHE_DIR, user)
+    overlay = mine.corrections(track_id)
+    current = corrections.apply(chart, overlay)
+    if expected != current["chart_revision"]:
+        raise HTTPException(409, "The chart changed. Reopen the chord and check it before saving again.")
+    return mine, chart, overlay, current
+
+
+def _correction_label(name: str) -> str:
+    name = name.strip()
+    try:
+        parsed = parse_display(name)
+        if (name != "N.C." and (parsed is None or parsed.intervals is None)) or name.endswith("/"):
+            raise ValueError("unsupported chord")
+        return parsed.label if parsed else "N"
+    except (ValueError, IndexError):
+        raise HTTPException(422, "Enter a chord such as C, F#m7, Bb/D or N.C.")
+
+
+@app.put("/library/{track_id}/chords")
+def correct_chord(track_id: str, body: ChordCorrection, user: str = Depends(current_user)) -> dict:
+    with library_lock(CACHE_DIR):
+        mine, chart, overlay, current = _editable_chart(track_id, user, body.chart_revision)
+        segments = corrections.raw(current["chords"])
+        index = next((i for i, s in enumerate(segments) if s["start"] == body.start and s["end"] == body.end), None)
+        if index is None:
+            raise HTTPException(409, "This chord's timing changed. Reopen the chord to edit it.")
+        label = _correction_label(body.name) if body.name is not None else current["chords"][index].get("original_label", segments[index]["label"])
+        segments[index]["label"] = label
+        mine.set_corrections(track_id, corrections.commit(chart, current, overlay, segments))
+        return _song_status(track_id, user=user)
+
+
+class BoundaryEdit(BaseModel):
+    chart_revision: str = Field(pattern=r"^[a-f0-9]{64}$")
+    operation: Literal["move", "split", "merge", "undo", "restore"]
+    start: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    end: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    at: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    edge: Literal["start", "end"] = "end"
+    name: str | None = Field(default=None, min_length=1, max_length=40)
+
+
+@app.patch("/library/{track_id}/chords/boundary")
+def edit_boundary(track_id: str, body: BoundaryEdit, user: str = Depends(current_user)) -> dict:
+    with library_lock(CACHE_DIR):
+        mine, chart, overlay, current = _editable_chart(track_id, user, body.chart_revision)
+        if body.operation == "undo":
+            if not current["can_undo"]:
+                raise HTTPException(409, "There is no edit to undo on this chart.")
+            history = overlay["history"]
+            mine.set_corrections(track_id, {"base_revision": corrections.revision(chart), "segments": history[-1], "history": history[:-1]})
+            return _song_status(track_id, user=user)
+        segments = corrections.raw(current["chords"])
+        if body.operation == "restore":
+            segments = corrections.raw(chart["chords"])
+        else:
+            index = next((i for i, s in enumerate(segments) if s["start"] == body.start and s["end"] == body.end), None)
+            if index is None:
+                raise HTTPException(409, "This chord's timing changed. Reopen it before editing.")
+            if body.operation == "split":
+                segment = segments[index]
+                if body.at is None or not segment["start"] + .1 <= body.at <= segment["end"] - .1 or body.name is None:
+                    raise HTTPException(422, "Choose a split inside the chord, leaving at least 0.1 seconds on each side, and a second chord.")
+                segments[index:index+1] = [{**segment, "end": body.at}, {"start": body.at, "end": segment["end"], "label": _correction_label(body.name)}]
+            else:
+                left_index = index - 1 if body.operation == "move" and body.edge == "start" else index
+                if left_index < 0 or left_index + 1 >= len(segments):
+                    raise HTTPException(422, "There is no neighboring chord at this boundary.")
+                left, right = segments[left_index:left_index+2]
+                if abs(left["end"] - right["start"]) > .000001:
+                    raise HTTPException(422, "These chords have an unanalyzed gap between them.")
+                if body.operation == "move":
+                    if body.at is None or not left["start"] + .1 <= body.at <= right["end"] - .1:
+                        raise HTTPException(422, "Leave at least 0.1 seconds for each neighboring chord.")
+                    left["end"] = right["start"] = body.at
+                else:
+                    label = _correction_label(body.name) if body.name is not None else left["label"]
+                    segments[left_index:left_index+2] = [{"start": left["start"], "end": right["end"], "label": label}]
+        mine.set_corrections(track_id, corrections.commit(chart, current, overlay, segments))
+        return _song_status(track_id, user=user)
+
+
 @app.get("/library")
 def library(user: str = Depends(current_user)) -> dict:
     """The caller's songs that have a chart, newest addition first."""
     with library_lock(CACHE_DIR):
         paths = [_track_cache_path(track) for track in UserLibrary(CACHE_DIR, user).track_ids()]
-        return _library([path for path in paths if path.exists()])
+        return _library([path for path in paths if path.exists()], user=user)
 
 
 @app.post("/library/{track_id}")
@@ -654,6 +772,10 @@ def save_song(track_id: str, user: str = Depends(current_user)) -> dict:
             raise HTTPException(404, "no chart or analysis request for this track")
         UserLibrary(CACHE_DIR, user).add(track_id)
         return {"track_id": track_id, "saved": True}
+
+
+def _timing_revision(timing: dict | None) -> str:
+    return hashlib.sha256(json.dumps(timing, sort_keys=True).encode()).hexdigest()
 
 
 class TimingAnchor(BaseModel):
@@ -671,6 +793,11 @@ class TimingCalibration(BaseModel):
     verified_error: float | None = Field(default=None, ge=0, le=30, allow_inf_nan=False)
     chart_audio_sha256: str | None = Field(default=None, max_length=64)
     spotify_track_id: str | None = Field(default=None, max_length=200)
+    chart_revision: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    method: str | None = Field(default=None, pattern=r"^(automatic|manual)$")
+    match_score: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+    match_margin: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+    drift_measured: bool | None = None
 
 
 @app.put("/library/{track_id}/timing")
@@ -679,8 +806,79 @@ def set_timing(track_id: str, body: TimingCalibration, user: str = Depends(curre
     with library_lock(CACHE_DIR):
         if not _track_cache_path(track_id).exists():
             raise HTTPException(404, "no chart for this track")
+        current = corrections.apply(_read_analysis(_track_cache_path(track_id)), UserLibrary(CACHE_DIR, user).corrections(track_id))
+        if body.chart_revision is not None and current["chart_revision"] != body.chart_revision:
+            raise HTTPException(409, "The chart changed. Synchronize again before saving timing.")
         UserLibrary(CACHE_DIR, user).set_timing(track_id, body.model_dump(exclude_none=True))
         return {"track_id": track_id, "timing": body.model_dump(exclude_none=True)}
+
+
+@app.post("/library/{track_id}/synchronize")
+async def synchronize_song(
+    track_id: str, files: list[UploadFile], request: Request,
+    positions: Annotated[str, Form(max_length=1000)],
+    chart_revision: Annotated[str, Form(pattern=r"^[a-f0-9]{64}$")],
+    timing_revision: Annotated[str, Form(pattern=r"^[a-f0-9]{64}$")],
+    user: str = Depends(current_user),
+) -> dict:
+    try:
+        starts = json.loads(positions)
+        if not isinstance(starts, list) or len(starts) != 3 or any(
+                isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x) or x < 0 for x in starts):
+            raise ValueError()
+    except (ValueError, TypeError):
+        raise HTTPException(422, "Three valid playback positions are required.")
+    if any(b - a < 8 for a, b in zip(sorted(starts), sorted(starts)[1:])):
+        raise HTTPException(422, "Listen to three separated passages.")
+    if len(files) != 3:
+        raise HTTPException(422, "Three listening samples are required.")
+    def read_current():
+        path = _track_cache_path(track_id)
+        if not path.exists():
+            raise HTTPException(404, "No chart to synchronize yet.")
+        mine = UserLibrary(CACHE_DIR, user)
+        chart = corrections.apply(_read_analysis(path), mine.corrections(track_id))
+        if chart["chart_revision"] != chart_revision or _timing_revision(mine.timing(track_id)) != timing_revision:
+            raise HTTPException(409, "The chart or timing changed while listening. Your newer changes were kept; synchronize again.")
+        if chart.get("source") == "itunes_preview":
+            raise HTTPException(409, "A full-song chart is required to synchronize.")
+        return mine, chart
+    with library_lock(CACHE_DIR):
+        _, reference = read_current()
+    samples = []
+    for upload, start in zip(files, starts):
+        with tempfile.NamedTemporaryFile(suffix=Path(upload.filename or "sample.m4a").suffix, delete=False) as tmp:
+            path = Path(tmp.name)
+        try:
+            size = 0
+            with path.open("wb") as target:
+                while chunk := await upload.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > 8 * 1024 * 1024:
+                        raise HTTPException(413, "Listening sample exceeds 8 MB.")
+                    target.write(chunk)
+            if size == 0:
+                raise HTTPException(422, "The microphone sample is empty. Try again.")
+            recognition = await anyio.to_thread.run_sync(lambda: recognize_audio(path, model="ismir2019", max_duration=30))
+            samples.append(SyncSample(start, recognition.duration, [s.to_dict() for s in recognition.segments]))
+        except AudioDecodeError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except RecognitionUnavailable as exc:
+            raise HTTPException(503, "Synchronization is temporarily unavailable. Try again.") from exc
+        finally:
+            path.unlink(missing_ok=True)
+            await upload.close()
+    try:
+        timing = await anyio.to_thread.run_sync(lambda: align_samples(reference["chords"], samples))
+    except UncertainSync as exc:
+        raise HTTPException(422, str(exc)) from exc
+    timing.update(chart_audio_sha256=reference.get("audio_sha256"), spotify_track_id=track_id, chart_revision=chart_revision)
+    if await request.is_disconnected():
+        raise HTTPException(499, "Synchronization was canceled.")
+    with library_lock(CACHE_DIR):
+        mine, _ = read_current()
+        mine.set_timing(track_id, timing)
+        return _song_status(track_id, user=user)
 
 
 @app.delete("/library/{track_id}/timing")
@@ -706,10 +904,13 @@ def catalog(user: str = Depends(current_user)) -> dict:
                                key=lambda p: p.stat().st_mtime, reverse=True))
 
 
-def _library(paths: list[Path]) -> dict:
+def _library(paths: list[Path], user: str | None = None) -> dict:
     items = []
     for path in paths:
         data = json.loads(path.read_text())
+        if user:
+            track_id = data.get("track_id", path.stem.removeprefix("track-"))
+            data = corrections.apply(data, UserLibrary(CACHE_DIR, user).corrections(track_id))
         items.append({
             "track_id": data.get("track_id", path.stem.removeprefix("track-")),
             "title": data.get("title"),
@@ -735,12 +936,13 @@ def _library(paths: list[Path]) -> dict:
 
 @app.get("/analysis/track/{track_id}")
 def get_track_analysis(track_id: str, isrc: str | None = None, user: str = Depends(current_user)) -> dict:
-    cached = _track_cache_path(track_id)
-    if cached.exists():
-        return _read_analysis(cached)
-    if hit := _cached_by_isrc(track_id, isrc, None, None):
-        return hit
-    raise HTTPException(404, "no analysis for this track yet")
+    with library_lock(CACHE_DIR):
+        cached = _track_cache_path(track_id)
+        if cached.exists():
+            return corrections.apply(_read_analysis(cached), UserLibrary(CACHE_DIR, user).corrections(track_id))
+        if hit := _cached_by_isrc(track_id, isrc, None, None):
+            return corrections.apply(hit, UserLibrary(CACHE_DIR, user).corrections(track_id))
+        raise HTTPException(404, "no analysis for this track yet")
 
 
 # MARK: - Practice
@@ -752,6 +954,8 @@ async def practice_take(
     offset: float = Form(default=0.0, allow_inf_nan=False),
     transpose: Annotated[int, Form(ge=-12, le=12)] = 0,
     playback_rate: Annotated[float, Form(ge=0.5, le=1, allow_inf_nan=False)] = 1.0,
+    timing_scale: Annotated[float, Form(ge=0.9, le=1.1, allow_inf_nan=False)] = 1.0,
+    chart_revision: Annotated[str | None, Form(pattern=r"^[a-f0-9]{64}$")] = None,
     user: str = Depends(current_user),
 ) -> dict:
     """Score a practice recording (instrument only, song in headphones)
@@ -762,7 +966,9 @@ async def practice_take(
         raise HTTPException(404, "no analysis for this track yet")
     with library_lock(CACHE_DIR):
         UserLibrary(CACHE_DIR, user).add(track_id)
-    reference = json.loads(ref_path.read_text())
+        reference = corrections.apply(json.loads(ref_path.read_text()), UserLibrary(CACHE_DIR, user).corrections(track_id))
+        if chart_revision is not None and chart_revision != reference["chart_revision"]:
+            raise HTTPException(409, "The chart changed after this take started. Your audio is saved; start a new take with the current chords.")
     if reference.get("source") == "itunes_preview":
         raise HTTPException(409, "a full-song chart is required to score a recording")
     suffix = Path(file.filename or "take.m4a").suffix or ".m4a"
@@ -795,11 +1001,12 @@ async def practice_take(
                             [s.to_dict() for s in recognition.segments], offset,
                             take_duration=recognition.duration, comparison=comparison,
                             supported_qualities=MODEL_QUALITIES[recognition.model],
-                            transpose=transpose, playback_rate=playback_rate)
+                            transpose=transpose, playback_rate=playback_rate, timing_scale=timing_scale)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     if "error" in report:
         raise HTTPException(422, report["error"])
     return {"take_id": uuid.uuid4().hex[:12], "track_id": track_id, **report,
             **recognition.metadata(), "reference_analysis_version": reference.get("analysis_version", 0),
-            "reference_model_revision": reference.get("model_revision")}
+            "reference_model_revision": reference.get("model_revision"),
+            "reference_chart_revision": reference["chart_revision"]}

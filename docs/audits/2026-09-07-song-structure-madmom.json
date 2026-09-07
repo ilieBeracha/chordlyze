@@ -1,0 +1,1169 @@
+{
+  "dataset": "GuitarSet microphone comp, players 04/05, all 60 takes",
+  "tolerance_seconds": 0.07,
+  "limitations": "Metronomic references, no section annotations, pretraining overlap not established; legacy uses annotated chords.",
+  "legacy": {
+    "precision": 0.43640350877192985,
+    "recall": 0.45227272727272727,
+    "f1": 0.44419642857142855,
+    "hits": 398,
+    "reference": 880,
+    "estimated": 912
+  },
+  "detected": {
+    "precision": 0.4969818913480885,
+    "recall": 0.2806818181818182,
+    "f1": 0.3587509077705156,
+    "hits": 247,
+    "reference": 880,
+    "estimated": 497
+  },
+  "audio_seconds": 1828.0733786848075,
+  "runtime_seconds": 108.7061812481843,
+  "source_sha256": {
+    "chordlyze_backend/analysis/beats.py": "01e4ed1e2ed4c8790d8a7e95dcdb155c5b7508eab5134141dd67abfbe7d06d7f",
+    "chordlyze_backend/analysis/structure.py": "0776f830dff6d63009d3041aa57182c6b04a5c094ddbbc7b34838ad04a937ed5"
+  },
+  "tracks": [
+    {
+      "take": "04_BN1-129-Eb_comp",
+      "duration": 22.32439909297052,
+      "seconds": 3.027143166982569,
+      "annotation_sha256": "81c4818b93f86a45a582d1b958837b5579c599a2b0a214e9025c63981c87538a",
+      "audio_sha256": "ca4b487760400edabb87ed478a523ad0587c020b8463f97429af4009789f4ebd",
+      "legacy": {
+        "hits": 11,
+        "reference": 12,
+        "estimated": 11
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 12,
+        "estimated": 11
+      },
+      "bars": 10,
+      "sections": 2
+    },
+    {
+      "take": "04_BN1-147-Gb_comp",
+      "duration": 19.58562358276644,
+      "seconds": 1.0148299171123654,
+      "annotation_sha256": "93658c1c9484a014a3d2967bb090c77a57f968a6ee85517bdee6a3bcc0446ba1",
+      "audio_sha256": "1a7a63967927554cc21a6ae0ab02bdb08cb79c0b8eff984e8cbccfece7694bdf",
+      "legacy": {
+        "hits": 1,
+        "reference": 12,
+        "estimated": 12
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 12,
+        "estimated": 11
+      },
+      "bars": 10,
+      "sections": 1
+    },
+    {
+      "take": "04_BN2-131-B_comp",
+      "duration": 29.30639455782313,
+      "seconds": 1.4738305419450626,
+      "annotation_sha256": "d125f917a574a661fab34c860a71110d81db3d4a5f8c03ea48ac070fbdcc4f2c",
+      "audio_sha256": "43f6a70622e8ff66237307768c38578e0d8cd5fdd16d48ac97733673965f863e",
+      "legacy": {
+        "hits": 15,
+        "reference": 16,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "04_BN2-166-Ab_comp",
+      "duration": 23.13002267573696,
+      "seconds": 1.1998498749453574,
+      "annotation_sha256": "21214af371ac2e113ce619b8e3d60123f829289af29ac230150d45729cb63c9d",
+      "audio_sha256": "dbb14cb99fff84d5daddf9354faa71cb823b67beef61b9cf7b640c74362723a8",
+      "legacy": {
+        "hits": 6,
+        "reference": 16,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 8
+      },
+      "bars": 7,
+      "sections": 1
+    },
+    {
+      "take": "04_BN3-119-G_comp",
+      "duration": 32.26321995464853,
+      "seconds": 1.6563422500621527,
+      "annotation_sha256": "a4fdc1d1f831f0e48dbb7a5e7924d6044f64a1099624e08ac715e086a15f28be",
+      "audio_sha256": "465c8e5cf72fdfa2cb03e55999020b5368d6e508f2bff74340959a94d9a926d9",
+      "legacy": {
+        "hits": 15,
+        "reference": 16,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "04_BN3-154-E_comp",
+      "duration": 24.93201814058957,
+      "seconds": 1.2407286249799654,
+      "annotation_sha256": "b3c8cbca3500879194a20c1457165413e68fde292bdcff75862f3d417d7bad40",
+      "audio_sha256": "d26d18e314a0abb1c8ace15e7a940763194611e861b34a56b59191edfd548566",
+      "legacy": {
+        "hits": 16,
+        "reference": 16,
+        "estimated": 16
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "04_Funk1-114-Ab_comp",
+      "duration": 25.258412698412698,
+      "seconds": 1.3013710409868509,
+      "annotation_sha256": "6999adca5d88869c5cd72539767598c4cfe671f768ff2f8ce8f8a68fc4902dff",
+      "audio_sha256": "6e2a6fc4fdce9b250ab11a090a8f5c4efcc12f83a60b17c8ca206ffeda07a8f0",
+      "legacy": {
+        "hits": 2,
+        "reference": 12,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 12,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "04_Funk1-97-C_comp",
+      "duration": 29.688390022675737,
+      "seconds": 1.5990457920124754,
+      "annotation_sha256": "afcb0a0cfd02ca667e3a5c39309b2bd671d9aa9e75da8821c7f70f32796b23e7",
+      "audio_sha256": "4a452551a41e6770920f0b30c73ef4d356f4a9b5ef4e65babe674654e4082228",
+      "legacy": {
+        "hits": 7,
+        "reference": 12,
+        "estimated": 11
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 12,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "04_Funk2-108-Eb_comp",
+      "duration": 35.54839002267574,
+      "seconds": 2.0095013750251383,
+      "annotation_sha256": "b536a29615bccc6c7fd531e3eb323edb051b4cb5134cb878c2a8c6051be5bc6d",
+      "audio_sha256": "5d111f9bf109a875d4775e2db980e43e4385dbb775580432a375e9ebd5f8b266",
+      "legacy": {
+        "hits": 4,
+        "reference": 16,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 12,
+        "reference": 16,
+        "estimated": 16
+      },
+      "bars": 15,
+      "sections": 1
+    },
+    {
+      "take": "04_Funk2-119-G_comp",
+      "duration": 32.26321995464853,
+      "seconds": 1.6508650420000777,
+      "annotation_sha256": "7453b7207b821d89933e7d0e20c5189f284aec5d6736a0669d93ceed96fed578",
+      "audio_sha256": "a1241d1af68f1bad6b3eceb491d8bf9ccf91a14ab822ff5ee88d5ff170d53669",
+      "legacy": {
+        "hits": 5,
+        "reference": 16,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "04_Funk3-112-C#_comp",
+      "duration": 34.284399092970524,
+      "seconds": 1.7637772921007127,
+      "annotation_sha256": "c34c73d1bc6a2c3d68f6a8115268dcc1bdd764c0bd97fa38eb8e2c207722ea84",
+      "audio_sha256": "9004ab458e0a0f0509f0deb10fd788d1a94f6eb76da93d6f2d0aacf11a3e575a",
+      "legacy": {
+        "hits": 3,
+        "reference": 16,
+        "estimated": 21
+      },
+      "detected": {
+        "hits": 15,
+        "reference": 16,
+        "estimated": 15
+      },
+      "bars": 14,
+      "sections": 2
+    },
+    {
+      "take": "04_Funk3-98-A_comp",
+      "duration": 39.178820861678005,
+      "seconds": 1.9908992500277236,
+      "annotation_sha256": "f6ad83b6916f6af3f126924c877d1376e32b0d08062f7e2f21050b682100318c",
+      "audio_sha256": "3d7fb64713873bc9fdaeb30b2e126ecdc45bbf210e77df40c9aad16a894c44cc",
+      "legacy": {
+        "hits": 15,
+        "reference": 16,
+        "estimated": 31
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 16
+      },
+      "bars": 15,
+      "sections": 1
+    },
+    {
+      "take": "04_Jazz1-130-D_comp",
+      "duration": 22.14721088435374,
+      "seconds": 1.11955270904582,
+      "annotation_sha256": "a895d5a9d077e060a832ed9a9e4b33f599b840180d894f91edb6591021ae1185",
+      "audio_sha256": "69a9b13b9b4206c7b05ababa7dc4f63027212596aa9d255cac9301487099c899",
+      "legacy": {
+        "hits": 11,
+        "reference": 12,
+        "estimated": 11
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 12,
+        "estimated": 12
+      },
+      "bars": 11,
+      "sections": 1
+    },
+    {
+      "take": "04_Jazz1-200-B_comp",
+      "duration": 14.4,
+      "seconds": 0.7268063749652356,
+      "annotation_sha256": "14e2e61724c6f48cfd6f70f4932e10787506edf430b8a8885e1e075660f862db",
+      "audio_sha256": "cd53e62b1ea9313d3abaa1a6e2c3903c091a1299c4f3e12a14b728832ab61593",
+      "legacy": {
+        "hits": 1,
+        "reference": 12,
+        "estimated": 6
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 12,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "04_Jazz2-110-Bb_comp",
+      "duration": 34.90321995464853,
+      "seconds": 1.7613823749125004,
+      "annotation_sha256": "f93cdec6210d5c7cdba6b4c61f75d5c641a5c8a6b3ef0cb847cd043c5e3ab13a",
+      "audio_sha256": "5f028fbe1bde26d30494b2075a7c967812e866a33f5554a00078887336b14668",
+      "legacy": {
+        "hits": 1,
+        "reference": 16,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 8
+      },
+      "bars": 7,
+      "sections": 1
+    },
+    {
+      "take": "04_Jazz2-187-F#_comp",
+      "duration": 20.532018140589567,
+      "seconds": 1.021821541013196,
+      "annotation_sha256": "9ab8c1971171b03245b38e7bd07ccf0c8fc3628b18d30f7ee968b324da9bf645",
+      "audio_sha256": "eaf2a0047227569c8b8c2359242ba6fdafdceca116f991cca17884d2808ad9c1",
+      "legacy": {
+        "hits": 1,
+        "reference": 16,
+        "estimated": 8
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "04_Jazz3-137-Eb_comp",
+      "duration": 28.023219954648525,
+      "seconds": 1.4465473749442026,
+      "annotation_sha256": "f44e4a82822c9ff1c1413582b0676a0a407df39516e35455b5c4abf012f6df7c",
+      "audio_sha256": "2df1a8cbad149591e1d6cd3cf4504f2bd199f8005aff98638d34a6fd20280b88",
+      "legacy": {
+        "hits": 8,
+        "reference": 16,
+        "estimated": 16
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "04_Jazz3-150-C_comp",
+      "duration": 25.6,
+      "seconds": 1.3080942910164595,
+      "annotation_sha256": "ea8ecb9312801e650f8a658c0512e47fa2550ca07cdef95e27a869a69843ddc2",
+      "audio_sha256": "2c6f27f7b7511f419dee0a1746822e8c72770004a8f32942bd6b1a353010d7cf",
+      "legacy": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 8
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "04_Rock1-130-A_comp",
+      "duration": 22.14721088435374,
+      "seconds": 1.0843101249774918,
+      "annotation_sha256": "9654afe844b4e8e43d0c992ab7598abe66a42b6ec46771f49d6e33e1675a1a6b",
+      "audio_sha256": "139d6293709a89d256105fc65850129754de98b8d076e4eb1da8f706af80a26a",
+      "legacy": {
+        "hits": 11,
+        "reference": 12,
+        "estimated": 11
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 12,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "04_Rock1-90-C#_comp",
+      "duration": 32.0,
+      "seconds": 2.4226785419741645,
+      "annotation_sha256": "b7f6959b3f2edce35c8da9c08e6f1479b52ee2e1a144fc97d0602199e9947988",
+      "audio_sha256": "db3c7aeac0d3e956c3a63ac35d7f9693df67558e6c29dbf65db543d92b8a2b59",
+      "legacy": {
+        "hits": 10,
+        "reference": 12,
+        "estimated": 12
+      },
+      "detected": {
+        "hits": 12,
+        "reference": 12,
+        "estimated": 13
+      },
+      "bars": 12,
+      "sections": 3
+    },
+    {
+      "take": "04_Rock2-142-D_comp",
+      "duration": 27.041632653061225,
+      "seconds": 2.661083040991798,
+      "annotation_sha256": "aaab63931089e7910af048ab49e10f99c2302b83cdfc78d077e74d5c228625ce",
+      "audio_sha256": "77589eeda2dfd7a8e8652b9b0c8a002529d911786e4be29c7bafda31fa32ba99",
+      "legacy": {
+        "hits": 2,
+        "reference": 16,
+        "estimated": 10
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 16
+      },
+      "bars": 15,
+      "sections": 2
+    },
+    {
+      "take": "04_Rock2-85-F_comp",
+      "duration": 45.173197278911566,
+      "seconds": 5.723103667027317,
+      "annotation_sha256": "19909e5f07540e8c368f053c1995398e021afdf7e00446f61ddb96439f625c52",
+      "audio_sha256": "922c7bf773689e55e059c86fd7055fcdc5b3dc33bda75d2ecc4a97ac1f5f431b",
+      "legacy": {
+        "hits": 15,
+        "reference": 16,
+        "estimated": 31
+      },
+      "detected": {
+        "hits": 16,
+        "reference": 16,
+        "estimated": 33
+      },
+      "bars": 32,
+      "sections": 5
+    },
+    {
+      "take": "04_Rock3-117-Bb_comp",
+      "duration": 32.81641723356009,
+      "seconds": 2.6591166669968516,
+      "annotation_sha256": "bbb464dbb554b289221313e631d0b326dc540e70b6f23ce0e1189dfadc66f607",
+      "audio_sha256": "f0a11df45ec4c378edbea38007e95367ed07b90d6c13c5a0b306b4c7fceeacec",
+      "legacy": {
+        "hits": 2,
+        "reference": 16,
+        "estimated": 21
+      },
+      "detected": {
+        "hits": 16,
+        "reference": 16,
+        "estimated": 16
+      },
+      "bars": 15,
+      "sections": 3
+    },
+    {
+      "take": "04_Rock3-148-C_comp",
+      "duration": 25.940816326530612,
+      "seconds": 1.349320458015427,
+      "annotation_sha256": "49b8e1d2ab0ec3cbb1659f8ec357b96629519055a69f86248c8b2ad29698bdf4",
+      "audio_sha256": "d391bc4f59ce53effcad6b2ad9d1efa8025b26b15bfb012469230a1d40d69fc2",
+      "legacy": {
+        "hits": 2,
+        "reference": 16,
+        "estimated": 11
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 16
+      },
+      "bars": 15,
+      "sections": 2
+    },
+    {
+      "take": "04_SS1-100-C#_comp",
+      "duration": 28.8,
+      "seconds": 1.4437729170313105,
+      "annotation_sha256": "9cee71992ad50e4aca49266702a4c92098a9299bc4051c3daf7aed160ec5914c",
+      "audio_sha256": "39b592e5ab79e457a7901e865b4320e04014903465acdebd64235b4f44416650",
+      "legacy": {
+        "hits": 1,
+        "reference": 12,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 11,
+        "reference": 12,
+        "estimated": 23
+      },
+      "bars": 22,
+      "sections": 3
+    },
+    {
+      "take": "04_SS1-68-E_comp",
+      "duration": 42.34639455782313,
+      "seconds": 2.208354208036326,
+      "annotation_sha256": "b56feb628c03a7803a8818686f2af4147c200894806264e4a53151965ea44a4d",
+      "audio_sha256": "d0e64f7be9b5dfc99f7ff0e1a43971c0533aae2d8b800dcfc3c1ae704aea4e58",
+      "legacy": {
+        "hits": 10,
+        "reference": 12,
+        "estimated": 23
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 12,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "04_SS2-107-Ab_comp",
+      "duration": 35.88639455782313,
+      "seconds": 1.9562810419593006,
+      "annotation_sha256": "af25369890af9f973ff2452806a919bbb4db344dbe329c1aad88f29c4d3179de",
+      "audio_sha256": "6222641015ef25c1423453949988509353c7bd6cae2b16032a3c64b9d990cd7b",
+      "legacy": {
+        "hits": 3,
+        "reference": 16,
+        "estimated": 21
+      },
+      "detected": {
+        "hits": 15,
+        "reference": 16,
+        "estimated": 16
+      },
+      "bars": 15,
+      "sections": 3
+    },
+    {
+      "take": "04_SS2-88-F_comp",
+      "duration": 43.62920634920635,
+      "seconds": 2.387301875045523,
+      "annotation_sha256": "5228c2f884bf4c55c58579d9a26c0bdcfb99b948038eae203f83e040b0457cd2",
+      "audio_sha256": "1c1c5351e498a64ec226e06a114c846ee2c6eaf575083339b534ad911aa56f12",
+      "legacy": {
+        "hits": 1,
+        "reference": 16,
+        "estimated": 23
+      },
+      "detected": {
+        "hits": 14,
+        "reference": 16,
+        "estimated": 31
+      },
+      "bars": 30,
+      "sections": 4
+    },
+    {
+      "take": "04_SS3-84-Bb_comp",
+      "duration": 45.70761904761905,
+      "seconds": 2.664989958051592,
+      "annotation_sha256": "a4dc1e9a9b7dcea6a4205a866cc7b51a4d23671adb67697fd4410a24ae2a16c2",
+      "audio_sha256": "5b2ad5e596fd060fa98c03528b3fdbc8d8f652c48a3b39919f85c9617b6a8981",
+      "legacy": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 24
+      },
+      "detected": {
+        "hits": 9,
+        "reference": 16,
+        "estimated": 33
+      },
+      "bars": 32,
+      "sections": 3
+    },
+    {
+      "take": "04_SS3-98-C_comp",
+      "duration": 39.178820861678005,
+      "seconds": 2.8142848330317065,
+      "annotation_sha256": "2ba755b2df047d42ada16e8ed319f149def4fb1116c76739a4abb76988ce8242",
+      "audio_sha256": "ffd315c2999a31d800ac707d330e661aa58cc2d4b6d3dd99230326860d11ca68",
+      "legacy": {
+        "hits": 2,
+        "reference": 16,
+        "estimated": 20
+      },
+      "detected": {
+        "hits": 16,
+        "reference": 16,
+        "estimated": 16
+      },
+      "bars": 15,
+      "sections": 1
+    },
+    {
+      "take": "05_BN1-129-Eb_comp",
+      "duration": 22.32439909297052,
+      "seconds": 1.359183624968864,
+      "annotation_sha256": "e79cad99fdcc086ae3faf75e0d91c736d2baab98429b66973095f819b7f7b24d",
+      "audio_sha256": "a55c99690ece8135baa9b05ffc42ee13ee408bcd3c2b0ef01fe373f69e844c3a",
+      "legacy": {
+        "hits": 0,
+        "reference": 12,
+        "estimated": 12
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 12,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "05_BN1-147-Gb_comp",
+      "duration": 19.58562358276644,
+      "seconds": 1.14238791691605,
+      "annotation_sha256": "addaca8120e91d816d919589603879bbfb0657f05c41887dd349375c837de3cf",
+      "audio_sha256": "1aa76dccb9c3a6f05410349c90ddff1a32223ff8337dc77bed13a4ee8220f7a6",
+      "legacy": {
+        "hits": 6,
+        "reference": 12,
+        "estimated": 11
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 12,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "05_BN2-131-B_comp",
+      "duration": 29.30639455782313,
+      "seconds": 1.8362313330871984,
+      "annotation_sha256": "bacdcb8de89900a80950f030860a45086b2dec027f26dd740842508c26f8a743",
+      "audio_sha256": "33171facce77240e81474bb0ea1e023a3892af2448bc03feebe4b193f1ad967e",
+      "legacy": {
+        "hits": 2,
+        "reference": 16,
+        "estimated": 10
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "05_BN2-166-Ab_comp",
+      "duration": 23.13002267573696,
+      "seconds": 1.17327495792415,
+      "annotation_sha256": "410e7373f7753871225bdc99f0f96d4f9e911fb72602427e1b177458430a4fda",
+      "audio_sha256": "58e771edbaedf69eb0216b8e77c82f468e8f0dd6045bfdcda585a0f346f86213",
+      "legacy": {
+        "hits": 2,
+        "reference": 16,
+        "estimated": 10
+      },
+      "detected": {
+        "hits": 7,
+        "reference": 16,
+        "estimated": 7
+      },
+      "bars": 6,
+      "sections": 1
+    },
+    {
+      "take": "05_BN3-119-G_comp",
+      "duration": 32.26321995464853,
+      "seconds": 1.6698152919998392,
+      "annotation_sha256": "f2dd06d6685a72be5f105122a1ffaa470062b9c73409523db13db58aae62ded7",
+      "audio_sha256": "2638b52a15bd12acfa5ffefacf0fa8bff4d37c8b11294151f3ce54a4bb874ab1",
+      "legacy": {
+        "hits": 4,
+        "reference": 16,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 16,
+        "reference": 16,
+        "estimated": 16
+      },
+      "bars": 15,
+      "sections": 3
+    },
+    {
+      "take": "05_BN3-154-E_comp",
+      "duration": 24.93201814058957,
+      "seconds": 1.3376213749870658,
+      "annotation_sha256": "e8e76217104389b82471a7d4bfd836c111b38df74408590e63bf6bee3ec7fa00",
+      "audio_sha256": "38f7e0b04c64c4b99dff7daad70120906b17754fb14dad217cc37bb25351287b",
+      "legacy": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 16
+      },
+      "detected": {
+        "hits": 7,
+        "reference": 16,
+        "estimated": 7
+      },
+      "bars": 6,
+      "sections": 1
+    },
+    {
+      "take": "05_Funk1-114-Ab_comp",
+      "duration": 25.258412698412698,
+      "seconds": 1.3777813339838758,
+      "annotation_sha256": "10b1126a6ab6d8638b366baff9a9a70c2ef4a4334488c1b2bd8dc63c4d9cbf77",
+      "audio_sha256": "63300b35df98320564fda1505df27b55bc519707728c1185e5b34da0e478b097",
+      "legacy": {
+        "hits": 5,
+        "reference": 12,
+        "estimated": 11
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 12,
+        "estimated": 8
+      },
+      "bars": 7,
+      "sections": 1
+    },
+    {
+      "take": "05_Funk1-97-C_comp",
+      "duration": 29.688390022675737,
+      "seconds": 1.5389175000600517,
+      "annotation_sha256": "a1651d56db82a8cdc18a725becb2087a9e805c50f708a8d4297b571f7cfab7b5",
+      "audio_sha256": "ccdfe2d39d72c08b7213455631abb7d4783de9eca386b6ad230d0152b02c0660",
+      "legacy": {
+        "hits": 5,
+        "reference": 12,
+        "estimated": 12
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 12,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "05_Funk2-108-Eb_comp",
+      "duration": 35.54839002267574,
+      "seconds": 1.841149624902755,
+      "annotation_sha256": "cdf773d3d9d8dda211fed2e728a4bc7e9d2461e1b2f1ce65bde2d3a02b2c46bc",
+      "audio_sha256": "39bd4f7812fa252c6ef89d1d14004436cb3d1ef43cbe422332ccf1712def513b",
+      "legacy": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 16
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "05_Funk2-119-G_comp",
+      "duration": 32.26321995464853,
+      "seconds": 1.7088163329754025,
+      "annotation_sha256": "c2b5c294beeb9575f118bdbf8ae8e71f98e35ef977134a977e28626efe3f829b",
+      "audio_sha256": "d8056eeace67f5451907b7a1d779e1ea576fee79f2df73e68909c7e944ac43a2",
+      "legacy": {
+        "hits": 3,
+        "reference": 16,
+        "estimated": 16
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "05_Funk3-112-C#_comp",
+      "duration": 34.284399092970524,
+      "seconds": 1.9779762499965727,
+      "annotation_sha256": "cca9c816cdbda7bfbbf078413420f283fee4a887f9f4d0da76f1931fff4959c3",
+      "audio_sha256": "982934136c3e882b42c20995a3d96d523810137c5605f9bfe4e748d75ab2f392",
+      "legacy": {
+        "hits": 13,
+        "reference": 16,
+        "estimated": 16
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 8
+      },
+      "bars": 7,
+      "sections": 1
+    },
+    {
+      "take": "05_Funk3-98-A_comp",
+      "duration": 39.178820861678005,
+      "seconds": 2.1589417500654235,
+      "annotation_sha256": "ea10b90638fbe4bcb06c5f8a3e47c198b89a87ea8825443303f787bd2b7966bb",
+      "audio_sha256": "d11f873ad8b1cfd5c44a4714d2c0ab81893b49d948efa62f32a3ca95d041ab68",
+      "legacy": {
+        "hits": 15,
+        "reference": 16,
+        "estimated": 31
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "05_Jazz1-130-D_comp",
+      "duration": 22.14721088435374,
+      "seconds": 1.1436890830518678,
+      "annotation_sha256": "c31cd7420ffbcdd18cb401e08634e0e6965a972c4d804717c6b8de0fac01b57e",
+      "audio_sha256": "dc0d6d6351c1bf82ec4d186d93306b4f0bef6189ed691ec0ba1b57a74e6365a7",
+      "legacy": {
+        "hits": 4,
+        "reference": 12,
+        "estimated": 11
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 12,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "05_Jazz1-200-B_comp",
+      "duration": 14.4,
+      "seconds": 0.7865737921092659,
+      "annotation_sha256": "1b831c294ee0c18e8299df4247ebc969d96cffd2d02f1cd24161046c9e3fa3a9",
+      "audio_sha256": "00cdf3460ef31be49312fb7f3c520045a85b83b6b1b70b9efd9a986431490281",
+      "legacy": {
+        "hits": 0,
+        "reference": 12,
+        "estimated": 5
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 12,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "05_Jazz2-110-Bb_comp",
+      "duration": 34.90321995464853,
+      "seconds": 1.898918875027448,
+      "annotation_sha256": "c420a87840a1e19b4641bfac47a3198a7de1ba1aeb304af24731d627cfaf9cef",
+      "audio_sha256": "0ff82f67a72707cfa4f263aac890baeb9a11f50d0e1487c8f187a2e614b6bd9d",
+      "legacy": {
+        "hits": 13,
+        "reference": 16,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "05_Jazz2-187-F#_comp",
+      "duration": 20.532018140589567,
+      "seconds": 1.1684518330730498,
+      "annotation_sha256": "825f47bfe2b6b7cb12b5289315bb356108b21d919f3c95337526b373ca681e90",
+      "audio_sha256": "06a01d0db47078e587b29399c5445e7cbd90665a1da278cb0614f28523e2fe01",
+      "legacy": {
+        "hits": 15,
+        "reference": 16,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "05_Jazz3-137-Eb_comp",
+      "duration": 28.023219954648525,
+      "seconds": 1.5228478749049827,
+      "annotation_sha256": "1ccdd869df3341b2d623bbb5f67d1e68975119e8786a6146efb30c817cce087c",
+      "audio_sha256": "2f010d90386e492d04f9d4b28a9ae367cb7819e5ce7140f85ec587e90b6ebf3b",
+      "legacy": {
+        "hits": 15,
+        "reference": 16,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 16
+      },
+      "bars": 15,
+      "sections": 1
+    },
+    {
+      "take": "05_Jazz3-150-C_comp",
+      "duration": 25.6,
+      "seconds": 1.4420441249385476,
+      "annotation_sha256": "8b914d6bd9b6400791307188689fec33c81ab77b628933d118ce7d899975fb08",
+      "audio_sha256": "665e9a0968ec0d81e8cab504d39a4ffbf4249099cf87700c122607be000f508c",
+      "legacy": {
+        "hits": 6,
+        "reference": 16,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "05_Rock1-130-A_comp",
+      "duration": 22.14721088435374,
+      "seconds": 1.1520712920464575,
+      "annotation_sha256": "49a8b51c72e3adc1affbcb41dd36978bd088d4f18c98a761f005d403d8bcc174",
+      "audio_sha256": "711b2cc0a44a3890bf028c282e8edbc3f8ebfc2ec35a3806524abe7537c3db19",
+      "legacy": {
+        "hits": 7,
+        "reference": 12,
+        "estimated": 10
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 12,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "05_Rock1-90-C#_comp",
+      "duration": 32.0,
+      "seconds": 1.7878178330138326,
+      "annotation_sha256": "5ba5cae947c4cb6997ce380d429c809bb05bb518b06a07ee86ca67a29b8804b3",
+      "audio_sha256": "f8410ac3049cc8564487b1a83f921a068ad3dd919efc6fb34f8869151ac03046",
+      "legacy": {
+        "hits": 11,
+        "reference": 12,
+        "estimated": 11
+      },
+      "detected": {
+        "hits": 12,
+        "reference": 12,
+        "estimated": 12
+      },
+      "bars": 11,
+      "sections": 2
+    },
+    {
+      "take": "05_Rock2-142-D_comp",
+      "duration": 27.041632653061225,
+      "seconds": 1.4295444160234183,
+      "annotation_sha256": "989dcd1622894619d6a08775dc7d79a6d3a35a10a244f27af88a27d5983741a5",
+      "audio_sha256": "5f5b02aa23a36c31f59e56ccec16212d60549d15d60f7f0f61f516c02ee0fa7c",
+      "legacy": {
+        "hits": 15,
+        "reference": 16,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "05_Rock2-85-F_comp",
+      "duration": 45.173197278911566,
+      "seconds": 2.5578825830016285,
+      "annotation_sha256": "1ff66959f3a7cbe742cfa0ba876c69a1d5f00489f70093e5f01676ece6109d1a",
+      "audio_sha256": "4be5240ae9037dd577544dc456bf73d4ff64c60e24f2cf678888d44338e02d3e",
+      "legacy": {
+        "hits": 16,
+        "reference": 16,
+        "estimated": 16
+      },
+      "detected": {
+        "hits": 16,
+        "reference": 16,
+        "estimated": 16
+      },
+      "bars": 15,
+      "sections": 3
+    },
+    {
+      "take": "05_Rock3-117-Bb_comp",
+      "duration": 32.81641723356009,
+      "seconds": 1.891681042034179,
+      "annotation_sha256": "e9cbdfd4b5ef5b96aaa6335329661e00affe1f064ae759cf987e686bed2607f7",
+      "audio_sha256": "83c65847d6cc0a8b2a2a291ace59a2c97b7c91bc51d1295ba6acf51240de087d",
+      "legacy": {
+        "hits": 15,
+        "reference": 16,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 15,
+        "reference": 16,
+        "estimated": 15
+      },
+      "bars": 14,
+      "sections": 3
+    },
+    {
+      "take": "05_Rock3-148-C_comp",
+      "duration": 25.940816326530612,
+      "seconds": 1.4442053750390187,
+      "annotation_sha256": "9a4e4e9b85ab6b9e0db7119037fed1a8819c3c4f1d498b6d881488cbb5459766",
+      "audio_sha256": "a0211d30e8d71283ff9974dce06e39fba8b93ce364316aecf425817492afd312",
+      "legacy": {
+        "hits": 15,
+        "reference": 16,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 16
+      },
+      "bars": 15,
+      "sections": 2
+    },
+    {
+      "take": "05_SS1-100-C#_comp",
+      "duration": 28.8,
+      "seconds": 1.6502756249392405,
+      "annotation_sha256": "199a6a8ac159c11eeaaae75cedb51d0e1ab4a383eaf03d3763d9b81167dfba65",
+      "audio_sha256": "a8299b8c499cc67eb2e81e9e3afcc8382680d8a51150ce928407bb492e39c5fd",
+      "legacy": {
+        "hits": 3,
+        "reference": 12,
+        "estimated": 14
+      },
+      "detected": {
+        "hits": 11,
+        "reference": 12,
+        "estimated": 11
+      },
+      "bars": 10,
+      "sections": 2
+    },
+    {
+      "take": "05_SS1-68-E_comp",
+      "duration": 42.34639455782313,
+      "seconds": 3.690357041079551,
+      "annotation_sha256": "28260bbb418d7d630b8b3729e913c0be53c6a2cf513c51beda1441e4e7513e44",
+      "audio_sha256": "665b982fb9221b5c91b0ed0c3d2c271f3fab569e8a1f397f0e5f46fde8a298d5",
+      "legacy": {
+        "hits": 0,
+        "reference": 12,
+        "estimated": 18
+      },
+      "detected": {
+        "hits": 12,
+        "reference": 12,
+        "estimated": 24
+      },
+      "bars": 23,
+      "sections": 4
+    },
+    {
+      "take": "05_SS2-107-Ab_comp",
+      "duration": 35.88639455782313,
+      "seconds": 2.1250206659315154,
+      "annotation_sha256": "c1633add5661e3dd8020b70d934ff147a137789662d4fd8bb0f526d138a8328c",
+      "audio_sha256": "c892d100e7ba04f50c4a112da2e9e41633241384b5de14c346e55110d89d626f",
+      "legacy": {
+        "hits": 15,
+        "reference": 16,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 15,
+        "reference": 16,
+        "estimated": 15
+      },
+      "bars": 14,
+      "sections": 3
+    },
+    {
+      "take": "05_SS2-88-F_comp",
+      "duration": 43.62920634920635,
+      "seconds": 2.452781082945876,
+      "annotation_sha256": "871e3da7016e5c472e0abf351bcd4aea8f041924ea1afbf9f18b1d460f86550e",
+      "audio_sha256": "c6e469ea28ec2b3def19d17c9498db09fd9a7b095ea44cea3313cf424e323220",
+      "legacy": {
+        "hits": 1,
+        "reference": 16,
+        "estimated": 23
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    },
+    {
+      "take": "05_SS3-84-Bb_comp",
+      "duration": 45.70761904761905,
+      "seconds": 2.6732365830102935,
+      "annotation_sha256": "93d6dbe0f9bee79ca03b11f5d1c0d7691e88c3f6d7a6cf41df8fe1e9aee5e09e",
+      "audio_sha256": "a687478848bc80c8d0441856fd251df72c048bc856820653ca2b0106717f87dd",
+      "legacy": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 16
+      },
+      "bars": 15,
+      "sections": 1
+    },
+    {
+      "take": "05_SS3-98-C_comp",
+      "duration": 39.178820861678005,
+      "seconds": 2.0796986669301987,
+      "annotation_sha256": "da235bc1b47cce59a1449df9ce60a1839ed9e7c10a843488b07bb9c345341d2c",
+      "audio_sha256": "919aa9e32250c87a943a96284bdd60b8b1c9ec31219c2eda98fc7d701bd717d9",
+      "legacy": {
+        "hits": 11,
+        "reference": 16,
+        "estimated": 15
+      },
+      "detected": {
+        "hits": 0,
+        "reference": 16,
+        "estimated": 0
+      },
+      "bars": 0,
+      "sections": 0
+    }
+  ]
+}

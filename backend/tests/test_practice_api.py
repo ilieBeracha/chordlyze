@@ -48,7 +48,7 @@ def test_practice_uses_rich_recognizer_duration_and_metadata(cache, monkeypatch)
     assert (out["covered_start"], out["covered_end"]) == (2, 6)
     assert out["model"] == "ismir2019" and out["analysis_version"] == ANALYSIS_VERSION
     assert out["model_revision"] == MODEL_REVISIONS["ismir2019"]
-    assert out["scoring_version"] == 2 and out["comparison"] == "root_quality"
+    assert out["scoring_version"] == 3 and out["comparison"] == "root_quality"
     assert out["audio_duration"] == 4 and out["audio_sha256"] == "a" * 64
     assert all(not path.exists() for path in seen)
 
@@ -111,3 +111,13 @@ def test_practice_endpoint_applies_key_and_pace(cache, monkeypatch):
     assert out["accuracy"] == 1
     assert (out["covered_start"], out["covered_end"]) == (2, 4)
     assert (out["transpose"], out["playback_rate"]) == (2, 0.5)
+
+
+def test_endpoint_preserves_captured_calibration_scale(cache, monkeypatch):
+    reference(cache)
+    monkeypatch.setattr(main, 'recognize_audio', lambda *a, **k:
+                        Recognition([ChordSegment(0, 4.16, 'C:maj7')], 4.16, 'a' * 64, 'ismir2019'))
+    out = asyncio.run(main.practice_take(file=UploadFile(io.BytesIO(b'recording'), filename='take.wav'),
+        track_id='song', offset=2, timing_scale=1.04, user='tester'))
+    assert out['timing_scale'] == 1.04
+    assert out['covered_end'] == 6 and out['accuracy'] == 1

@@ -1,6 +1,5 @@
-"""Per-user song lists. Charts are global, one per track, because a song's
-chords are the same for everyone; which songs a person has analyzed, saved
-or practiced is theirs alone.
+"""Per-user song lists, timing calibration and chord corrections.
+Original analyses remain global; corrections overlay them for one account.
 
 Each user is one JSON file under CACHE_DIR/users, written atomically. Callers
 hold the library lock.
@@ -79,3 +78,12 @@ class UserLibrary:
             return False
         self._write(data)
         return True
+
+    def corrections(self, track_id: str) -> dict | None:
+        return self._read()["songs"].get(track_id, {}).get("corrections")
+
+    def set_corrections(self, track_id: str, corrections: dict) -> None:
+        data = self._read()
+        entry = data["songs"].setdefault(track_id, {"added_at": time.time()})
+        entry["corrections"] = corrections
+        self._write(data)

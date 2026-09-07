@@ -9,7 +9,13 @@ struct ChordlyzeApp: App {
         WindowGroup {
             Group {
                 #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("--song-sheet-preview") {
+                if ProcessInfo.processInfo.arguments.contains("--saved-take-preview") {
+                    SavedTakePreview()
+                } else if ProcessInfo.processInfo.arguments.contains("--practice-report-preview") {
+                    PracticeReportPreview()
+                } else if ProcessInfo.processInfo.arguments.contains("--music-preview") {
+                    MusicPreview().environmentObject(auth)
+                } else if ProcessInfo.processInfo.arguments.contains("--song-sheet-preview") {
                     SongSheetPreview()
                 } else { root }
                 #else
@@ -51,7 +57,7 @@ struct ChordlyzeApp: App {
 
     private var isPreview: Bool {
         #if DEBUG
-        ProcessInfo.processInfo.arguments.contains("--song-sheet-preview")
+        ProcessInfo.processInfo.arguments.contains("--song-sheet-preview") || ProcessInfo.processInfo.arguments.contains("--music-preview") || ProcessInfo.processInfo.arguments.contains("--practice-report-preview") || ProcessInfo.processInfo.arguments.contains("--saved-take-preview")
         #else
         false
         #endif

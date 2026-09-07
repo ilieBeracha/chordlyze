@@ -4,12 +4,15 @@ SwiftUI iOS app for song chord charts, playback and instrument practice.
 
 ## Practice and navigation
 
-Home, Search, Practice and Library tabs make song sheets, saved recordings and chord-change drills easy to reach. Search and practice work without Spotify login. Practice a selected passage at 50%, 75% or 100% pace, choose a sounding key and capo shapes, and retry scoring without losing recordings. See the [practice workflow guide](docs/practice-workflow.md) for recovery, timing contracts, release requirements and tests.
+Home, Search, Practice and Library tabs make song sheets, saved recordings and chord-change drills easy to reach. Library contains your saved/analyzed songs; Search combines shared chart discovery with song search. Home uses the playing song’s artwork color, or a recent cover while idle, as a subtle upper background. See the [Home and Library guide](docs/home-library-redesign/README.md) for navigation, states, and validation. Search and practice work without Spotify login. Practice a selected passage at 50%, 75% or 100% pace, choose a sounding key and capo shapes, and retry scoring without losing recordings. See the [practice workflow guide](docs/practice-workflow.md) for recovery, timing contracts, release requirements and tests.
 
 ## Recognition and scoring
 
 - **Full-song charts and recorded practice:** one shared ISMIR2019 five-model ensemble and HMM decoder, supporting sevenths, suspended, diminished and augmented chords, selected extensions, and triad inversions.
+- **Spotify controls:** confirmed startup and seeking, ordered commands, recovery from expired tokens and clearer device/connection errors. See the [playback reliability guide](docs/spotify-playback-reliability.md) for behavior, tests and device limits.
 - **Unified song sheets:** chords above lyrics in Search, Library, Live and Practice. New requests analyze complete recordings; unknown-offset previews are never aligned to a song. Live follows Spotify automatically.
+- **Personal timing and corrections:** automatic speaker/microphone synchronization across three passages; move, split or merge chord intervals with ten-edit undo. See the [synchronization and boundary-editing guide](docs/synchronization-and-boundary-editing.md) for controls, confidence checks and physical-device limits.
+- **Song map:** audio-derived bars and recurring sections, bar-range navigation and Spotify loops, and recording setup for selected bars. Count-in follows detected meter and local beat spacing. See the [song-structure guide](docs/song-structure.md) for the benchmark and limits.
 - **Live drills:** on-device harmonic note analysis, competing chord hypotheses, explicit uncertainty and sample-timed change counting. Audio work runs in a bounded background queue.
 - **Practice scoring:** exact root/quality against rich charts, flexible bass voicing, measured recording duration, explicit silence, and signed chord-change timing. Legacy charts are scored at their major/minor resolution, disclosed in the report.
 
@@ -27,10 +30,13 @@ python3.11 -m venv .venv
 .venv/bin/python -m pip install cython numpy
 .venv/bin/python -m pip install -r requirements.txt
 bash scripts/setup_ismir.sh
+bash scripts/setup_rhythm.sh
 PYTHONPATH=. .venv/bin/uvicorn chordlyze_backend.main:app --port 8787
 ```
 
 `setup_ismir.sh` pins the upstream revision and dependencies, checks all five checkpoint hashes and the dictionary, and loads the model. Set `CHORDLYZE_ISMIR_DIR` to use another installation directory; export the same setting when starting the API or song worker.
+
+`setup_rhythm.sh` installs the isolated Beat This runtime and verifies its checkpoint. Set `CHORDLYZE_RHYTHM_DIR` consistently for a custom path. The Docker image includes this runtime too.
 
 ```bash
 # Release checks: missing model weights are a failure, never a silent skip.
@@ -58,6 +64,8 @@ swiftc Chordlyze/Chord.swift Chordlyze/BackendClient.swift \
 
 bash scripts/test_drill.sh
 bash scripts/test_song_sheet.sh
+bash scripts/test_spotify.sh
+bash scripts/test_music_collection.sh
 bash scripts/test_practice.sh
 ```
 

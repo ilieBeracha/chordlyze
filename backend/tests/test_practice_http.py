@@ -70,10 +70,10 @@ def post_json(url, payload):
         return json.load(response)
 
 
-def upload(url, wav, *, track="rich", offset="2", transpose="0", playback_rate="1"):
+def upload(url, wav, *, track="rich", offset="2", transpose="0", playback_rate="1", timing_scale="1"):
     boundary = "chordlyze-regression"
     body = bytearray()
-    for name, value in (("track_id", track), ("offset", offset), ("transpose", transpose), ("playback_rate", playback_rate)):
+    for name, value in (("track_id", track), ("offset", offset), ("transpose", transpose), ("playback_rate", playback_rate), ("timing_scale", timing_scale)):
         body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode())
     body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="take.wav"\r\n'
                 'Content-Type: audio/wav\r\n\r\n'.encode())
@@ -96,7 +96,7 @@ def test_real_seventh_chord_upload_and_silent_take(server):
     wav = temp / "take.wav"
     synth_progression(["C:maj7"], 4, str(wav))
     report = upload(url, wav)
-    assert report["model"] == "ismir2019" and report["scoring_version"] == 2
+    assert report["model"] == "ismir2019" and report["scoring_version"] == 3
     assert report["comparison"] == "root_quality"
     assert report["per_chord"][0]["name"] == "Cmaj7" and report["accuracy"] > .9
     assert (report["covered_start"], report["covered_end"], report["audio_duration"]) == (2, 6, 4)
@@ -117,7 +117,7 @@ def test_nonfinite_sync_offset_rejected_at_http_boundary(server, offset):
 
 
 @pytest.mark.parametrize("settings", [dict(transpose="13"), dict(transpose="1.5"),
-    dict(playback_rate="0"), dict(playback_rate="1.1"), dict(playback_rate="nan")])
+    dict(playback_rate="0"), dict(playback_rate="1.1"), dict(playback_rate="nan"), dict(timing_scale="nan"), dict(timing_scale="0.89"), dict(timing_scale="1.11")])
 def test_invalid_practice_settings_rejected_at_http_boundary(server, settings):
     url, temp = server
     wav = temp / "invalid-settings.wav"

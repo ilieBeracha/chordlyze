@@ -38,8 +38,23 @@ struct Track: Identifiable, Decodable {
 
 @MainActor
 final class SpotifyAPI: ObservableObject {
-    private let auth: SpotifyAuth
-    init(auth: SpotifyAuth) { self.auth = auth }
+    private let token: () async throws -> String
+    private let refreshRejectedToken: (String) async throws -> String
+    private let session: URLSession
+
+    init(auth: SpotifyAuth) {
+        token = { try await auth.validToken() }
+        refreshRejectedToken = { try await auth.validToken(rejecting: $0) }
+        session = .shared
+    }
+
+    /// Inject transport and token handling to exercise real HTTP contracts offline.
+    init(session: URLSession, token: @escaping () async throws -> String,
+         refreshRejectedToken: @escaping (String) async throws -> String) {
+        self.session = session
+        self.token = token
+        self.refreshRejectedToken = refreshRejectedToken
+    }
 
     struct Profile: Decodable {
         let id: String
@@ -148,15 +163,17 @@ final class SpotifyAPI: ObservableObject {
         let progressMs: Int?
         let isPlaying: Bool
         let item: Track?
+        let device: Device?
 
         enum CodingKeys: String, CodingKey {
             case progressMs = "progress_ms"
             case isPlaying = "is_playing"
-            case item
+            case item, device
         }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
+            device = try c.decodeIfPresent(Device.self, forKey: .device)
             progressMs = try c.decodeIfPresent(Int.self, forKey: .progressMs)
             isPlaying = try c.decode(Bool.self, forKey: .isPlaying)
             // Podcast episodes don't decode as Track — treat as nothing playing.
@@ -164,37 +181,16 @@ final class SpotifyAPI: ObservableObject {
         }
     }
 
-    /// What the account is playing right now, on any device. nil when idle.
+    /// Full playback state also identifies the device we are controlling.
     func currentlyPlaying() async throws -> CurrentlyPlaying? {
-        let token = try await auth.validToken()
-        var req = URLRequest(url: URL(string: "https://api.spotify.com/v1/me/player/currently-playing")!)
-        req.timeoutInterval = 12
-        req.cachePolicy = .reloadIgnoringLocalCacheData
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await URLSession.shared.data(for: req)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        if status == 204 { return nil }
-        guard status == 200 else {
-            throw NSError(domain: "SpotifyAPI", code: status,
-                          userInfo: [NSLocalizedDescriptionKey: "Spotify returned \(status)",
-                                     "retryAfter": Double((response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After") ?? "") ?? 5])
-        }
-        return try JSONDecoder().decode(CurrentlyPlaying.self, from: data)
+        let data = try await request("me/player", allowEmpty: true)
+        return data.isEmpty ? nil : try JSONDecoder().decode(CurrentlyPlaying.self, from: data)
     }
 
-    /// Seek the account's active playback. Needs Premium + playback scope.
-    func seek(toMs ms: Int) async throws {
-        let token = try await auth.validToken()
-        var req = URLRequest(url: URL(string: "https://api.spotify.com/v1/me/player/seek?position_ms=\(ms)")!)
-        req.httpMethod = "PUT"
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await URLSession.shared.data(for: req)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 || status == 204 else {
-            let body = String(data: data, encoding: .utf8) ?? ""
-            throw NSError(domain: "SpotifyAPI", code: status,
-                          userInfo: [NSLocalizedDescriptionKey: "Spotify returned \(status): \(body)"])
-        }
+    func seek(toMs ms: Int, deviceID: String? = nil) async throws {
+        var query = [URLQueryItem(name: "position_ms", value: String(max(0, ms)))]
+        if let deviceID { query.append(.init(name: "device_id", value: deviceID)) }
+        _ = try await request("me/player/seek", method: "PUT", query: query)
     }
 
     struct Device: Decodable {
@@ -203,7 +199,10 @@ final class SpotifyAPI: ObservableObject {
         /// Spotify's device class: "Smartphone", "Computer", "Speaker", ...
         let type: String
         let isActive: Bool
-        enum CodingKeys: String, CodingKey { case id, name, type, isActive = "is_active" }
+        let isRestricted: Bool?
+        enum CodingKeys: String, CodingKey {
+            case id, name, type, isActive = "is_active", isRestricted = "is_restricted"
+        }
     }
 
     /// Devices Spotify can start playback on, including an idle phone app.
@@ -213,40 +212,52 @@ final class SpotifyAPI: ObservableObject {
         return page.devices
     }
 
-    /// Start one track from `positionMs` on `deviceID`, or on the active
-    /// device when nil. Needs Premium (403); 404 means no active device.
     func play(trackID: String, positionMs: Int, deviceID: String? = nil) async throws {
-        let token = try await auth.validToken()
-        var components = URLComponents(string: "https://api.spotify.com/v1/me/player/play")!
-        if let deviceID { components.queryItems = [.init(name: "device_id", value: deviceID)] }
-        var req = URLRequest(url: components.url!)
-        req.httpMethod = "PUT"
-        req.timeoutInterval = 12
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: [
+        let body = try JSONSerialization.data(withJSONObject: [
             "uris": ["spotify:track:\(trackID)"], "position_ms": max(0, positionMs)])
-        let (data, response) = try await URLSession.shared.data(for: req)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 || status == 204 else {
-            let body = String(data: data, encoding: .utf8) ?? ""
-            throw NSError(domain: "SpotifyAPI", code: status,
-                          userInfo: [NSLocalizedDescriptionKey: "Spotify returned \(status): \(body)"])
-        }
+        let query = deviceID.map { [URLQueryItem(name: "device_id", value: $0)] } ?? []
+        _ = try await request("me/player/play", method: "PUT", query: query, body: body)
     }
 
     private func get<T: Decodable>(_ path: String) async throws -> T {
-        let token = try await auth.validToken()
-        var req = URLRequest(url: URL(string: "https://api.spotify.com/v1/\(path)")!)
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await URLSession.shared.data(for: req)
-        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-            let body = String(data: data, encoding: .utf8) ?? ""
-            throw NSError(domain: "SpotifyAPI", code: http.statusCode,
-                          userInfo: [NSLocalizedDescriptionKey: "Spotify returned \(http.statusCode): \(body)"])
-        }
-        return try JSONDecoder().decode(T.self, from: data)
+        try await JSONDecoder().decode(T.self, from: request(path))
     }
+
+    /// A rejected access token gets one refresh/retry. Commands are never
+    /// blindly replayed after a timeout: Spotify may already have applied them.
+    private func request(_ path: String, method: String = "GET", query: [URLQueryItem] = [],
+                         body: Data? = nil, allowEmpty: Bool = false) async throws -> Data {
+        var components = URLComponents(string: "https://api.spotify.com/v1/\(path)")!
+        if !query.isEmpty { components.queryItems = query }
+        var bearer = try await token()
+        for attempt in 0...1 {
+            try Task.checkCancellation()
+            var req = URLRequest(url: components.url!)
+            req.httpMethod = method
+            req.httpBody = body
+            req.timeoutInterval = 12
+            req.cachePolicy = .reloadIgnoringLocalCacheData
+            req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+            if body != nil { req.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+            let (data, response) = try await session.data(for: req)
+            try Task.checkCancellation()
+            let http = response as? HTTPURLResponse
+            let status = http?.statusCode ?? 0
+            if status == 401, attempt == 0 {
+                bearer = try await refreshRejectedToken(bearer)
+                continue
+            }
+            if status == 200 || (status == 204 && (allowEmpty || method != "GET")) { return data }
+            let error = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let detail = error?["error"] as? [String: Any]
+            throw NSError(domain: "SpotifyAPI", code: status, userInfo: [
+                NSLocalizedDescriptionKey: detail?["message"] as? String ?? "Spotify returned \(status).",
+                "reason": detail?["reason"] as? String ?? "",
+                "retryAfter": max(1, Double(http?.value(forHTTPHeaderField: "Retry-After") ?? "") ?? 5)])
+        }
+        throw URLError(.userAuthenticationRequired)
+    }
+
 }
 
 /// What Home says about recent plays: one row per song, newest first.

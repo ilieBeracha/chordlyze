@@ -11,6 +11,13 @@ struct Track {
 
 @main struct PracticeTakeTests {
     @MainActor static func main() async throws {
+        let calibrated = try PracticePlan(start: 10, end: 110, timingScale: 1.04, chartRevision: "personal-chart")
+        precondition(abs(calibrated.position(elapsed: 52) - 60) < 1e-8)
+        precondition(abs(calibrated.recordingDuration - 104) < 1e-8)
+        let restored = try JSONDecoder().decode(PracticePlan.self, from: JSONEncoder().encode(calibrated))
+        precondition(restored == calibrated && restored.timingScale == 1.04 && restored.chartRevision == "personal-chart")
+        let legacyPlan = try JSONDecoder().decode(PracticePlan.self, from: Data("{\"start\":10,\"end\":110,\"rate\":1,\"transpose\":0,\"capo\":0}".utf8))
+        precondition(legacyPlan.chartRevision == nil && legacyPlan.chartRate == 1 && legacyPlan.recordingDuration == 100)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let song = SongDescriptor(trackID: "test-song", title: "Test song", artist: "Test artist")

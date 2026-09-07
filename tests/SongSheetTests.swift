@@ -2,7 +2,7 @@ import Combine
 import Foundation
 
 enum Config { static let backendBaseURL = URL(string: "http://127.0.0.1:1")! }
-@MainActor final class SpotifyAuth { func validToken() async throws -> String { fatalError("Tests must not authenticate") } }
+@MainActor final class SpotifyAuth { func validToken(rejecting: String? = nil) async throws -> String { fatalError("Tests must not authenticate") } }
 
 @MainActor private var checks = 0
 @MainActor private func check(_ value: @autoclosure () -> Bool, _ message: String) {
@@ -31,20 +31,202 @@ private func status(_ state: String, epoch: String = "fresh", ready: Bool = fals
 private func lyrics(_ text: String = "First words") -> BackendClient.LyricsResult {
     decode(["lines": [["time": 2, "text": text], ["time": 8, "text": "Second line"]], "synced": true])
 }
-private func playback(id: String = "one", milliseconds: Int? = 12000, playing: Bool = true) -> SpotifyAPI.CurrentlyPlaying {
-    decode(["progress_ms": milliseconds.map { $0 as Any } ?? NSNull(), "is_playing": playing, "item": [
+private func playback(id: String = "one", milliseconds: Int? = 12000, playing: Bool = true, deviceID: String = "phone") -> SpotifyAPI.CurrentlyPlaying {
+    decode(["progress_ms": milliseconds.map { $0 as Any } ?? NSNull(), "is_playing": playing,
+        "device": ["id": deviceID, "name": deviceID == "phone" ? "iPhone" : deviceID, "type": "Smartphone", "is_active": true], "item": [
         "id": id, "name": "Song", "artists": [["name": "Band"]], "album": ["name": "Album"], "duration_ms": 200000]])
 }
 
 @main struct SongSheetTests {
     @MainActor static func main() async throws {
         modelTests()
+        barMapTests()
         runnerTests()
         try await documentTests()
+        try await correctionTests()
+        try await synchronizationAndBoundaryTests()
+        try await loadedChartRecoveryTests()
+        try await recordingLyricsRecoveryTests()
         try await cancellationTests()
         try await playbackTests()
+        try await playbackReliabilityTests()
+        try await spotifyDeviceRecoveryTests()
         recentPlaysTests()
         print("Song sheet and playback: \(checks)/\(checks) checks passed")
+    }
+
+
+    @MainActor static func correctionTests() async throws {
+        func response(_ corrected: Bool) -> SongStatus {
+            var segment: [String: Any] = ["start": 0, "end": 20, "label": corrected ? "D:min7" : "C:maj"]
+            if corrected { segment["original_label"] = "C:maj" }
+            return decode(["job": ["state": "ready", "worker_online": true],
+                "library_generation": "one", "saved": true,
+                "analysis": ["chords": [segment], "source": "youtube", "audio_duration": 20,
+                    "audio_sha256": "audio", "chart_revision": corrected ? "new" : "old"]])
+        }
+        let original = response(false), corrected = response(true)
+        var latest = original
+        var staleRead: CheckedContinuation<SongStatus, Never>?
+        var calls = 0
+        var writes = 0
+        var fail = false
+        let store = SongSheetStore(song: SongDescriptor(trackID: "edit", title: "Song", artist: "Band"),
+            analysis: original.analysis, service: .init(status: { _ in
+                calls += 1
+                if calls == 1 { return await withCheckedContinuation { staleRead = $0 } }
+                return latest
+            }, lyrics: { _ in nil }, correctChord: { track, segment, name, revision in
+                writes += 1
+                check(track == "edit" && segment.start == 0 && segment.end == 20, "Correction targets an occurrence")
+                if fail { throw URLError(.notConnectedToInternet) }
+                check(revision == (name == nil ? "new" : "old"), "Correction carries the chart revision")
+                check(name == nil || name == "Dm7", "Correction stays in original key")
+                latest = name == nil ? original : corrected
+                return latest
+            }))
+        store.manualShift = 2
+        store.loop = 2...8
+        let observing = Task { await store.observe() }
+        defer { observing.cancel() }
+        try await waitFor { staleRead != nil }
+        try await store.correctChord(original.analysis!.chords[0], name: "Dm7", expectedRevision: "old")
+        check(store.analysis == corrected.analysis && store.saved, "Saved correction updates the shared document")
+        check(store.rows.flatMap(\.chords).first?.event.display(transposedBy: store.shift) == "Em7", "Live and sheet use corrected, transposed events")
+        check(store.manualShift == 2 && store.loop == 2...8, "Correction preserves playing settings")
+        check(store.analysis?.chords[0].originalLabel == "C:maj", "Original remains available for undo")
+        staleRead?.resume(returning: original)
+        try await Task.sleep(for: .milliseconds(30))
+        check(store.analysis == corrected.analysis, "In-flight stale poll cannot undo a correction")
+        do {
+            try await store.correctChord(original.analysis!.chords[0], name: "G", expectedRevision: "old")
+            fatalError("Stale editor saved")
+        } catch { check(writes == 1, "Stale editor rejected before networking") }
+        fail = true
+        do {
+            try await store.correctChord(corrected.analysis!.chords[0], name: nil, expectedRevision: "new")
+            fatalError("Failed write succeeded")
+        } catch {}
+        check(store.analysis == corrected.analysis && !store.savingCorrection, "Failed correction preserves chart and unlocks retry")
+        fail = false
+        try await store.correctChord(corrected.analysis!.chords[0], name: nil, expectedRevision: "new")
+        check(store.analysis == original.analysis && !store.savingCorrection, "Restore updates every surface")
+    }
+
+    @MainActor static func synchronizationAndBoundaryTests() async throws {
+        for duration in [45.0, 90, 240, 1200] {
+            let windows = AutomaticSyncPlan.windows(duration: duration)
+            check(windows.count == 3, "Three windows for supported songs")
+            check(windows.allSatisfy { $0.start >= 0 && $0.duration >= 12 && $0.duration <= 22 && $0.start + $0.duration <= duration }, "Listening stays inside the track")
+            check(windows[2].start - windows[0].start >= 15, "Windows separated enough to measure an offset")
+        }
+        check(AutomaticSyncPlan.windows(duration: 20).isEmpty && AutomaticSyncPlan.windows(duration: .nan).isEmpty, "Unsupported duration refused")
+        check(AutomaticSyncPlan.uninterrupted(start: 20, position: 30.3, elapsed: 10), "Small polling adjustment allowed")
+        check(!AutomaticSyncPlan.uninterrupted(start: 20, position: 32, elapsed: 10), "Seek rejects listening window")
+        check(!AutomaticSyncPlan.uninterrupted(start: 20, position: 20, elapsed: 10), "Pause rejects listening window")
+        func response(moved: Bool = false, synced: Bool = false) -> SongStatus {
+            var data: [String: Any] = ["job": ["state": "ready", "worker_online": true], "saved": true,
+                "library_generation": "one", "timing_revision": synced ? "timed" : "empty",
+                "analysis": ["source": "youtube", "audio_sha256": "audio", "audio_duration": 40,
+                    "chart_revision": moved ? "moved" : "base", "can_undo": moved, "boundaries_edited": moved,
+                    "chords": [["start": 0, "end": moved ? 12 : 10, "label": "C:maj"],
+                               ["start": moved ? 12 : 10, "end": 40, "label": "G:maj"]]]]
+            if synced { data["timing"] = ["offset": 1.2, "scale": 1.01, "anchors": [], "chart_revision": "base",
+                "chart_audio_sha256": "audio", "spotify_track_id": "sync", "method": "automatic", "drift_measured": true] }
+            return decode(data)
+        }
+        var latest = response()
+        var fail = false
+        var boundaryWrites = 0
+        let store = SongSheetStore(song: SongDescriptor(trackID: "sync", title: "Song", artist: "Band"), service: .init(
+            status: { _ in latest }, lyrics: { _ in nil },
+            editBoundary: { _, edit in
+                boundaryWrites += 1
+                if fail { throw URLError(.notConnectedToInternet) }
+                check(edit.operation == .move || edit.operation == .undo, "Boundary operation transmitted")
+                latest = response(moved: edit.operation == .move, synced: true)
+                return latest
+            }, synchronize: { _, _, revision, timingRevision in
+                check(revision == "base" && timingRevision == "empty", "Sync carries chart and timing concurrency guards")
+                latest = response(synced: true)
+                return latest
+            }))
+        let observer = Task { await store.observe() }
+        defer { observer.cancel() }
+        try await waitFor { store.state == "ready" }
+        try await store.synchronize(clips: [], chartRevision: "base", timingRevision: "empty")
+        check(store.timing.offset == 1.2 && store.timing.scale == 1.01 && store.timingNote?.contains("Automatically") == true, "Automatic map applied to shared playback")
+        check(abs(store.timing.chartTime(store.timing.spotifyTime(100)) - 100) < 0.00001, "Map remains invertible after seeking")
+        let request = BackendClient.BoundaryEdit(operation: .move, start: 0, end: 10, at: 12, chartRevision: "base")
+        fail = true
+        do { try await store.editBoundary(request); fatalError("Failed boundary edit accepted") } catch {}
+        check(store.analysis?.chords[0].end == 10 && store.timing.offset == 1.2, "Failed edit leaves chart and calibration intact")
+        fail = false
+        try await store.editBoundary(request)
+        check(store.analysis?.chords[0].end == 12 && store.rows.flatMap(\.chords).contains(where: { $0.event.start == 12 }), "Boundary reaches the shared sheet model")
+        check(store.timingIsStale && store.timing.isIdentity && store.timingNote?.contains("earlier chart") == true, "Old timing is disabled after a chart edit")
+        do { try await store.editBoundary(request); fatalError("Stale boundary edit accepted") }
+        catch { check(boundaryWrites == 2, "Stale edit rejected before request") }
+        try await store.editBoundary(.init(operation: .undo, chartRevision: "moved"))
+        check(!store.timingIsStale && store.timing.offset == 1.2, "Undo restores the matching timing map")
+        let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as! [String: Any]
+        check(object["chart_revision"] as? String == "base" && object["at"] as? Double == 12, "Boundary request encodes time and revision")
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data("sample audio".utf8).write(to: file)
+        let upload = try BackendClient.synchronizationRequest(trackID: "sync", clips: [10.0, 100, 200].map { .init(file: file, spotifyStart: $0) }, chartRevision: "base", timingRevision: "timed")
+        let body = String(data: upload.httpBody!, encoding: .utf8)!
+        check(body.components(separatedBy: "name=\"files\"").count == 4, "All three recordings uploaded")
+        check(body.contains("name=\"positions\"") && body.contains("name=\"timing_revision\"") && body.contains("name=\"chart_revision\""), "Sync request includes sample clock and concurrency guards")
+    }
+
+    @MainActor static func barMapTests() {
+        let times = (0..<17).map { Double($0)*0.5 }
+        let positions = [2, 3] + Array(repeating: [1, 2, 3], count: 5).flatMap { $0 }
+        let bars: [[String: Any]] = (0..<4).map { index in
+            let start = 1.0 + Double(index)*1.5
+            return ["start": start, "end": start+1.5, "beats": 3]
+        }
+        var data: [String: Any] = ["bpm": 120, "beats": times, "beat_positions": positions,
+            "rhythm_version": 1, "bars": bars,
+            "sections": [["start": 1, "end": 7, "start_bar": 1, "end_bar": 4, "label": "A", "occurrence": 1]]]
+        func grid(_ data: [String: Any]) -> BeatGrid? {
+            BeatGrid(tempo: decode(data, as: ChordAnalysis.Tempo.self), chords: [])
+        }
+        let triple = grid(data)!
+        check(triple.bars.count == 4 && triple.sections.count == 1, "Detected bar and section metadata decoded")
+        check(!triple.isEstimated && triple.beatsInBar(at: 3) == 3, "Detected triple meter replaces 4/4 inference")
+        check(triple.beatsInBar(at: 8) == 3, "Partial ending retains the last known meter")
+        check(triple.beatInBar(at: 0) == 2 && triple.beatInBar(at: 1) == 1, "Pickup positions retained")
+        check(triple.barNumber(at: 0) == nil && triple.barNumber(at: 2.5) == 2, "Bar boundaries are half-open; pickup unnumbered")
+        check(triple.barNumber(at: 7) == nil, "Partial tail is outside complete bar map")
+        check(triple.barRange(first: 2, last: 3) == 2.5...5.5, "Selected bars use exact endpoints")
+        check(triple.barRange(first: 0, last: 3) == nil && triple.barRange(first: 2, last: 1) == nil && triple.barRange(first: 1, last: 5) == nil, "Out of bounds and reversed ranges rejected")
+        let clicks = triple.clicks(from: 1, to: 4)
+        check(clicks.count == 6 && clicks.enumerated().filter { $0.element.downbeat }.map(\.offset) == [0, 3], "Metronome accents every third beat")
+        let map = TimingMap(offset: 2, scale: 1.01)
+        let range = triple.barRange(first: 2, last: 3)!
+        check(abs(map.chartTime(map.spotifyTime(range.lowerBound))-range.lowerBound) < 1e-9, "Bar loop endpoints survive calibrated clock mapping")
+        var broken = data; broken["beat_positions"] = [1]
+        check(grid(broken)!.bars.isEmpty && grid(broken)!.sections.isEmpty, "Malformed positions disable bar actions")
+        broken = data; broken["bars"] = [["start": 1, "end": 99, "beats": 3]]
+        check(grid(broken)!.bars.isEmpty, "Out of timeline bar rejected")
+        broken = data; broken["sections"] = [["start": 1, "end": 7, "start_bar": 0, "end_bar": 4, "label": "A", "occurrence": 1]]
+        check(grid(broken)!.sections.isEmpty && grid(broken)!.bars.count == 4, "Bad section cannot corrupt valid bars")
+        broken = data; broken["bars"] = [bars[0], bars[2]]; broken["sections"] = []
+        check(grid(broken)!.barRange(first: 1, last: 2) == nil, "No loop across missing bar")
+        data["bars"] = []; data["sections"] = []; data["beat_positions"] = []
+        let unmetered = grid(data)!
+        check(unmetered.bars.isEmpty && !unmetered.isDownbeat(0), "New beat-only analyses never invent 4/4 downbeats")
+        check(unmetered.downbeat(atOrBefore: 6.3) == 6, "Unmetered section start stays near selected passage")
+        data["beats"] = [0, 1, 1, 2]
+        check(grid(data) == nil, "Duplicate beats rejected without desynchronizing positions")
+        let varying: [String: Any] = ["bpm": 120, "beats": [0, 0.5, 1, 1.5, 2.1, 2.7, 3.3, 3.9],
+            "rhythm_version": 1, "beat_positions": [1, 2, 3, 1, 2, 3, 4, 1],
+            "bars": [["start": 0, "end": 1.5, "beats": 3], ["start": 1.5, "end": 3.9, "beats": 4]], "sections": []]
+        let changing = grid(varying)!
+        check(changing.beatsInBar(at: 1) == 3 && changing.beatsInBar(at: 2) == 4, "Contract supports changing meter")
+        check(abs(changing.period(at: 2)-0.6) < 1e-9, "Count-in uses local tempo")
     }
 
     @MainActor static func recentPlaysTests() {
@@ -211,6 +393,11 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         let pending = SheetModel.build(analysis: nil, lines: lines, duration: 20)
         check(pending.filter { !$0.text.isEmpty }.map(\.text) == lines.map(\.text), "Lyrics appear while analysis is pending")
         check(pending.allSatisfy { $0.chords.isEmpty }, "Pending analysis never invents chords")
+        check(pending.filter(\.hasVisibleContent).allSatisfy { !$0.text.isEmpty }, "Missing analysis does not render blank timing gaps")
+        let lyricsWithBreak = [LyricLine(time: 4, text: "First sample line", words: nil), LyricLine(time: 8, text: "", words: nil), LyricLine(time: 18, text: "Next sample line", words: nil)]
+        let missingRows = SheetModel.build(analysis: nil, lines: lyricsWithBreak, duration: 24)
+        check(missingRows.contains { $0.text.isEmpty && $0.kind == .uncovered }, "Unanalyzed timing gaps remain in the timeline")
+        check(missingRows.filter(\.hasVisibleContent).map(\.text) == ["First sample line", "Next sample line"], "Only lyric content renders when analysis is unavailable")
         let preview = SheetModel.build(analysis: chart(preview: true), lines: lines, duration: 20)
         check(preview.filter { !$0.text.isEmpty }.count == 2 && preview.allSatisfy { $0.chords.isEmpty }, "Unknown-offset previews never masquerade as aligned chords")
         let blank = SheetModel.build(analysis: chart(), lines: [lines[0], LyricLine(time: 5, text: "", words: nil), lines[1]], duration: 20)
@@ -352,6 +539,87 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         recovery.cancel(); await recovery.value
     }
 
+    @MainActor static func loadedChartRecoveryTests() async throws {
+        let song = SongDescriptor(trackID: "loaded", title: "Song", artist: "Band", duration: 20)
+        var mode = 0, polls = 0, requests = 0
+        let sheet = SongSheetStore(song: song, service: .init(
+            request: { _ in requests += 1; return status("queued") },
+            status: { _ in
+                polls += 1
+                if mode == 1 { throw URLError(.notConnectedToInternet) }
+                if mode == 2 { return status("missing", epoch: "cleared") }
+                return status("ready", ready: true)
+            }, lyrics: { _ in lyrics() },
+            sleep: { _ in try await Task.sleep(for: .milliseconds(10)) }))
+        let observing = Task { await sheet.observe() }
+        try await waitFor { sheet.canPractice && !sheet.lyricsLoading }
+        let originalChords = sheet.rows.flatMap(\.chords).map(\.event)
+        let originalText = sheet.rows.map(\.text)
+        sheet.loop = 4...12
+        sheet.manualShift = 2
+        mode = 1
+        try await waitFor { sheet.state == "connection" }
+        check(sheet.canPractice, "A loaded full chart remains usable through a status timeout")
+        check(sheet.rows.flatMap(\.chords).map(\.event) == originalChords && sheet.rows.map(\.text) == originalText
+              && sheet.loop == 4...12 && sheet.manualShift == 2,
+              "Connection loss retains chord rows, selected loop and transposition")
+        check(sheet.actionTitle == "Reconnect", "Connection recovery never offers misleading reanalysis")
+        let beforeRetry = polls
+        sheet.retry()
+        try await waitFor { polls > beforeRetry }
+        check(requests == 0 && sheet.canPractice, "Reconnect reads status without reanalyzing or disabling the loaded chart")
+        mode = 0
+        try await waitFor { sheet.state == "ready" }
+        check(sheet.message.isEmpty && sheet.canPractice, "Automatic reconnection clears its notice without resetting the chart")
+        mode = 2
+        try await waitFor { sheet.state == "missing" }
+        check(sheet.analysis == nil && !sheet.canPractice, "An explicit server reset still removes the loaded reference")
+        observing.cancel(); await observing.value
+
+        let preview = SongSheetStore(song: song, analysis: chart(preview: true), service: .init(
+            status: { _ in throw URLError(.timedOut) }, lyrics: { _ in nil },
+            sleep: { _ in try await Task.sleep(for: .milliseconds(10)) }))
+        let previewTask = Task { await preview.observe() }
+        try await waitFor { preview.state == "connection" }
+        check(!preview.canPractice, "Connection recovery cannot promote an unknown-offset preview to a full chart")
+        previewTask.cancel(); await previewTask.value
+    }
+
+    @MainActor static func recordingLyricsRecoveryTests() async throws {
+        for match in ["aligned", "transcribed"] {
+            let song = SongDescriptor(trackID: "lyrics-\(match)", title: "Song", artist: "Band", duration: 20)
+            var revision = 0, polls = 0, lookups = 0
+            let sheet = SongSheetStore(song: song, service: .init(status: { _ in
+                polls += 1
+                var response: [String: Any] = [
+                    "job": ["state": "ready", "worker_online": true], "library_generation": "same-library",
+                    "analysis": ["chords": [["start": 0, "end": 20, "label": "C:maj"]],
+                                 "source": "youtube", "audio_duration": 20,
+                                 "audio_sha256": revision == 0 ? "original-audio" : "replacement-audio"]]
+                if revision == 0 {
+                    response["lyrics"] = ["synced": true, "matched": match,
+                        "lines": [["time": 3, "text": "Recording words", "words": [
+                            ["time": 3, "text": "Recording"], ["time": 3.8, "text": "words"]]]]]
+                }
+                return decode(response)
+            }, lyrics: { _ in lookups += 1; return lyrics("Catalog words") },
+            sleep: { _ in try await Task.sleep(for: .milliseconds(10)) }))
+            let observing = Task { await sheet.observe() }
+            try await waitFor { sheet.rows.contains { $0.text == "Recording words" } && !sheet.lyricsLoading }
+            let previousLookups = lookups, previousPolls = polls
+            sheet.refresh()
+            try await waitFor { polls >= previousPolls + 3 }
+            check(lookups == previousLookups, "Refreshing \(match) lyrics never starts a lower-quality catalog replacement")
+            check(sheet.rows.contains { $0.text == "Recording words" } && !sheet.lyricsLoading,
+                  "Recording word timing survives refresh for \(match)")
+            revision = 1
+            try await waitFor { sheet.rows.contains { $0.text == "Catalog words" } }
+            check(lookups > previousLookups && !sheet.rows.contains { $0.text == "Recording words" },
+                  "A different analyzed recording invalidates old \(match) word timing and loads a fallback")
+            observing.cancel(); await observing.value
+        }
+    }
+
     @MainActor static func cancellationTests() async throws {
         var pending: CheckedContinuation<SongStatus, Never>?
         var pendingLyrics: CheckedContinuation<BackendClient.LyricsResult?, Never>?
@@ -456,11 +724,11 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         var listed: [SpotifyAPI.Device] = [laptop, phone]
         var targeted: [String?] = []
         let starter = SpotifyNowPlaying(service: .init(
-            current: { device.map { playback(id: "one", milliseconds: Int($0.offset * 1000), playing: $0.playing) } },
+            current: { device.map { playback(id: "one", milliseconds: Int($0.offset * 1000), playing: $0.playing, deviceID: targeted.last.flatMap { $0 } ?? "phone") } },
             seek: { _ in },
             play: { id, at, deviceID in
                 targeted.append(deviceID)
-                if let playFailure { throw NSError(domain: "SpotifyAPI", code: playFailure) }
+                if let playFailure { throw NSError(domain: "SpotifyAPI", code: playFailure, userInfo: ["reason": "PREMIUM_REQUIRED"]) }
                 started.append((id, at)); device = (at, !stall)
             },
             devices: { listed },
@@ -483,7 +751,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         listed = [laptop, phone]
         playFailure = 403
         do { try await starter.play(trackID: "one", at: 0); fatalError("A Premium failure must surface") }
-        catch let error as SpotifyNowPlaying.PlayError { check(error == .premiumRequired, "403 means Premium is required") }
+        catch let error as SpotifyNowPlaying.PlayError { check(error == .premiumRequired, "Only an explicit Premium reason is presented as Premium required") }
         playFailure = nil
         stall = true
         do { try await starter.play(trackID: "one", at: 5); fatalError("An unconfirmed start must fail") }
@@ -496,6 +764,278 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
 
         check(requested == 0, "Playing a song never requests its analysis")
         try await liveFlowTests()
+    }
+
+    @MainActor static func playbackReliabilityTests() async throws {
+        let provider: (Track) -> SongSheetStore = { track in
+            SongSheetStore(song: SongDescriptor(track: track), service: .init(
+                request: { _ in status("ready", ready: true) }, status: { _ in status("ready", ready: true) },
+                lyrics: { _ in lyrics() }, sleep: { _ in try await Task.sleep(for: .seconds(60)) }))
+        }
+        func phone(_ id: String = "phone", active: Bool = true, restricted: Bool = false) -> SpotifyAPI.Device {
+            decode(["id": id, "name": id, "type": "Smartphone", "is_active": active, "is_restricted": restricted])
+        }
+        let fastSleep: (Double) async throws -> Void = { _ in try await Task.sleep(for: .milliseconds(5)) }
+
+        // A slow successful command used to fail: its playhead was already
+        // more than three seconds past the requested start when we read it.
+        var instant = ContinuousClock.now
+        var started = false
+        let delayed = SpotifyNowPlaying(service: .init(current: { started ? playback(milliseconds: 36000) : nil }, seek: { _ in },
+            play: { _, _, _ in started = true; instant = instant.advanced(by: .seconds(6)) },
+            devices: { [phone()] }, sleep: fastSleep), now: { instant }, sheetProvider: provider)
+        try await delayed.play(trackID: "one", at: 30)
+        check(delayed.playing?.isPlaying == true && delayed.livePosition() == 36,
+              "A slow acknowledged start confirms using elapsed playback time")
+        delayed.reset()
+
+        // Cancellation while looking for a device must not launch Spotify later.
+        var discovery: CheckedContinuation<[SpotifyAPI.Device], Never>?
+        var sent = 0
+        let cancel = SpotifyNowPlaying(service: .init(current: { nil }, seek: { _ in },
+            play: { _, _, _ in sent += 1 }, devices: { await withCheckedContinuation { discovery = $0 } }, sleep: fastSleep), sheetProvider: provider)
+        let start = Task { try await cancel.play(trackID: "one", at: 0) }
+        try await waitFor { discovery != nil }
+        start.cancel()
+        discovery?.resume(returning: [phone()])
+        do { try await start.value; fatalError("Canceled startup must throw") } catch is CancellationError { }
+        check(sent == 0 && !cancel.isControlling, "Cancel before device discovery completes prevents a delayed play command")
+        cancel.reset()
+
+        // A response already in flight must not rewind a newly confirmed seek.
+        var reads = 0
+        var oldPoll: CheckedContinuation<SpotifyAPI.CurrentlyPlaying?, Never>?
+        var destination = 12000
+        let seeking = SpotifyNowPlaying(service: .init(current: {
+            reads += 1
+            if reads == 2 { return await withCheckedContinuation { oldPoll = $0 } }
+            return playback(milliseconds: destination)
+        }, seek: { destination = Int($0 * 1000) }, sleep: fastSleep), sheetProvider: provider)
+        seeking.resume()
+        try await waitFor { oldPoll != nil }
+        let jumped = await seeking.seek(to: 45)
+        check(jumped && abs((seeking.livePosition() ?? 0) - 45) < 1, "Seek succeeds only with a matching Spotify report")
+        oldPoll?.resume(returning: playback(milliseconds: 12000))
+        try await Task.sleep(for: .milliseconds(20))
+        check(abs((seeking.livePosition() ?? 0) - 45) < 1, "Pre-seek polling cannot rewind the confirmed playhead")
+        seeking.reset()
+
+        // Spotify can acknowledge a seek before its state endpoint catches up.
+        var staleReads = 0
+        var wroteSeek = false
+        var checkedBeforeConfirm = false
+        var confirmed: SpotifyNowPlaying!
+        confirmed = SpotifyNowPlaying(service: .init(current: {
+            if wroteSeek {
+                staleReads += 1
+                if staleReads <= 3 {
+                    checkedBeforeConfirm = (confirmed.livePosition() ?? 0) < 20
+                    return playback(milliseconds: 12000)
+                }
+                return playback(milliseconds: 60000)
+            }
+            return playback()
+        }, seek: { _ in wroteSeek = true }, sleep: fastSleep), sheetProvider: provider)
+        confirmed.resume()
+        try await waitFor { confirmed.playing != nil }
+        let caughtUp = await confirmed.seek(to: 60)
+        check(caughtUp && checkedBeforeConfirm && staleReads >= 4,
+              "Acknowledgement plus stale state does not invent a successful seek")
+        confirmed.reset()
+
+        // Three rapid taps produce the in-flight command and the newest intent,
+        // with no overlapping HTTP writes and no middle-position replay.
+        var pendingSeek: CheckedContinuation<Void, Never>?
+        var writes: [Double] = []
+        var position = 12.0
+        var writing = false
+        var overlapped = false
+        let rapid = SpotifyNowPlaying(service: .init(current: { playback(milliseconds: Int(position * 1000)) }, seek: { target in
+            if writing { overlapped = true }
+            writing = true
+            writes.append(target)
+            if writes.count == 1 { await withCheckedContinuation { pendingSeek = $0 } }
+            position = target
+            writing = false
+        }, sleep: fastSleep), sheetProvider: provider)
+        rapid.resume()
+        try await waitFor { rapid.playing != nil }
+        let first = Task { await rapid.seek(to: 30) }
+        try await waitFor { pendingSeek != nil }
+        let second = Task { await rapid.seek(to: 60) }
+        try await Task.sleep(for: .milliseconds(20))
+        let third = Task { await rapid.seek(to: 90) }
+        try await Task.sleep(for: .milliseconds(20))
+        rapid.resume(); rapid.resume() // navigation must not interrupt the command
+        pendingSeek?.resume()
+        _ = await (first.value, second.value, third.value)
+        check(writes == [30, 90] && !overlapped, "Rapid seek taps coalesce and never overlap Spotify commands")
+        check(abs((rapid.livePosition() ?? 0) - 90) < 1 && rapid.controlMessage == nil,
+              "Repeated resume calls preserve the latest command and its confirmed state")
+        rapid.reset()
+
+        // Stop/reset while a command is on the wire must not resurrect its state.
+        var pendingPlay: CheckedContinuation<Void, Never>?
+        var confirmationReads = 0
+        let background = SpotifyNowPlaying(service: .init(current: { confirmationReads += 1; return playback(milliseconds: 0) },
+            seek: { _ in }, play: { _, _, _ in await withCheckedContinuation { pendingPlay = $0 } },
+            devices: { [phone()] }, sleep: fastSleep), sheetProvider: provider)
+        let oldStart = Task { try await background.play(trackID: "one", at: 0) }
+        try await waitFor { pendingPlay != nil }
+        background.reset()
+        pendingPlay?.resume()
+        do { try await oldStart.value; fatalError("A reset command must be canceled") } catch is CancellationError { }
+        check(background.playing == nil && confirmationReads == 0 && !background.isControlling,
+              "A command completing after sign-out cannot restart polling or publish playback")
+
+        // 403 is not necessarily an expired token, and must not kill live follow.
+        var forbiddenReads = 0
+        let forbidden = SpotifyNowPlaying(service: .init(current: {
+            forbiddenReads += 1
+            if forbiddenReads == 1 { throw NSError(domain: "SpotifyAPI", code: 403) }
+            return playback()
+        }, seek: { _ in throw NSError(domain: "SpotifyAPI", code: 403) }, sleep: fastSleep), sheetProvider: provider)
+        forbidden.resume()
+        try await waitFor { forbidden.playing != nil }
+        check(!forbidden.needsReauth && forbiddenReads >= 2, "A temporary 403 doesn't permanently stop live tracking")
+        let refused = await forbidden.seek(to: 90)
+        check(!refused && forbidden.controlMessage == SpotifyNowPlaying.PlayError.forbidden.localizedDescription,
+              "An unspecified 403 is not mislabeled as a Premium requirement")
+        forbidden.reset()
+
+        // Same-song playback on another device does not confirm the phone start.
+        var wrong: [String: Any] = ["progress_ms": 0, "is_playing": true, "item": [
+            "id": "one", "name": "Song", "artists": [["name": "Band"]], "album": ["name": "Album"]]]
+        wrong["device"] = ["id": "laptop", "name": "Laptop", "type": "Computer", "is_active": true]
+        let wrongDevice = SpotifyNowPlaying(service: .init(current: { decode(wrong) }, seek: { _ in },
+            play: { _, _, _ in }, devices: { [phone()] }, sleep: fastSleep), sheetProvider: provider)
+        do { try await wrongDevice.play(trackID: "one", at: 0); fatalError("Wrong device must not confirm") }
+        catch let error as SpotifyNowPlaying.PlayError { check(error == .notConfirmed, "Startup checks the device as well as the song") }
+
+        do { _ = try SpotifyNowPlaying.practiceDevice([phone("a", active: false), phone("b", active: false)]); fatalError("Ambiguous phones") }
+        catch let error as SpotifyNowPlaying.PlayError { check(error == .ambiguousDevice, "Several inactive phones require a choice in Spotify") }
+        do { _ = try SpotifyNowPlaying.practiceDevice([phone(restricted: true)]); fatalError("Restricted phone") }
+        catch let error as SpotifyNowPlaying.PlayError { check(error == .restrictedDevice, "A restricted phone is never sent a command") }
+        for invalid in [Double.nan, Double.infinity, Double(Int.max)] {
+            do { try await wrongDevice.play(trackID: "one", at: invalid); fatalError("Invalid position") }
+            catch let error as SpotifyNowPlaying.PlayError { check(error == .invalidPosition, "Invalid positions never trap during millisecond conversion") }
+        }
+        wrongDevice.reset()
+
+        // The server can apply a command even if its HTTP response is lost.
+        var uncertainWrites = 0
+        var uncertainPosition = 12.0
+        let uncertain = SpotifyNowPlaying(service: .init(current: { playback(milliseconds: Int(uncertainPosition * 1000)) },
+            seek: { uncertainWrites += 1; uncertainPosition = $0; throw URLError(.networkConnectionLost) },
+            play: { _, at, _ in uncertainWrites += 1; uncertainPosition = at; throw URLError(.timedOut) },
+            devices: { [phone()] }, sleep: fastSleep), sheetProvider: provider)
+        try await uncertain.play(trackID: "one", at: 30)
+        check(uncertainWrites == 1 && abs((uncertain.livePosition() ?? 0) - 30) < 1,
+              "A timed-out play that reached Spotify is confirmed without a duplicate command")
+        let uncertainSeek = await uncertain.seek(to: 60)
+        check(uncertainSeek && uncertainWrites == 2 && abs((uncertain.livePosition() ?? 0) - 60) < 1,
+              "A lost seek response is reconciled from playback state without replaying the seek")
+        uncertain.reset()
+
+        var limitedWrites = 0
+        var cooldown: CheckedContinuation<Void, Error>?
+        let controlLimited = SpotifyNowPlaying(service: .init(current: { playback() }, seek: { _ in
+            limitedWrites += 1
+            throw NSError(domain: "SpotifyAPI", code: 429, userInfo: ["retryAfter": 31.0])
+        }, sleep: { seconds in
+            if seconds > 20 { try await withCheckedThrowingContinuation { cooldown = $0 } }
+            else { try await Task.sleep(for: .milliseconds(5)) }
+        }), sheetProvider: provider)
+        controlLimited.resume()
+        try await waitFor { controlLimited.playing != nil }
+        let limitedFirst = await controlLimited.seek(to: 30)
+        let limitedSecond = await controlLimited.seek(to: 60)
+        check(!limitedFirst && !limitedSecond && limitedWrites == 1 && controlLimited.controlMessage?.contains("31") == true,
+              "A control rate limit blocks repeated taps and preserves the retry countdown")
+        try await waitFor { cooldown != nil }
+        controlLimited.reset()
+        cooldown?.resume(throwing: CancellationError())
+
+        var seekTarget: Double?
+        var seekDevice: String?
+        var boundedPosition = 12.0
+        let bounded = SpotifyNowPlaying(service: .init(current: { playback(milliseconds: Int(boundedPosition * 1000), playing: false) },
+            seek: { _ in fatalError("Must use targeted seek") }, seekOnDevice: { value, id in
+                seekTarget = value; seekDevice = id; boundedPosition = value
+            }, sleep: fastSleep), sheetProvider: provider)
+        bounded.resume()
+        try await waitFor { bounded.playing != nil }
+        let endSeek = await bounded.seek(to: 200)
+        check(endSeek && seekTarget == 199.999 && seekDevice == "phone" && bounded.playing?.isPlaying == false,
+              "Seeking to the end targets the observed device, preserves pause, and cannot advance to the next track")
+        bounded.reset()
+
+    }
+
+    @MainActor static func spotifyDeviceRecoveryTests() async throws {
+        let phone: SpotifyAPI.Device = decode(["id": "phone", "name": "This phone", "type": "Smartphone", "is_active": true])
+        let laptop: SpotifyAPI.Device = decode(["id": "mac", "name": "MacBook", "type": "Computer", "is_active": true])
+        var discoveries = 0
+        var writes = 0
+        let player = SpotifyNowPlaying(service: .init(current: { playback(milliseconds: 0) }, seek: { _ in writes += 1 },
+            play: { _, _, _ in writes += 1 }, devices: {
+                discoveries += 1
+                return discoveries < 3 ? [laptop] : [phone]
+            }, sleep: { _ in try await Task.sleep(for: .milliseconds(1)) }))
+        let ready = try await player.checkPracticeDevice()
+        check(ready.id == "phone" && discoveries == 3 && writes == 0,
+              "A newly advertised phone is found with bounded discovery retries and no playback writes")
+        player.reset()
+
+        var checksRun = 0
+        let recovery = SpotifyDeviceRecovery(checkDevice: { checksRun += 1; return phone })
+        let opening = recovery.openRequested()
+        recovery.openCompleted(true, attempt: opening)
+        recovery.sceneChanged(active: true)
+        check(recovery.state == .waitingForSpotify && checksRun == 0,
+              "A redundant active notification before leaving doesn't trigger a device check")
+        recovery.sceneChanged(active: false)
+        recovery.sceneChanged(active: true)
+        check(recovery.state == .checking, "Returning from Spotify schedules a read-only device check")
+        await recovery.check()
+        check(recovery.state == .ready("This phone") && checksRun == 1,
+              "A successful handoff offers explicit retry instead of starting playback or recording")
+        recovery.sceneChanged(active: true)
+        await recovery.check()
+        check(checksRun == 1, "Repeated foreground events don't repeatedly query devices")
+
+        let failedOpen = recovery.openRequested()
+        recovery.openCompleted(false, attempt: failedOpen)
+        if case .failed(let message) = recovery.state {
+            check(message.contains("Install") && message.contains("same account"), "Missing Spotify has an actionable installation/account message")
+        } else { fatalError("Failed URL open must be visible") }
+        let staleOpen = recovery.openRequested()
+        recovery.cancel()
+        recovery.openCompleted(false, attempt: staleOpen)
+        check(recovery.state == .idle, "A late open callback cannot restore a dismissed recovery screen")
+
+        var pending: CheckedContinuation<SpotifyAPI.Device, Never>?
+        let canceled = SpotifyDeviceRecovery(checkDevice: { await withCheckedContinuation { pending = $0 } })
+        canceled.retry()
+        let task = Task { await canceled.check() }
+        try await waitFor { pending != nil }
+        canceled.sceneChanged(active: false)
+        pending?.resume(returning: phone)
+        await task.value
+        check(canceled.state == .idle, "Backgrounding invalidates an in-flight recovery check")
+
+        let unavailable = SpotifyDeviceRecovery(checkDevice: { throw SpotifyNowPlaying.PlayError.onlyElsewhere("MacBook") })
+        unavailable.retry()
+        await unavailable.check()
+        check(unavailable.state == .failed(SpotifyNowPlaying.PlayError.onlyElsewhere("MacBook").localizedDescription),
+              "A still-unavailable phone leaves the actual error and retry path visible")
+        check(SpotifyNowPlaying.PlayError.noDevice.needsDeviceRecovery &&
+              SpotifyNowPlaying.PlayError.onlyElsewhere("Mac").needsDeviceRecovery &&
+              SpotifyNowPlaying.PlayError.ambiguousDevice.needsDeviceRecovery &&
+              SpotifyNowPlaying.PlayError.restrictedDevice.needsDeviceRecovery &&
+              !SpotifyNowPlaying.PlayError.premiumRequired.needsDeviceRecovery &&
+              !SpotifyNowPlaying.PlayError.notConnected.needsDeviceRecovery,
+              "Device handoff is offered only for device availability errors")
     }
 
     /// Production Live: the Spotify poller and the Live screen share one document
