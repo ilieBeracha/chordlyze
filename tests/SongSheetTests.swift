@@ -116,6 +116,12 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(SheetModel.activeRow(rows, at: 9)?.id == 8, "Live selects current row by interval")
         check(SheetModel.activeRow(rows, at: 20) == nil, "Live does not hold the last lyric forever past song end")
         check(SheetModel.activeRow(rows, at: 3)?.id == 2, "Backward seek selects the earlier line")
+        // The now-playing pill: the sounding chord and the next change of chord.
+        let pillEvents = SheetModel.events(chart([["start": 0, "end": 2, "label": "C:maj"], ["start": 2, "end": 4, "label": "C:maj"],
+                                                  ["start": 4, "end": 6, "label": "G:maj"], ["start": 6, "end": 8, "label": "A:min"]]))
+        check(SheetModel.nextEvent(pillEvents, after: 1)?.start == 4, "A following event with the same chord is not the next chord")
+        check(SheetModel.nextEvent(pillEvents, after: 5)?.start == 6 && SheetModel.nextEvent(pillEvents, after: 7) == nil,
+              "The next chord after the sounding one; none at the end of the chart")
         // A word-timed line with a long pause that carries chord changes splits around an instrumental.
         let paused = SheetModel.build(analysis: chart([["start": 0, "end": 2, "label": "C:maj"], ["start": 2, "end": 5, "label": "G:maj"],
                                                        ["start": 5, "end": 8, "label": "A:min"], ["start": 8, "end": 20, "label": "F:maj"]]),

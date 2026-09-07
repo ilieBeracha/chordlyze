@@ -72,7 +72,7 @@ struct ChordRowView: View {
             ForEach(Array(row.chords.enumerated()), id: \.element.id) { index, placed in
                 ChordChip(name: placed.event.display(transposedBy: transposeBy),
                           active: playhead.map(placed.event.contains) ?? false,
-                          style: style, onTap: onChordTap, verdict: verdict?(placed.event.start))
+                          style: style, playing: playhead != nil, onTap: onChordTap, verdict: verdict?(placed.event.start))
                     .anchorPreference(key: ChordAnchors.self, value: .bounds) { [index: $0] }
             }
         }
@@ -128,6 +128,8 @@ struct ChordChip: View {
     let name: String
     var active = false
     var style: ChordRowView.Style = .sheet
+    /// The song is playing: chords not sounding sit back so the one that is stands out.
+    var playing = false
     var onTap: ((String) -> Void)? = nil
     /// Practice: what the microphone made of this chord, as a corner dot.
     var verdict: PracticeFeedback.Verdict? = nil
@@ -149,7 +151,8 @@ struct ChordChip: View {
             // the others sit back; no boxes.
             Text(name)
                 .font(style.chordFont)
-                .foregroundStyle(active ? Color.spotifyGreen : (style == .live ? Color.spotifyGreen.opacity(0.55) : Color.spotifyGreen))
+                .foregroundStyle(active || !(playing || style == .live) ? Color.spotifyGreen : Color.spotifyGreen.opacity(0.55))
+                .animation(.easeInOut(duration: 0.2), value: active)
                 .padding(.vertical, style.chipPadding.vertical)
                 .padding(.horizontal, style.chipPadding.horizontal)
                 .overlay(alignment: .topTrailing) {
