@@ -11,10 +11,6 @@ struct AnalysisTabsView: View {
     @State private var practiceRange: ClosedRange<Double>?
     @State private var starting = false
     @State private var startError: String?
-    /// While this song plays: keep the sounding row a third of the way down.
-    @State private var follow = false
-    /// Bumped to scroll to the sounding row once.
-    @State private var jumpToNow = 0
     @State private var lastPosition = 0.0
     @State private var seekDenied = false
     /// A–B repeat: the range lives on the store; only the arming is view state.
@@ -80,7 +76,7 @@ struct AnalysisTabsView: View {
                     album: store.song.album, trackID: store.song.id, songStore: store, initialRange: range)
             }
         }
-        .onChange(of: songIsUp) { _, up in if !up { loopStart = nil; follow = false } }
+        .onChange(of: songIsUp) { _, up in if !up { loopStart = nil } }
         .observes(store)
     }
 
@@ -117,16 +113,10 @@ struct AnalysisTabsView: View {
                     .padding(.bottom, playhead == nil ? 40 : 320)  // the last lines can roll up to the reading height too
                 }
                 .refreshable { store.refresh() }
-                .onChange(of: activeID) { _, id in
-                    guard follow, let id else { return }
-                    withAnimation(.easeInOut(duration: 0.4)) { proxy.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.32)) }
-                }
-                .onChange(of: follow) { _, on in
-                    guard on, let id = activeID else { return }
-                    withAnimation(.easeInOut(duration: 0.4)) { proxy.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.32)) }
-                }
-                .onChange(of: jumpToNow) { _, _ in
-                    guard let id = activeID else { return }
+                .onChange(of: activeID, initial: true) { _, id in
+                    // The line being sung settles a third of the way down, so what
+                    // comes next is already in view; the roll is slow enough to follow.
+                    guard let id else { return }
                     withAnimation(.easeInOut(duration: 0.4)) { proxy.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.32)) }
                 }
             }
@@ -143,14 +133,12 @@ struct AnalysisTabsView: View {
     }
 
     /// One row under the header: play along with the song, practice, key
-    /// and capo, save. While the song is up, Play along becomes the sounding
-    /// chord and the next one.
+    /// and capo, save. While the song is up, Play along has nothing to do
+    /// and goes away.
     private func toolbar(playhead: Double?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                if let playhead {
-                    nowPlayingPill(at: playhead)
-                } else {
+                if playhead == nil {
                     Button {
                         playAlong()
                     } label: {
@@ -184,58 +172,6 @@ struct AnalysisTabsView: View {
                 Text(note).font(.footnote).foregroundStyle(Palette.warning)
             }
         }
-    }
-
-    /// The chord Spotify is on and the one after it, over a thin progress
-    /// line. Tap to scroll to the sounding line; the trailing segment keeps
-    /// the page following it.
-    private func nowPlayingPill(at playhead: Double) -> some View {
-        let events = SheetModel.events(store.analysis)
-        let current = SheetModel.activeEvent(events, at: playhead)?.display(transposedBy: store.shift)
-        let next = SheetModel.nextEvent(events, after: playhead)?.display(transposedBy: store.shift)
-        let paused = nowPlaying.playing?.isPlaying == false
-        return HStack(spacing: 0) {
-            Button {
-                jumpToNow += 1
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: paused ? "pause.fill" : "waveform")
-                        .font(.system(size: 12, weight: .bold)).symbolEffect(.variableColor.iterative, isActive: !paused)
-                    Text(current ?? "…").font(.system(size: 16, weight: .bold, design: .monospaced))
-                        .contentTransition(.opacity).animation(.easeInOut(duration: 0.2), value: current)
-                    if let next {
-                        Text(next).font(.system(size: 13, weight: .semibold, design: .monospaced)).opacity(0.55)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .foregroundStyle(.black).lineLimit(1)
-                .padding(.horizontal, 12).frame(minWidth: 118, maxWidth: .infinity, minHeight: 42)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain).accessibilityIdentifier("now-playing")
-            .accessibilityLabel("Scroll to the line being sung")
-            Rectangle().fill(.black.opacity(0.18)).frame(width: 1, height: 22)
-            Button {
-                follow.toggle()
-            } label: {
-                Image(systemName: "text.line.first.and.arrowtriangle.forward")
-                    .font(.system(size: 13, weight: .bold)).foregroundStyle(.black.opacity(follow ? 1 : 0.4))
-                    .frame(width: 40, height: 42).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain).accessibilityIdentifier("follow-toggle")
-            .accessibilityLabel(follow ? "Stop following" : "Follow the song")
-        }
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.spotifyGreen))
-        .overlay(alignment: .bottomLeading) {
-            if duration > 0 {
-                GeometryReader { geo in
-                    Rectangle().fill(.black.opacity(0.35))
-                        .frame(width: geo.size.width * min(1, playhead / duration), height: 2)
-                }
-                .frame(height: 2)
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func tool(_ title: String) -> some View {
