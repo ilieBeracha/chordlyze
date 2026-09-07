@@ -540,3 +540,58 @@ enum BackendClient {
         return report
     }
 }
+
+struct IsolationStatus: Decodable {
+    struct Audio: Decodable {
+        let duration: Double
+        let bytes: Int
+        let sha256: String
+    }
+    let id: String
+    let state: String
+    let stage: String
+    let instrument: String
+    let audioSha256: String
+    let workerOnline: Bool
+    let message: String?
+    let duration: Double
+    let files: [String: Audio]
+    enum CodingKeys: String, CodingKey {
+        case id, state, stage, instrument, message, duration, files
+        case audioSha256 = "audio_sha256", workerOnline = "worker_online"
+    }
+}
+
+extension BackendClient {
+    static func prepareIsolation(trackID: String, instrument: String) async throws -> IsolationStatus {
+        var request = URLRequest(url: Config.backendBaseURL.appendingPathComponent("song/\(trackID)/isolation"), timeoutInterval: 30)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["instrument": instrument, "retry": true])
+        guard let result: IsolationStatus = try await fetch(request) else {
+            throw BackendError(status: 404, detail: "Instrument isolation is not available on this server yet.")
+        }
+        return result
+    }
+
+    static func isolationStatus(id: String) async throws -> IsolationStatus {
+        guard let result: IsolationStatus = try await fetch(URLRequest(
+            url: Config.backendBaseURL.appendingPathComponent("isolation/\(id)"),
+            cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)) else {
+            throw BackendError(status: 404, detail: "Prepare the instrument again.")
+        }
+        return result
+    }
+
+    static func isolationAudio(id: String, part: String) async throws -> URL {
+        let request = URLRequest(url: Config.backendBaseURL.appendingPathComponent("isolation/\(id)/audio/\(part)"),
+                                 cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 180)
+        let (url, response) = try await URLSession.shared.download(for: authorized(request))
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            try? FileManager.default.removeItem(at: url)
+            throw BackendError(status: (response as? HTTPURLResponse)?.statusCode ?? 0,
+                               detail: "Could not download this mix. Try preparing it again.")
+        }
+        return url
+    }
+}

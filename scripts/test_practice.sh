@@ -15,3 +15,7 @@ swiftc -module-cache-path "$practice_test_dir/module-cache" \
   tests/PracticeFeedbackTests.swift -o "$practice_test_dir/feedback"
 "$practice_test_dir/feedback"
 "$practice_test_dir/report"
+
+swiftc -module-cache-path "$practice_test_dir/module-cache" \
+  Chordlyze/Metronome.swift tests/MetronomeLifecycleTests.swift -o "$practice_test_dir/metronome"
+"$practice_test_dir/metronome"

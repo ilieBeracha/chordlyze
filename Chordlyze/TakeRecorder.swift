@@ -11,6 +11,8 @@ final class TakeRecorder {
 
     private var engine: AVAudioEngine?
     private let slot = WriterSlot()
+    private let meter = InputMeter()
+    var inputLevel: Double { meter.value }
     private var writer: Writer? { slot.current }
     private var observers: [NSObjectProtocol] = []
     private(set) var fileURL: URL?
@@ -71,7 +73,9 @@ final class TakeRecorder {
         guard format.channelCount > 0, format.sampleRate > 0, format.commonFormat == .pcmFormatFloat32,
               !format.isInterleaved else { throw DrillConfigurationError.unsupportedSampleRate }
         let slot = self.slot
+        let meter = self.meter
         input.installTap(onBus: 0, bufferSize: 2048, format: format) { buffer, _ in
+            meter.update(buffer)
             slot.current?.append(buffer)
         }
         engine.prepare()
@@ -115,6 +119,7 @@ final class TakeRecorder {
             engine.stop()
         }
         engine = nil
+        meter.reset()
         let writer = slot.current
         slot.current = nil
         writer?.finish()
@@ -122,6 +127,21 @@ final class TakeRecorder {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         defer { fileURL = nil }
         return fileURL
+    }
+
+    private final class InputMeter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var level = 0.0
+        var value: Double { lock.lock(); defer { lock.unlock() }; return level }
+        func reset() { lock.lock(); level = 0; lock.unlock() }
+        func update(_ buffer: AVAudioPCMBuffer) {
+            guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return }
+            var squareSum: Float = 0
+            for index in 0..<Int(buffer.frameLength) { squareSum += samples[index] * samples[index] }
+            let rms = sqrt(Double(squareSum) / Double(buffer.frameLength))
+            let normalized = max(0, min(1, (20 * log10(max(rms, 0.000001)) + 60) / 60))
+            lock.lock(); level = normalized; lock.unlock()
+        }
     }
 
     /// The tap reads the current writer through this lock; nil while primed
