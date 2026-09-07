@@ -88,6 +88,9 @@ enum SheetModel {
 
         func append(start: Double, end: Double, text: String = "", words: [WordStamp]? = nil) {
             guard end > start else { return }
+            // A wordless sliver shorter than half a second is rounding between
+            // neighbours, not a stretch anyone plays; it showed as "0:32–0:32".
+            if text.isEmpty, end - start < 0.5 { return }
             let kind: Kind = start >= coverage ? .uncovered : (text.isEmpty ? .instrumental : .lyric)
             // A catalog duration a fraction longer than the analyzed audio is not a pending part.
             if kind == .uncovered, end - start < 1 { return }
