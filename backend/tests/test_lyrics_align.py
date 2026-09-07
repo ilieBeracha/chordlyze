@@ -23,7 +23,14 @@ def test_lines_take_the_time_of_their_first_sung_word_and_skip_the_intro():
     timed, matched, total = time_lines(LINES, transcript)
     assert [line['time'] for line in timed] == [27.4, 41.0, 80.1, 93.1]
     assert matched == total == 20
-    assert timed[0]['words'][1] == {'time': 27.9, 'text': 'up'}
+    assert timed[0]['words'][1] == {'time': 27.9, 'text': 'up', 'end': 28.2}, 'heard words keep when they stop'
+    gappy = words('come up meet you', 27.4) + words('tell you i need you', 41.0) \
+        + words('nobody said it was easy', 80.1) + words('nobody said it was easy', 93.1)
+    timed, _, _ = time_lines(LINES, gappy)
+    to = next(w for w in timed[0]['words'] if w['text'] == 'to')
+    assert 'end' not in to and 'end' in timed[0]['words'][0], 'an interpolated word has no end'
+    assert transcribed_lines(words('one two three four five six seven eight nine ten eleven twelve', 5))[0]['words'][0] == \
+        {'time': 5.0, 'text': 'one', 'end': 5.3}
     assert timed[0]['text'] == LINES[0]
 
 
@@ -117,7 +124,7 @@ def test_groq_transcription_maps_words_and_waits_out_a_rate_limit(monkeypatch, t
     words = lyrics_align.transcribe_words_groq(audio, 'he', post=post, sleep=waits.append)
     assert waits == [2.0] and len(calls) == 2
     assert calls[0][1] == 'Bearer k' and calls[0][2]['language'] == 'he' and calls[0][3] == 'song-speech.mp3'
-    assert words[0] == {'start': 27.4, 'text': 'Come', 'segment': 0, 'p': 0.905}
+    assert words[0] == {'start': 27.4, 'text': 'Come', 'segment': 0, 'p': 0.905, 'end': 27.6}
     assert words[2]['segment'] == 1 and words[2]['p'] == 0.135
     assert not compact.exists(), 'the compact upload copy is removed'
     monkeypatch.delenv('GROQ_API_KEY')

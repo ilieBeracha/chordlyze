@@ -94,6 +94,8 @@ struct ChordAnalysis: Decodable, Equatable {
 struct WordStamp: Decodable, Equatable {
     let time: Double
     let text: String
+    /// When the word stops sounding; nil when the transcript did not hear it.
+    var end: Double? = nil
 }
 
 struct LyricLine: Decodable, Identifiable, Equatable {

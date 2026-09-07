@@ -31,6 +31,16 @@ struct ChordLyricLine: View {
     /// Calibrated song time for the words, without the chord display lead:
     /// a word is sung when it is sung, chords may be shown a little early.
     var wordPlayhead: Double? = nil
+    /// When each word stops sounding, where the transcript heard it.
+    var wordEnds: [Double?]? = nil
+
+    /// After a word has ended and before the next begins, the light settles:
+    /// the pulse is the word's own length, not the gap after it.
+    private var betweenWords: Bool {
+        guard let currentWord, let wordEnds, currentWord < wordEnds.count, let end = wordEnds[currentWord],
+              let wordPlayhead else { return false }
+        return wordPlayhead > end + 0.15
+    }
 
     private var currentWord: Int? {
         guard let wordTimes, let wordPlayhead, wordPlayhead >= rowStart, wordPlayhead < rowEnd else { return nil }
@@ -42,10 +52,11 @@ struct ChordLyricLine: View {
     /// coloured; the rest of the line sits back in grey.
     private func glow(_ index: Int) -> Double {
         guard let currentWord else { return 0 }
+        let rest = betweenWords ? 0.45 : 1.0
         switch abs(index - currentWord) {
-        case 0: return 1
-        case 1: return 0.55
-        case 2: return 0.25
+        case 0: return rest
+        case 1: return 0.55 * rest
+        case 2: return 0.25 * rest
         default: return 0
         }
     }
@@ -54,6 +65,7 @@ struct ChordLyricLine: View {
         guard currentWord != nil else { return style.wordColor(active: active) }
         return Color.white.opacity(0.38 + 0.62 * glow(index))
     }
+
 
     var body: some View {
         let tokens = Self.tokens(text: text, chords: chords, words: words)
@@ -78,6 +90,8 @@ struct ChordLyricLine: View {
                         .foregroundStyle(wordColor(token.id))
                         .shadow(color: .white.opacity(glow(token.id) * 0.45), radius: 10)
                         .animation(.easeOut(duration: 0.14), value: currentWord)
+                        .animation(.easeInOut(duration: 0.35), value: betweenWords)
+                        .animation(.easeInOut(duration: 0.45), value: active)
                         .onTapGesture { onLyricTap?() }
                         // The word's own text bounds, not the word-and-chords column.
                         .anchorPreference(key: WordAnchors.self, value: .bounds) { [token.id: $0] }

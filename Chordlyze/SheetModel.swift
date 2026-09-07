@@ -39,6 +39,9 @@ enum SheetModel {
     static let minInstrumental: Double = 2
     static let rowLength: Double = 8
     static let lastWordLength: Double = 1
+    /// A silence this long inside a word-timed line, with chord changes in
+    /// it, splits the line around an instrumental row.
+    static let pauseSplit: Double = 3
     /// Line-timed lyrics: a line is sung over roughly half a second a word,
     /// and never over less than this share of the gap to the next line.
     static let secondsPerWord: Double = 0.5
@@ -115,12 +118,35 @@ enum SheetModel {
             if start > cursor { append(start: cursor, end: start) }
             let words = line.words?.filter { $0.time.isFinite && $0.time >= start && $0.time < next }
                 .sorted { $0.time < $1.time }
-            if !line.text.isEmpty, let last = words?.last, next - last.time - lastWordLength >= minInstrumental {
-                let sungEnd = last.time + lastWordLength
-                append(start: start, end: sungEnd, text: line.text, words: words)
-                append(start: sungEnd, end: next)
+            if !line.text.isEmpty, let words, !words.isEmpty {
+                // A long pause inside a line that carries chord changes is sung as
+                // two parts with an instrumental between; drawn that way, the
+                // chords of the pause are not stacked above the last word before it.
+                var partStart = start
+                var part: [WordStamp] = []
+                for (index, word) in words.enumerated() {
+                    part.append(word)
+                    guard index + 1 < words.count else { break }
+                    let nextOnset = words[index + 1].time
+                    let sungEnd = min(nextOnset, (word.end ?? word.time) + lastWordLength)
+                    let changes = events.contains { $0.start > sungEnd && $0.start < nextOnset }
+                    if nextOnset - sungEnd >= pauseSplit, changes {
+                        append(start: partStart, end: sungEnd, text: part.map(\.text).joined(separator: " "), words: part)
+                        append(start: sungEnd, end: nextOnset)
+                        partStart = nextOnset
+                        part = []
+                    }
+                }
+                let text = partStart == start ? line.text : part.map(\.text).joined(separator: " ")
+                if let last = part.last, next - last.time - lastWordLength >= minInstrumental {
+                    let sungEnd = last.time + lastWordLength
+                    append(start: partStart, end: sungEnd, text: text, words: part)
+                    append(start: sungEnd, end: next)
+                } else {
+                    append(start: partStart, end: next, text: text, words: part)
+                }
             } else {
-                append(start: start, end: next, text: line.text, words: words?.isEmpty == false ? words : nil)
+                append(start: start, end: next, text: line.text, words: nil)
             }
             cursor = next
         }

@@ -39,7 +39,8 @@ Tests stand in for Spotify with `tests/fake_spotify.py` through
 
 In Live and Practice a word-timed row shows no moving line: a soft white
 cloud of light sits on the voice, the sung word full white, its neighbours
-partly lit, fading out two words away; chords light on their own time above
+partly lit, fading out two words away; the sung line is lifted by colour and
+a small animated scale, never a font change that would reflow the words; chords light on their own time above
 their words, and
 several chords can change above one held word while the voice stays on it. A
 moving line there only made players chase it. The thin runner remains on rows
@@ -48,8 +49,9 @@ moves chord to chord (`LyricPlayhead`, a plain file with tests). The words use t
 calibrated time exactly; only chords get the "show chords ahead" lead. The
 runner is measured on the word's own text bounds, not the chord column. On a
 line-timed row chord starts are the only fixed points and the runner moves
-steadily between them. Word end times are not stored yet, so motion within a
-held word is an even sweep to the next word. Launch with `--open-live` in Debug
+steadily between them. Each heard word also carries an `end`; once a word has
+ended the cloud settles to half until the next word begins, so the pulse is
+the word's own length. Interpolated words have no end. Launch with `--open-live` in Debug
 to open Live follow directly for checking against a real song. Chart
 time comes from Spotify's position through the song's timing calibration
 (`TimingMap`, spotify = scale × chart + offset). The chart was measured on a

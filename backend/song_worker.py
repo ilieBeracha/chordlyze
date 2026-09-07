@@ -106,8 +106,12 @@ def publishable_lines(lines: list[dict]) -> list[dict]:
         if not text:
             continue
         entry = {'time': max(0.0, float(line['time'])), 'text': text}
-        words = [{'time': max(0.0, float(w['time'])), 'text': str(w.get('text') or '').strip()[:200]}
-                 for w in line.get('words') or []]
+        words = []
+        for w in line.get('words') or []:
+            stamp = {'time': max(0.0, float(w['time'])), 'text': str(w.get('text') or '').strip()[:200]}
+            if w.get('end') is not None and float(w['end']) > stamp['time']:
+                stamp['end'] = float(w['end'])
+            words.append(stamp)
         words = [w for w in words if w['text']][:200]
         if words:
             entry['words'] = words

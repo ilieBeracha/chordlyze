@@ -121,8 +121,11 @@ def time_lines(lines: list[str], transcript: list[dict]) -> tuple[list[dict], in
     spoken = [entry for entry in transcript if _norm(entry['text'])]
     a = [_norm(word) for _, word in lyric]
     b = [_norm(entry['text']) for entry in spoken]
-    times: list[float | None] = [float(spoken[j]['start']) if j is not None else None
-                                 for j in align_words(a, b)]
+    pairing = align_words(a, b)
+    times: list[float | None] = [float(spoken[j]['start']) if j is not None else None for j in pairing]
+    # Ends only where a word was actually heard; interpolated words have none.
+    ends: list[float | None] = [float(spoken[j]['end']) if j is not None and spoken[j].get('end') is not None else None
+                                for j in pairing]
     matched = sum(time is not None for time in times)
     known = [index for index, time in enumerate(times) if time is not None]
     for index in range(len(times)):
@@ -139,7 +142,14 @@ def time_lines(lines: list[str], transcript: list[dict]) -> tuple[list[dict], in
         positions = [k for k, (line_index, _) in enumerate(lyric) if line_index == index]
         if not positions or times[positions[0]] is None or times[positions[0]] < last:
             continue
-        words = [{'time': round(times[k], 2), 'text': lyric[k][1]} for k in positions if times[k] is not None]
+        words = []
+        for k in positions:
+            if times[k] is None:
+                continue
+            word = {'time': round(times[k], 2), 'text': lyric[k][1]}
+            if ends[k] is not None and ends[k] > times[k]:
+                word['end'] = round(ends[k], 2)
+            words.append(word)
         result.append({'time': round(times[positions[0]], 2), 'text': line, 'words': words})
         last = times[positions[0]]
     return result, matched, len(lyric)
@@ -209,6 +219,8 @@ def transcribe_words_groq(audio: Path, language: str | None, post=None, sleep=No
         segment = next((seg for seg in segments if float(seg.get('start', 0)) - 0.01 <= start <= float(seg.get('end', 1e9)) + 0.01), None)
         word = {'start': start, 'text': str(entry.get('word', '')).strip(),
                 'segment': int(segment['id']) if segment and 'id' in segment else None}
+        if entry.get('end') is not None and float(entry['end']) > start:
+            word['end'] = float(entry['end'])
         if segment is not None and segment.get('avg_logprob') is not None:
             word['p'] = round(math.exp(float(segment['avg_logprob'])), 3)
         words.append(word)
@@ -277,7 +289,10 @@ def transcribed_lines(words: list[dict]) -> list[dict] | None:
         if group and (segment != current or len(group) >= MAX_TRANSCRIBED_LINE):
             flush()
         current = segment
-        group.append({'time': round(float(word['start']), 2), 'text': word['text']})
+        entry = {'time': round(float(word['start']), 2), 'text': word['text']}
+        if word.get('end') is not None and float(word['end']) > float(word['start']):
+            entry['end'] = round(float(word['end']), 2)
+        group.append(entry)
     flush()
     return lines
 
