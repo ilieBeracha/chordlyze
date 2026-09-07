@@ -57,7 +57,6 @@ struct ChordRowView: View {
                 // A wordless stretch is its chords on a line, nothing more; the
                 // static sheet keeps a small time span so the page can be read.
                 timedRow
-                if style == .sheet { caption }
             }
         }
         .frame(maxWidth: .infinity, alignment: rtl ? .trailing : .leading)

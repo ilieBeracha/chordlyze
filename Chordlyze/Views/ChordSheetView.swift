@@ -8,6 +8,9 @@ struct AnalysisTabsView: View {
     @State private var selectedChord: SelectedChord?
     @State private var showSettings = false
     @State private var practiceRange: ClosedRange<Double>?
+    @State private var showLive = false
+    @State private var starting = false
+    @State private var startError: String?
 
     /// The Spotify poller behind Live seeks and calibration; the offline fixture passes its own.
     var nowPlaying: SpotifyNowPlaying = .shared
@@ -23,7 +26,7 @@ struct AnalysisTabsView: View {
             Rectangle().fill(Palette.separator).frame(height: 0.5)
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    if store.analysis != nil { toolbox }
+                    if store.canPractice { toolbar }
                     SongSheetStatus(store: store)
                     ChordSheetView(store: store, onChordTap: { selectedChord = SelectedChord(name: $0) },
                         onPracticeRow: store.canPractice ? { row in
@@ -45,53 +48,73 @@ struct AnalysisTabsView: View {
                     album: store.song.album, trackID: store.song.id, songStore: store, initialRange: range)
             }
         }
+        .navigationDestination(isPresented: $showLive) {
+            LiveSongView(store: store, onSeek: { await nowPlaying.seek(to: $0) }, playbackNote: nowPlaying.playbackNote) {
+                nowPlaying.livePosition().map(store.timing.chartTime)
+            }
+        }
         .observes(store)
     }
 
-    private var toolbox: some View {
+    /// One row under the header: play along with the song, practice, key
+    /// and capo, save. The chart starts right beneath it.
+    private var toolbar: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let chart = store.analysis, store.canPractice {
-                HStack(spacing: 16) {
+            HStack(spacing: 8) {
+                Button {
+                    playAlong()
+                } label: {
+                    Label(starting ? "Starting…" : "Play along", systemImage: "play.fill")
+                        .font(.system(size: 14, weight: .bold)).foregroundStyle(.black)
+                        .frame(maxWidth: .infinity, minHeight: 42)
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.spotifyGreen))
+                }
+                .buttonStyle(.plain).disabled(starting)
+                .accessibilityIdentifier("play-along")
+                if let chart = store.analysis {
                     NavigationLink {
                         PracticeView(analysis: chart, title: store.song.title, artist: store.song.artist,
                                      album: store.song.album, trackID: store.song.id, songStore: store)
-                    } label: {
-                        Label("Practice", systemImage: "mic.fill").font(.headline)
-                            .frame(minHeight: 44)
-                    }.buttonStyle(.plain)
-                    Spacer(minLength: 0)
-                    Button("Choose section") { practiceRange = 0...min(30, chart.coverageEnd) }
-                        .font(.subheadline).frame(minHeight: 44)
+                    } label: { tool("Practice") }
+                    .buttonStyle(.plain)
                 }
-                Divider()
+                Button { showSettings = true } label: { tool("Key & capo") }.buttonStyle(.plain)
                 Button {
                     Task { await store.setSaved(!store.saved) }
                 } label: {
-                    HStack {
-                        Label(store.saved ? "In your library" : "Save to library",
-                              systemImage: store.saved ? "bookmark.fill" : "bookmark")
-                        Spacer()
-                        if let error = store.saveError {
-                            Text(error).font(.caption).foregroundStyle(Palette.warning).lineLimit(1)
-                        }
-                    }.font(.subheadline).frame(minHeight: 44)
-                }.buttonStyle(.plain)
-                    .accessibilityIdentifier("save-toggle")
-                Divider()
+                    Image(systemName: store.saved ? "bookmark.fill" : "bookmark")
+                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(store.saved ? Color.spotifyGreen : .white)
+                        .frame(width: 44, height: 42)
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.card))
+                }
+                .buttonStyle(.plain).accessibilityIdentifier("save-toggle")
             }
-            Button { showSettings = true } label: {
-                HStack {
-                    Label("Key & capo", systemImage: "slider.horizontal.3")
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                }.font(.subheadline).frame(minHeight: 44)
-            }.buttonStyle(.plain)
+            if let note = startError ?? store.saveError {
+                Text(note).font(.footnote).foregroundStyle(Palette.warning)
+            }
         }
-        .foregroundStyle(Color.spotifyGreen)
-        .padding(.horizontal, 14).padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 14).fill(Palette.card))
     }
 
+    private func tool(_ title: String) -> some View {
+        Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+            .frame(maxWidth: .infinity, minHeight: 42)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.card))
+    }
+
+    /// Start the song on this phone's Spotify and follow it live.
+    private func playAlong() {
+        starting = true
+        startError = nil
+        Task {
+            do {
+                try await nowPlaying.play(trackID: store.song.id, at: 0)
+                showLive = true
+            } catch {
+                startError = error.localizedDescription
+            }
+            starting = false
+        }
+    }
 }
 
 /// Title, artist, key and the current capo/transpose, over every song surface.
@@ -104,7 +127,8 @@ struct SongSheetHeader: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(store.song.title).font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundStyle(.white).lineLimit(1)
-                Text([store.song.artist, store.analysis?.key, store.chordNote].compactMap { $0 }
+                Text([store.song.artist, store.analysis?.key, store.chordNote,
+                      store.analysis?.tempo.map { "\(Int($0.bpm.rounded())) BPM" }].compactMap { $0 }
                     .filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.system(size: 12)).foregroundStyle(Palette.secondary).lineLimit(1)
             }
@@ -145,16 +169,12 @@ struct SongSheetStatus: View {
             } else if !store.message.isEmpty {
                 note(store.message, icon: "exclamationmark.circle", spinning: store.busy) { EmptyView() }
             }
-            if let text = store.editionNote {
-                note(text, icon: "exclamationmark.triangle") { EmptyView() }
-                    .accessibilityIdentifier("edition-note")
-            }
+            // Timing and edition notes live in Key & capo; the page shows only
+            // what is still happening or went wrong.
             if store.lyricsLoading {
                 note("Loading lyrics…", icon: nil, spinning: true) { EmptyView() }
-            } else if let text = store.lyricsNote {
-                note(text, icon: "clock") {
-                    if store.lyricsFailed { Button("Retry") { store.refresh() } }
-                }
+            } else if store.lyricsFailed, let text = store.lyricsNote {
+                note(text, icon: "clock") { Button("Retry") { store.refresh() } }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -193,7 +213,9 @@ struct ChordSheetView: View {
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: style == .live ? 22 : 20) {
-            ForEach(store.rows) { row in
+            // A wordless row with no chord change of its own is the previous chord
+            // still sounding: nothing to draw, so it takes no space.
+            ForEach(store.rows.filter { !$0.text.isEmpty || !$0.chords.isEmpty || $0.kind == .uncovered }) { row in
                 ChordRowView(row: row, transposeBy: store.shift, playhead: playhead,
                              style: style, onChordTap: onChordTap, onLyricTap: { onRowTap?(row) }, verdict: verdict,
                              wordPlayhead: wordPlayhead)
