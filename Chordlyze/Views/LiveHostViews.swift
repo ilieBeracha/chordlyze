@@ -79,6 +79,7 @@ struct LiveAnalyzingView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .toolbar(.hidden, for: .tabBar)
         .observes(store)
     }
 }
@@ -124,5 +125,6 @@ struct WaitingView: View {
         .padding(.bottom, 34)
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .toolbar(.hidden, for: .tabBar)
     }
 }
