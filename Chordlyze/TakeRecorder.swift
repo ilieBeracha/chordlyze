@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 
 /// Records a practice take from the microphone to an .m4a file through one
@@ -171,13 +171,20 @@ final class TakeRecorder {
             written += Int64(frames)
             if written >= limit { done = true }
             lock.unlock()
+            // The copy is ours alone from here: made above, handed to one queued block.
+            let handoff = BufferHandoff(buffer: copy)
             queue.async { [self] in
                 lock.lock(); let open = !closed; lock.unlock()
                 guard open else { return }
+                let copy = handoff.buffer
                 do { try file.write(from: copy) } catch { finish() }
                 listener?(UnsafeBufferPointer(start: copy.floatChannelData![0], count: frames), position, format.sampleRate)
             }
         }
+
+        /// AVAudioPCMBuffer is not Sendable; a buffer that no one else holds
+        /// can cross to the writer queue.
+        private struct BufferHandoff: @unchecked Sendable { let buffer: AVAudioPCMBuffer }
 
         func finish() { lock.lock(); done = true; lock.unlock() }
 

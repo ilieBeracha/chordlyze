@@ -22,9 +22,9 @@ struct AnalysisTabsView: View {
     /// The Spotify poller behind seeks and calibration; the offline fixture passes its own.
     @ObservedObject var nowPlaying: SpotifyNowPlaying
 
-    init(song: SongDescriptor, store: SongSheetStore? = nil, nowPlaying: SpotifyNowPlaying = .shared) {
+    @MainActor init(song: SongDescriptor, store: SongSheetStore? = nil, nowPlaying: SpotifyNowPlaying? = nil) {
         _store = StateObject(wrappedValue: store ?? SongSheetStore.shared(for: song))
-        _nowPlaying = ObservedObject(wrappedValue: nowPlaying)
+        _nowPlaying = ObservedObject(wrappedValue: nowPlaying ?? .shared)
     }
 
     /// Spotify has this song up, playing or paused, whoever started it.

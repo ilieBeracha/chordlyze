@@ -161,7 +161,7 @@ struct ChordChip: View {
                         Circle().fill(verdictColor).frame(width: 9, height: 9)
                             .overlay(Circle().stroke(Color.black, lineWidth: 1.5))
                             .offset(x: 3, y: -3)
-                            .accessibilityLabel(verdict.map { "\($0)" } ?? "")
+                            .accessibilityLabel(verdict.map { String(describing: $0) } ?? "")
                     }
                 }
         }
