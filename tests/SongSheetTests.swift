@@ -801,8 +801,29 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         catch let error as SpotifyNowPlaying.PlayError { check(error == .notConfirmed, "Play never assumes playback Spotify did not report") }
         check(started.count == 3, "Failed requests never reach Spotify twice")
         starter.reset()
+        var casualTrack = "one"
+        var casualPosition = 17.0
+        var casualPlaying = false
+        var casualStarts: [(String, Double)] = []
+        let casual = SpotifyNowPlaying(service: .init(
+            current: { playback(id: casualTrack, milliseconds: Int(casualPosition * 1000), playing: casualPlaying, deviceID: "phone") },
+            seek: { _ in fatalError("Play along must not seek an already playing song") },
+            play: { id, at, _ in
+                casualStarts.append((id, at))
+                casualTrack = id; casualPosition = at; casualPlaying = true
+            }, devices: { [phone] }, sleep: { _ in try await Task.sleep(for: .milliseconds(10)) }), sheetProvider: provider)
+        casual.resume()
+        try await waitFor { casual.playing != nil }
+        try await casual.playAlong(trackID: "one")
+        check(casualStarts.count == 1 && casualStarts[0].1 == 17, "Casual playing resumes the paused song at its position")
+        try await casual.playAlong(trackID: "one")
+        check(casualStarts.count == 1, "Casual playing does not restart a song already playing")
+        try await casual.playAlong(trackID: "two")
+        check(casualStarts.count == 2 && casualStarts[1].0 == "two" && casualStarts[1].1 == 0,
+              "Selecting a different song starts it from the beginning")
+        casual.reset()
         let unconnected = SpotifyNowPlaying(sheetProvider: provider)
-        do { try await unconnected.play(trackID: "one", at: 0); fatalError("Signed out cannot start playback") }
+        do { try await unconnected.playAlong(trackID: "one"); fatalError("Signed out cannot start playback") }
         catch let error as SpotifyNowPlaying.PlayError { check(error == .notConnected, "Play without a Spotify session is an explicit error") }
 
         check(requested == 0, "Playing a song never requests its analysis")

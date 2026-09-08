@@ -14,6 +14,10 @@ struct AnalysisTabsView: View {
     @State private var practiceRange: ClosedRange<Double>?
     @State private var lastPosition = 0.0
     @State private var seekDenied = false
+    @State private var startingPlayback = false
+    @State private var playbackError: String?
+    @State private var needsPlaybackDevice = false
+    @Environment(\.openURL) private var openURL
     @AppStorage("chordLead") private var lead = 0.0
     @AppStorage("chordRail") private var showRail = false
 
@@ -133,6 +137,9 @@ struct AnalysisTabsView: View {
             }
             if let playhead {
                 HStack(spacing: 12) {
+                    Button { openSpotify() } label: {
+                        Image(systemName: "music.note").frame(width: 44, height: 44)
+                    }.tint(.spotifyGreen).accessibilityLabel("Open playback controls in Spotify")
                     Text(mmss(playhead)).font(.system(size: 13, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white).accessibilityIdentifier("live-position")
                     ProgressView(value: playhead, total: max(1, duration)).tint(.spotifyGreen)
@@ -142,20 +149,28 @@ struct AnalysisTabsView: View {
         }
     }
 
-    /// One row under the header: practice, key and capo, save. The page
-    /// follows the song when it plays in Spotify; it does not start playback
-    /// itself.
+    /// Casual playback stays on the sheet. Recording is a separate action.
     private func toolbar(playhead: Double?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            Button(action: startPlayingAlong) {
+                Label(startingPlayback ? "Starting Spotify…" : songIsUp && nowPlaying.playing?.isPlaying == true
+                      ? "Playing along" : songIsUp ? "Resume song" : "Play along",
+                      systemImage: songIsUp && nowPlaying.playing?.isPlaying == true ? "waveform" : "play.fill")
+                    .font(.headline).foregroundStyle(.black)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .background(Color.spotifyGreen, in: RoundedRectangle(cornerRadius: 14))
+            }.buttonStyle(.plain)
+                .disabled(startingPlayback || nowPlaying.isControlling || (songIsUp && nowPlaying.playing?.isPlaying == true))
+                .accessibilityIdentifier("song-play-along")
+            Text("Just you and the song. No recording or scoring.")
+                .font(.caption).foregroundStyle(Palette.secondary)
             HStack(spacing: 8) {
                 if let chart = store.analysis {
                     NavigationLink {
                         PracticeView(analysis: chart, title: store.song.title, artist: store.song.artist,
                                      album: store.song.album, trackID: store.song.id, songStore: store, nowPlaying: nowPlaying)
                     } label: {
-                        Label("Practice", systemImage: "play.fill").font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.black).frame(maxWidth: .infinity, minHeight: 44)
-                            .background(Color.spotifyGreen, in: RoundedRectangle(cornerRadius: 12))
+                        tool("Practice")
                     }
                     .buttonStyle(.plain).accessibilityIdentifier("song-practice")
                 }
@@ -176,10 +191,36 @@ struct AnalysisTabsView: View {
                     Text("Waiting for Spotify…").font(.footnote).foregroundStyle(Palette.secondary)
                 }.accessibilityIdentifier("spotify-control-pending")
             }
-            if let note = store.saveError ?? nowPlaying.controlMessage {
+            if let note = playbackError ?? store.saveError ?? nowPlaying.controlMessage {
                 Text(note).font(.footnote).foregroundStyle(Palette.warning)
             }
+            if needsPlaybackDevice {
+                SpotifyDeviceRecoveryView(nowPlaying: nowPlaying, trackID: store.song.id, retryTitle: "Retry play along",
+                                          onRetry: startPlayingAlong)
+            } else if playbackError != nil {
+                Button("Open song in Spotify", action: openSpotify).frame(minHeight: 44).tint(.spotifyGreen)
+            }
         }
+    }
+
+    private func startPlayingAlong() {
+        guard !startingPlayback, !nowPlaying.isControlling else { return }
+        startingPlayback = true
+        playbackError = nil
+        needsPlaybackDevice = false
+        Task { @MainActor in
+            defer { startingPlayback = false }
+            do { try await nowPlaying.playAlong(trackID: store.song.id) }
+            catch {
+                playbackError = error.localizedDescription
+                needsPlaybackDevice = (error as? SpotifyNowPlaying.PlayError)?.needsDeviceRecovery == true
+            }
+        }
+    }
+
+    private func openSpotify() {
+        guard let url = URL(string: "spotify:track:\(store.song.id)") else { return }
+        openURL(url)
     }
 
     private func tool(_ title: String) -> some View {

@@ -3,7 +3,7 @@
 ## Navigation
 
 Home, Search and Library are the three persistent tabs. Practice starts from the
-green **Practice** action on a prepared song sheet, or from a selected passage.
+**Practice** action on a prepared song sheet, or from a selected passage.
 There is no separate Practice tab or song-selection landing page.
 
 Home's **Instrument tools** opens standalone chord recognition and chord-change
@@ -19,6 +19,21 @@ filtered by track ID rather than title. Existing files, playback, scoring retry
 and deletion are preserved without migration or duplication. The main account
 navigation retains its existing sign-in requirements; standalone chord
 recognition remains accessible from the login screen.
+
+## Playing along without a take
+
+On a prepared song sheet, **Play along** starts Spotify and follows the chords
+in place. It creates no practice session, recording or score, never requests
+microphone access and does not require headphones. A different song starts at
+0:00; the same paused song resumes at its reported position; an already playing
+song is left uninterrupted. Spotify keeps its original tempo and key.
+
+The action uses the existing phone-device discovery and confirmed-start flow.
+Pending commands disable repeated taps. Device failures offer the existing
+Spotify recovery controls, and other failures offer opening the song in Spotify.
+The music-note button beside the running timeline opens Spotify's playback
+controls. Leaving the sheet does not stop the music. **Practice** remains a
+separate action for recording and feedback.
 
 ## Practicing a passage
 

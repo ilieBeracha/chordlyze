@@ -8,7 +8,8 @@ instrument tools with saved takes. Practice now belongs to the selected song.
 | Task | Entry |
 | --- | --- |
 | Find music | Home or Search |
-| Practice a song | Green Practice action on its prepared sheet |
+| Play without a take | Green Play along action on its prepared sheet |
+| Practice a song | Separate Practice action on its prepared sheet |
 | Practice a passage | Existing row and song-map actions |
 | Play the last recorded song again | Home → Continue practicing → Practice again |
 | Recognize a chord or drill a change | Home → Instrument tools |
@@ -47,6 +48,14 @@ Screenshots: [Home](home.png), [Instrument tools](instrument-tools.png),
 screenshot is a Debug fixture control, not the main navigation.
 
 ## Preview
+
+Follow-up: [Play along](play-along.png) starts or resumes Spotify directly on the
+sheet without entering Practice, activating the microphone or saving a take.
+Song-sheet/playback tests now pass 1,225/1,225 checks, including paused resume,
+no restart of the same playing song, and start-at-zero for a different song.
+The Debug build and the offline simulator tap-through passed; live-follow
+advanced while the existing recording count stayed unchanged. Phone Spotify
+playback was not exercised by this simulator check.
 
 Launch Debug with `--music-preview`. Add `--music-recordings` for recordings,
 `--practice-empty` for an empty take store, or `--music-large-type` for
