@@ -73,8 +73,8 @@ PYTHONPATH=. \
 /Users/ilieberacha/Desktop/dev/chordlyze/backend/.venv/bin/python -m pytest tests/ -q
 ```
 
-Its final result is **436 passed, 17 expected failures**, recorded in
-`/tmp/chordlyze-alignment-final-backend.log`.
+Its final result is **443 passed, 17 expected failures**, recorded in
+`/tmp/chordlyze-alignment-audit-backend.log`.
 The initial isolated run lacked the rhythm runtime path; its three failures
 were installation lookup errors. The main checkout's complete suite passed
 421 tests with 17 expected model/vocabulary failures, but includes unrelated
