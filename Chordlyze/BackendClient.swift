@@ -76,6 +76,7 @@ struct ChordAnalysis: Decodable, Equatable {
     var correctionsStale: Bool? = nil
     var canUndo: Bool? = nil
     var boundariesEdited: Bool? = nil
+    var chordReview: [ChordReview]? = nil
 
     struct Tempo: Decodable, Equatable {
         let bpm: Double
@@ -120,7 +121,7 @@ struct ChordAnalysis: Decodable, Equatable {
         case audioDuration = "audio_duration", songDuration = "song_duration", audioSha256 = "audio_sha256"
         case chords, source, difficulty, tempo, album
         case chartRevision = "chart_revision", correctionsStale = "corrections_stale"
-        case canUndo = "can_undo", boundariesEdited = "boundaries_edited"
+        case canUndo = "can_undo", boundariesEdited = "boundaries_edited", chordReview = "chord_review"
     }
 
     /// Last second the chords cover. Playback past it has no chord information.
@@ -128,6 +129,38 @@ struct ChordAnalysis: Decodable, Equatable {
     /// 30 s excerpt at an unknown offset in the song: its chords cannot be
     /// placed on the song's timeline at all.
     var isPreview: Bool { source == "itunes_preview" }
+}
+
+struct ChordReview: Decodable, Equatable {
+    let start: Double
+    let end: Double
+    let label: String
+    let alternatives: [String]
+    let needsReview: Bool
+    let reason: String
+    enum CodingKeys: String, CodingKey {
+        case start, end, label, alternatives, reason, needsReview = "needs_review"
+    }
+    func matches(_ segment: ChordSegment) -> Bool {
+        abs(start - segment.start) < 0.000001 && abs(end - segment.end) < 0.000001 && label == segment.label
+    }
+}
+
+struct PassageJob: Decodable, Equatable {
+    let id: String
+    let state: String
+    let message: String?
+    let start: Double
+    let end: Double
+    let chartRevision: String
+    let segments: [ChordSegment]?
+    let protectedCount: Int?
+    let applied: Bool?
+    var pending: Bool { state == "queued" || state == "processing" }
+    enum CodingKeys: String, CodingKey {
+        case id, state, message, start, end, segments, applied
+        case chartRevision = "chart_revision", protectedCount = "protected_count"
+    }
 }
 
 struct WordStamp: Decodable, Equatable {
@@ -338,6 +371,42 @@ enum BackendClient {
             "name": name.map { $0 as Any } ?? NSNull()])
         guard let result: SongStatus = try await fetch(request) else {
             throw BackendError(status: 404, detail: "This song has no chart to correct yet.")
+        }
+        return result
+    }
+
+    private struct PassageEnvelope: Decodable { let job: PassageJob? }
+
+    static func passage(trackID: String, start: Double? = nil, end: Double? = nil, revision: String? = nil) async throws -> PassageJob? {
+        var request = URLRequest(url: Config.backendBaseURL.appendingPathComponent("library/\(trackID)/passage-analysis"),
+                                 cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 25)
+        if let start, let end, let revision {
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["start": start, "end": end, "chart_revision": revision])
+        }
+        guard let result: PassageEnvelope = try await fetch(request) else {
+            throw BackendError(status: 404, detail: "Passage analysis is unavailable on this server.")
+        }
+        return result.job
+    }
+
+    static func cancelPassage(trackID: String, id: String) async throws -> PassageJob? {
+        var request = URLRequest(url: Config.backendBaseURL.appendingPathComponent("library/\(trackID)/passage-analysis/\(id)"), timeoutInterval: 20)
+        request.httpMethod = "DELETE"
+        guard let result: PassageEnvelope = try await fetch(request) else {
+            throw BackendError(status: 404, detail: "This preparation is no longer available.")
+        }
+        return result.job
+    }
+
+    static func applyPassage(trackID: String, job: PassageJob) async throws -> SongStatus {
+        var request = URLRequest(url: Config.backendBaseURL.appendingPathComponent("library/\(trackID)/passage-analysis/apply"), timeoutInterval: 25)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["id": job.id, "chart_revision": job.chartRevision])
+        guard let result: SongStatus = try await fetch(request) else {
+            throw BackendError(status: 404, detail: "This passage result is no longer available.")
         }
         return result
     }

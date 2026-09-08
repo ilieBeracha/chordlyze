@@ -234,7 +234,7 @@ def test_published_chart_hands_audio_to_the_aligner(monkeypatch, tmp_path, capsy
     audio = tmp_path / 'song.mp3'; audio.write_bytes(b'x')
     monkeypatch.setattr(song_worker, 'fetch_full_track', lambda *a, **kw: audio)
     monkeypatch.setattr(song_worker, 'recognize_audio', lambda *a, **kw: types.SimpleNamespace(
-        duration=200.0, segments=[], metadata=lambda: {'model': 'ismir2019'}))
+        duration=200.0, segments=[], review=[], metadata=lambda: {'model': 'ismir2019'}))
     monkeypatch.setattr(song_worker, 'track_beats', lambda path: None)
     handed = []
     class Aligner:

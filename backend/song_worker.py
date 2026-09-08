@@ -256,6 +256,16 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
             return 'unavailable'
         stage[0] = 'analyzing'
         client.post('/internal/jobs/heartbeat', {**identity, 'stage': stage[0]})
+        if job.get('kind') == 'passage':
+            from chordlyze_backend.analysis.passage import recognize_passage, RecordingMismatch
+            try:
+                result = recognize_passage(audio, job)
+            except RecordingMismatch:
+                client.post('/internal/jobs/finish', {**identity, 'state': 'unavailable', 'error_code': 'passage_recording_mismatch'})
+                return 'unavailable'
+            if cancelled(): return 'abandoned'
+            client.post('/internal/jobs/passage', {**identity, **result})
+            return 'ready'
         if job.get('kind') == 'lyrics':
             # The chart exists; only its lyrics need timing from the recording.
             outcome = attach_lyrics(client, song, audio, job['generation'], stopping, align=align_lyrics)
@@ -263,7 +273,7 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
             client.post('/internal/jobs/finish', {**identity, 'state': 'ready', 'message': 'Lyrics ' + outcome})
             print('Lyrics job ' + outcome.split(' ')[0] + ' ' + ' '.join(f'{name}={seconds}s' for name, seconds in phases.items()), flush=True)
             return 'ready'
-        recognition = recognize_audio(audio, model='ismir2019', max_duration=1200)
+        recognition = recognize_audio(audio, model='ismir2019', max_duration=1200, review=True)
         phase('recognize')
         # Reject an incomplete download or a different edit before publishing.
         if abs(recognition.duration - song['duration']) > max(2, min(3, song['duration'] * .01)):
@@ -286,6 +296,7 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
             'source': 'bandcamp' if source_info.get('provider') == 'bandcamp' else 'youtube',
             'audio_source': source_info,
             'segments': [segment.to_dict() for segment in recognition.segments],
+            'chord_review': recognition.review,
             'tempo': tempo, 'genre': genre,
         })
         # Timings only; never track metadata.

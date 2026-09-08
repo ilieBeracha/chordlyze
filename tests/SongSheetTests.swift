@@ -44,6 +44,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         runnerTests()
         try await documentTests()
         try await correctionTests()
+        try await passageTests()
         try await synchronizationAndBoundaryTests()
         try await loadedChartRecoveryTests()
         try await recordingLyricsRecoveryTests()
@@ -1098,5 +1099,56 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(third.rows.contains { !$0.chords.isEmpty }, "A momentary empty playback response does not strand the pending chart")
         live.cancel(); await live.value
         player.reset()
+    }
+}
+
+extension SongSheetTests {
+    @MainActor static func passageTests() async throws {
+        func job(_ state: String) -> PassageJob {
+            decode(["id": "proposal", "state": state, "start": 2, "end": 8, "chart_revision": "chart-one",
+                    "segments": [["start": 2, "end": 8, "label": "A:min"]]])
+        }
+        var reads = 0, requests = 0
+        let model = PassageAnalysisModel(service: .init(read: { _ in
+            reads += 1
+            if requests == 0 { return nil }
+            return job(reads < 3 ? "processing" : "ready")
+        }, request: { _, start, end, revision in
+            requests += 1
+            check(start == 2 && end == 8 && revision == "chart-one", "passage request carries selected times and revision")
+            return job("queued")
+        }, sleep: { _ in }))
+        await model.follow(track: "song")
+        check(requests == 0 && reads == 1 && model.loaded && model.job == nil, "opening only discovers, never starts analysis")
+        await model.request(track: "song", start: 2, end: 8, revision: "chart-one")
+        await model.request(track: "song", start: 2, end: 8, revision: "chart-one")
+        check(requests == 1, "pending preparation cannot be submitted twice")
+        await model.follow(track: "song")
+        check(model.job?.state == "ready" && requests == 1, "polling follows preparation to ready without a POST")
+        let reopened = PassageAnalysisModel(service: .init(read: { _ in job("ready") }, request: { _,_,_,_ in fatalError("read-only reopen") }))
+        await reopened.follow(track: "song")
+        check(reopened.job?.state == "ready", "result survives a new screen model")
+        var failures = 0
+        let offline = PassageAnalysisModel(service: .init(read: { _ in failures += 1; throw URLError(.notConnectedToInternet) }, sleep: { _ in }))
+        await offline.follow(track: "song")
+        check(failures == 3 && offline.error != nil && !offline.loaded, "failed discovery is bounded and visible")
+        var stored = false
+        let lostResponse = PassageAnalysisModel(service: .init(read: { _ in stored ? job("ready") : nil }, request: { _,_,_,_ in
+            stored = true; throw URLError(.timedOut)
+        }, sleep: { _ in }))
+        await lostResponse.follow(track: "song")
+        await lostResponse.request(track: "song", start: 2, end: 8, revision: "chart-one")
+        await lostResponse.follow(track: "song")
+        check(lostResponse.job?.state == "ready", "lost POST response is recovered by reading the durable result")
+        let review: ChordReview = decode(["start": 2, "end": 8, "label": "A:min", "alternatives": ["C:maj"], "needs_review": true, "reason": "Close alternatives"])
+        check(review.matches(job("ready").segments![0]), "review cue matches exact chord identity")
+        check(!review.matches(ChordSegment(start: 2, end: 9, label: "A:min", roman: nil)), "timing edits invalidate stale evidence")
+        check(!review.matches(ChordSegment(start: 2, end: 8, label: "C:maj", roman: nil)), "label edits invalidate stale evidence")
+        var continuation: CheckedContinuation<PassageJob?, Error>?
+        let delayed = PassageAnalysisModel(service: .init(read: { _ in try await withCheckedThrowingContinuation { continuation = $0 } }))
+        let task = Task { await delayed.follow(track: "song") }
+        try await waitFor { continuation != nil }
+        task.cancel(); continuation?.resume(returning: job("ready")); await task.value
+        check(delayed.job == nil && !delayed.loaded, "cancelled screen ignores a late status response")
     }
 }

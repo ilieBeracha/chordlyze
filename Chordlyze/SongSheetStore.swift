@@ -20,6 +20,7 @@ final class SongSheetStore: ObservableObject {
         var synchronize: (String, [BackendClient.SyncClip], String, String) async throws -> SongStatus = {
             try await BackendClient.synchronize(trackID: $0, clips: $1, chartRevision: $2, timingRevision: $3)
         }
+        var applyPassage: (String, PassageJob) async throws -> SongStatus = { try await BackendClient.applyPassage(trackID: $0, job: $1) }
         var correctChord: (String, ChordSegment, String?, String) async throws -> SongStatus = {
             try await BackendClient.correctChord(trackID: $0, segment: $1, name: $2, revision: $3)
         }
@@ -208,6 +209,13 @@ final class SongSheetStore: ObservableObject {
             throw BackendError(status: 409, detail: "The chart changed. Reopen the chord before saving again.")
         }
         try await commitChange { try await self.service.correctChord(self.song.id, segment, name, expectedRevision) }
+    }
+
+    func applyPassage(_ job: PassageJob) async throws {
+        guard analysis?.chartRevision == job.chartRevision else {
+            throw BackendError(status: 409, detail: "The chart changed. Reanalyze the passage before applying it.")
+        }
+        try await commitChange { try await self.service.applyPassage(self.song.id, job) }
     }
 
     func editBoundary(_ edit: BackendClient.BoundaryEdit) async throws {

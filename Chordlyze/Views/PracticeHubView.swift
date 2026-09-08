@@ -17,6 +17,17 @@ struct PracticeHubView: View {
                     Label("Choose a song to practice", systemImage: "music.note.list")
                         .frame(maxWidth: .infinity, minHeight: 48)
                 }.buttonStyle(.borderedProminent).tint(.spotifyGreen)
+                NavigationLink { LiveChordRecognitionView() } label: {
+                    HStack(spacing: 14) {
+                        Image(systemName: "waveform").font(.title2).foregroundStyle(Color.spotifyGreen)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Recognize a chord").font(.headline).foregroundStyle(.white)
+                            Text("Play your instrument. See what you hear.").font(.subheadline).foregroundStyle(Palette.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").foregroundStyle(Palette.secondary)
+                    }.padding(16).background(Palette.card, in: RoundedRectangle(cornerRadius: 16))
+                }.buttonStyle(.plain)
                 VStack(alignment: .leading, spacing: 12) {
                     Text("One-minute chord changes").font(.headline)
                     HStack {

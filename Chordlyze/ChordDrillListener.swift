@@ -10,6 +10,8 @@ final class ChordDrillListener: ObservableObject {
     @Published private(set) var evidence: DrillEvidence = .quiet
     @Published private(set) var failure: String?
 
+    @Published private(set) var recent: [String] = []
+
     private var engine: AVAudioEngine?
     private var worker: DrillAudioWorker?
     private var generation: UInt64 = 0
@@ -18,19 +20,26 @@ final class ChordDrillListener: ObservableObject {
     private var observers: [NSObjectProtocol] = []
 
     func start(chordA: String, chordB: String) async throws {
+        _ = try DrillChordClassifier(chordA: chordA, chordB: chordB)
+        try await start(targets: [chordA, chordB])
+    }
+
+    func startListening() async throws { try await start(targets: []) }
+
+    private func start(targets: [String]) async throws {
         stop()
+        recent = []
         let token = generation
         failure = nil
         changes = 0
         evidence = .uncertain
         // Validate before asking for microphone permission.
-        _ = try DrillChordClassifier(chordA: chordA, chordB: chordB)
         let permitted = await AVAudioApplication.requestRecordPermission()
         try Task.checkCancellation()
         guard generation == token else { throw CancellationError() }
         guard permitted else {
             throw NSError(domain: "Drill", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Microphone access denied. Enable it in Settings to start a drill."])
+                          userInfo: [NSLocalizedDescriptionKey: "Microphone access denied. Enable it in Settings to listen."])
         }
         do {
             let session = AVAudioSession.sharedInstance()
@@ -44,12 +53,15 @@ final class ChordDrillListener: ObservableObject {
             guard format.channelCount > 0, format.commonFormat == .pcmFormatFloat32,
                   !format.isInterleaved else { throw DrillConfigurationError.unsupportedSampleRate }
             let sampleRate = format.sampleRate
-            let worker = try DrillAudioWorker(sampleRate: sampleRate, chordA: chordA, chordB: chordB,
+            let detector: ChordDrillDetector
+            if targets.isEmpty { detector = try ChordDrillDetector(sampleRate: sampleRate) }
+            else { detector = try ChordDrillDetector(sampleRate: sampleRate, chordA: targets[0], chordB: targets[1]) }
+            let worker = DrillAudioWorker(detector: detector,
                 onSnapshot: { [weak self] snapshot in
                     guard let self, self.generation == token else { return }
                     self.apply(snapshot)
                 }, onFailure: { [weak self] in
-                    self?.interrupt(token: token, message: "The microphone format changed. Start the drill again.")
+                    self?.interrupt(token: token, message: "The microphone format changed. Start listening again.")
                 })
             self.worker = worker
             input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, time in
@@ -92,7 +104,7 @@ final class ChordDrillListener: ObservableObject {
         guard let final else {
             stop()
             throw NSError(domain: "Drill", code: 3,
-                          userInfo: [NSLocalizedDescriptionKey: "The microphone did not provide a complete audio stream. Start the drill again."])
+                          userInfo: [NSLocalizedDescriptionKey: "The microphone did not provide a complete audio stream. Start listening again."])
         }
         apply(final)
         worker = nil
@@ -102,6 +114,10 @@ final class ChordDrillListener: ObservableObject {
     }
 
     private func apply(_ snapshot: DrillSnapshot) {
+        if let chord = snapshot.current, recent.last != chord {
+            recent.append(chord)
+            if recent.count > 12 { recent.removeFirst(recent.count - 12) }
+        }
         if current != snapshot.current { current = snapshot.current }
         if changes != snapshot.changes { changes = snapshot.changes }
         if evidence != snapshot.evidence { evidence = snapshot.evidence }
@@ -121,9 +137,9 @@ final class ChordDrillListener: ObservableObject {
 
     private func observeAudioChanges(engine: AVAudioEngine, token: UInt64) {
         for (name, object, message) in [
-            (AVAudioSession.interruptionNotification, nil as AnyObject?, "The microphone was interrupted. Start the drill again."),
-            (AVAudioSession.routeChangeNotification, nil, "The audio input changed. Start the drill again."),
-            (Notification.Name.AVAudioEngineConfigurationChange, engine, "The microphone configuration changed. Start the drill again.")
+            (AVAudioSession.interruptionNotification, nil as AnyObject?, "The microphone was interrupted. Start listening again."),
+            (AVAudioSession.routeChangeNotification, nil, "The audio input changed. Start listening again."),
+            (Notification.Name.AVAudioEngineConfigurationChange, engine, "The microphone configuration changed. Start listening again.")
         ] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) {
                 [weak self] _ in

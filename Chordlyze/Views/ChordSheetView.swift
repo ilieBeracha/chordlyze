@@ -605,11 +605,13 @@ struct SongMapSheet: View {
 struct ChordCorrectionsView: View {
     @ObservedObject var store: SongSheetStore
     var range: ClosedRange<Double>? = nil
+    @State private var uncertainOnly = false
     @State private var selected: ChordSegment?
     @State private var editError: String?
 
     private var segments: [ChordSegment] {
         (store.analysis?.chords ?? []).filter { segment in
+            if uncertainOnly && store.analysis?.chordReview?.contains(where: { $0.matches(segment) && $0.needsReview }) != true { return false }
             guard let range else { return true }
             return segment.start < range.upperBound && segment.end > range.lowerBound
         }
@@ -639,6 +641,18 @@ struct ChordCorrectionsView: View {
                 }
                 if let editError { Text(editError).foregroundStyle(.orange) }
             }
+            Section {
+                NavigationLink {
+                    PassageAnalysisView(store: store, range: range)
+                } label: { Label("Reanalyze a passage", systemImage: "waveform.path") }.disabled(store.analysis?.chartRevision == nil || store.analysis?.isPreview == true)
+                Toggle("Show uncertain chords only", isOn: $uncertainOnly)
+                if store.analysis?.chordReview == nil || store.analysis?.chordReview?.isEmpty == true {
+                    Text("This chart has no review evidence yet. Reanalyze a passage to inspect it.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                } else if uncertainOnly && segments.isEmpty {
+                    Text("No uncertain chords flagged in this selection.").foregroundStyle(.secondary)
+                }
+            }
             Section("Chords") {
                 ForEach(segments) { segment in
                     Button { selected = segment } label: {
@@ -647,6 +661,9 @@ struct ChordCorrectionsView: View {
                                 .monospacedDigit().foregroundStyle(.secondary)
                             Spacer()
                             Text(segment.displayName).fontWeight(.semibold)
+                            if store.analysis?.chordReview?.contains(where: { $0.matches(segment) && $0.needsReview }) == true {
+                                Image(systemName: "questionmark.circle").foregroundStyle(.orange).accessibilityLabel("Worth reviewing")
+                            }
                             if segment.originalLabel != nil {
                                 Image(systemName: "pencil.circle.fill")
                                     .accessibilityLabel("Corrected")
@@ -719,6 +736,21 @@ private struct ChordCorrectionEditor: View {
                     }
                     .disabled(store.savingCorrection || changed)
                     .accessibilityIdentifier("edit-chord-boundary")
+                }
+                if let review = store.analysis?.chordReview?.first(where: { $0.matches(segment) }), !review.alternatives.isEmpty {
+                    Section("Alternatives from the recording") {
+                        Text(review.reason).font(.footnote).foregroundStyle(.secondary)
+                        ForEach(review.alternatives, id: \.self) { label in
+                            let display = Chord(label: label)?.display ?? (label == "N" ? "N.C." : label)
+                            Button(display) { name = display }.disabled(changed || store.savingCorrection)
+                        }
+                        Text("Tap an alternative, then Save to use it.").font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                Section {
+                    NavigationLink("Reanalyze around this chord") {
+                        PassageAnalysisView(store: store, range: max(0, segment.start - 2)...min(store.analysis?.coverageEnd ?? segment.end, segment.end + 2))
+                    }.disabled(changed || store.savingCorrection)
                 }
                 if let original = segment.originalLabel {
                     Section {

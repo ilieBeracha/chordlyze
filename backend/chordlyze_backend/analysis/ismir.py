@@ -74,17 +74,17 @@ class IsmirProcess:
         with self._lock:
             self._start()
 
-    def recognize(self, wav: Path) -> list:
+    def recognize(self, wav: Path, *, review=False, passage=False):
         if not self._lock.acquire(timeout=self.timeout):
             raise RecognitionUnavailable("chord recognizer is busy; try again shortly")
         try:
             self._start()
-            self._process.stdin.write((json.dumps({"path": str(wav.resolve())}) + "\n").encode())
+            self._process.stdin.write((json.dumps({"path": str(wav.resolve()), "review": review, "passage": passage}) + "\n").encode())
             self._process.stdin.flush()
             result = self._response()
             if not isinstance(result.get("segments"), list):
                 raise RecognitionUnavailable("invalid segments from chord recognizer")
-            return result["segments"]
+            return result if review else result["segments"]
         except (OSError, ValueError, RecognitionUnavailable) as exc:
             self.close()
             raise RecognitionUnavailable(str(exc)) from exc
@@ -122,3 +122,7 @@ def warm() -> None:
 
 def close() -> None:
     _worker.close()
+
+
+def recognize_review(wav: Path, *, passage=False) -> dict:
+    return _worker.recognize(wav, review=True, passage=passage)

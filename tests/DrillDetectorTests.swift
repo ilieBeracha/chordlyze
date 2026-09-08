@@ -49,6 +49,16 @@ struct DrillDetectorTests {
             return
         }
         for sr in [44100.0, 48000.0] {
+            let free = try ChordDrillDetector(sampleRate: sr)
+            for (name, notes) in [("C", [48,52,55]), ("Fm", [53,56,60]), ("D7", [50,54,57,60])] {
+                free.reset()
+                let frames = feed(free, tone(notes, sr: sr))
+                check(frames.contains { $0.current == name }, "Unrestricted recognition hears \(name) at \(sr)")
+            }
+            free.reset()
+            check(feed(free, tone([60], sr: sr)).allSatisfy { $0.current == nil }, "Free listening rejects a single note")
+            free.reset()
+            check(feed(free, tone([], sr: sr)).allSatisfy { $0.current == nil }, "Free listening does not invent chords in silence")
             let detector = try ChordDrillDetector(sampleRate: sr, chordA: "C", chordB: "Am")
             let rejectionCases: [(String, [Int], Int)] = [
                 ("F guitar voicing", [41,45,48,53,57,60], 6),

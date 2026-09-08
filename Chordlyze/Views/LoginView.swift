@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LoginView: View {
     @EnvironmentObject var auth: SpotifyAuth
+    @State private var recognize = false
 
     private static let bars: [(width: CGFloat, green: Bool)] = [
         (31, false), (66, true), (22, false), (48, false), (40, true), (26, false),
@@ -62,6 +63,9 @@ struct LoginView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 14)
 
+                Button("Recognize a chord without signing in") { recognize = true }
+                    .font(.subheadline).frame(maxWidth: .infinity, minHeight: 48).padding(.top, 8)
+
                 if let error = auth.lastError {
                     Text(error)
                         .font(.caption)
@@ -72,6 +76,13 @@ struct LoginView: View {
             }
             .padding(.horizontal, 28)
             .padding(.bottom, 40)
+        }
+        .sheet(isPresented: $recognize) {
+            NavigationStack {
+                LiveChordRecognitionView().toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Done") { recognize = false } }
+                }
+            }
         }
     }
 }

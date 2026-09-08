@@ -16,7 +16,9 @@ struct ChordlyzeApp: App {
         WindowGroup {
             Group {
                 #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("--saved-take-preview") {
+                if ProcessInfo.processInfo.arguments.contains("--chord-recognition-preview") {
+                    NavigationStack { LiveChordRecognitionView() }
+                } else if ProcessInfo.processInfo.arguments.contains("--saved-take-preview") {
                     SavedTakePreview()
                 } else if ProcessInfo.processInfo.arguments.contains("--practice-report-preview") {
                     PracticeReportPreview()
@@ -64,7 +66,7 @@ struct ChordlyzeApp: App {
 
     private var isPreview: Bool {
         #if DEBUG
-        ProcessInfo.processInfo.arguments.contains("--song-sheet-preview") || ProcessInfo.processInfo.arguments.contains("--music-preview") || ProcessInfo.processInfo.arguments.contains("--practice-report-preview") || ProcessInfo.processInfo.arguments.contains("--saved-take-preview")
+        ProcessInfo.processInfo.arguments.contains("--chord-recognition-preview") || ProcessInfo.processInfo.arguments.contains("--song-sheet-preview") || ProcessInfo.processInfo.arguments.contains("--music-preview") || ProcessInfo.processInfo.arguments.contains("--practice-report-preview") || ProcessInfo.processInfo.arguments.contains("--saved-take-preview")
         #else
         false
         #endif

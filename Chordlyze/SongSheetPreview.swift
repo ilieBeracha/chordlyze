@@ -35,6 +35,8 @@ struct SongSheetPreview: View {
                             mode = "Practice"
                         }.padding(24)
                     }.observes(store)
+                } else if ProcessInfo.processInfo.arguments.contains("--passage-preview") {
+                    PassageAnalysisView(store: store, range: 6...12, model: Self.passageModel())
                 } else if ProcessInfo.processInfo.arguments.contains("--chord-corrections-preview") {
                     ChordCorrectionsView(store: store)
                 } else if mode == "Live" {
@@ -60,6 +62,13 @@ struct SongSheetPreview: View {
                 }
         }
         .dynamicTypeSize(ProcessInfo.processInfo.arguments.contains("--song-map-large-type") ? .accessibility3 : .large)
+    }
+
+    @MainActor private static func passageModel() -> PassageAnalysisModel {
+        let fixture: PassageJob = decode(["id": "preview-proposal", "state": "ready", "start": 6, "end": 12,
+            "chart_revision": "preview-original", "protected_count": 0,
+            "segments": [["start": 6, "end": 9, "label": "G:7"], ["start": 9, "end": 12, "label": "D:min7"]]])
+        return PassageAnalysisModel(service: .init(read: { _ in fixture }, request: { _,_,_,_ in fixture }))
     }
 
     private func position() -> Double {
@@ -128,7 +137,9 @@ struct SongSheetPreview: View {
                                      ["start": 12, "end": 20, "label": "A:min"],
                                      ["start": 20, "end": 40, "label": "F:maj7"]],
                          "source": "youtube", "audio_duration": 40, "song_duration": 40, "key": "C major",
-                         "tempo": tempo, "chart_revision": "preview-original"]
+                         "tempo": tempo, "chart_revision": "preview-original", "chord_review": [
+                             ["start": 6, "end": 12, "label": "G:7", "alternatives": ["G:maj", "D:min7"],
+                              "needs_review": true, "reason": "Close alternatives"]]]
         ])
         let arguments = ProcessInfo.processInfo.arguments
         // "estimated": catalog lyrics without timing, spread over the song as the backend does.
@@ -223,6 +234,12 @@ struct SongSheetPreview: View {
             case .undo, .restore: break
             }
             return publish(segments)
+        },
+                                             applyPassage: { _, _ in
+            history.append(raw(status.analysis!))
+            return publish([["start": 0, "end": 6, "label": "C:maj"], ["start": 6, "end": 9, "label": "G:7"],
+                            ["start": 9, "end": 12, "label": "D:min7"], ["start": 12, "end": 20, "label": "A:min"],
+                            ["start": 20, "end": 40, "label": "F:maj7"]])
         },
                                              correctChord: { _, segment, name, revision in
             guard revision == status.analysis?.chartRevision else {
