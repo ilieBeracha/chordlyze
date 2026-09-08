@@ -22,7 +22,7 @@ struct SongSheetPreview: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if !ProcessInfo.processInfo.arguments.contains("--practice-setup-preview") {
+                if ProcessInfo.processInfo.arguments.contains("--song-sheet-preview-controls") && !ProcessInfo.processInfo.arguments.contains("--practice-setup-preview") {
                 Picker("Display", selection: $mode) {
                     Text("Sheet").tag("Sheet")
                     Text("Live").tag("Live")
@@ -35,6 +35,8 @@ struct SongSheetPreview: View {
                             mode = "Practice"
                         }.padding(24)
                     }.observes(store)
+                } else if ProcessInfo.processInfo.arguments.contains("--passage-preview") {
+                    PassageAnalysisView(store: store, range: 6...12, model: Self.passageModel())
                 } else if ProcessInfo.processInfo.arguments.contains("--chord-corrections-preview") {
                     ChordCorrectionsView(store: store)
                 } else if mode == "Live" {
@@ -60,6 +62,13 @@ struct SongSheetPreview: View {
                 }
         }
         .dynamicTypeSize(ProcessInfo.processInfo.arguments.contains("--song-map-large-type") ? .accessibility3 : .large)
+    }
+
+    @MainActor private static func passageModel() -> PassageAnalysisModel {
+        let fixture: PassageJob = decode(["id": "preview-proposal", "state": "ready", "start": 6, "end": 12,
+            "chart_revision": "preview-original", "protected_count": 0,
+            "segments": [["start": 6, "end": 9, "label": "G:7"], ["start": 9, "end": 12, "label": "D:min7"]]])
+        return PassageAnalysisModel(service: .init(read: { _ in fixture }, request: { _,_,_,_ in fixture }))
     }
 
     private func position() -> Double {
@@ -97,7 +106,38 @@ struct SongSheetPreview: View {
         return player
     }
 
+    /// Authored words reproduce the reported phrase timings without embedding song lyrics.
+    @MainActor private static func phraseBoundaryStore() -> SongSheetStore {
+        let song = SongDescriptor(trackID: "phrase-preview", title: "Phrase boundaries · sample", artist: "Offline regression fixture", duration: 45)
+        let payload: SongStatus = decode([
+            "job": ["state": "ready", "worker_online": true], "library_generation": "preview",
+            "analysis": ["source": "youtube", "audio_duration": 45, "song_duration": 45,
+                "chords": [["start": 0, "end": 26.86, "label": "E:maj"],
+                    ["start": 26.86, "end": 30.16, "label": "E:maj"],
+                    ["start": 30.16, "end": 31.82, "label": "B:min"],
+                    ["start": 31.82, "end": 34.9, "label": "D:maj"],
+                    ["start": 34.9, "end": 36.74, "label": "F#:min"],
+                    ["start": 36.74, "end": 45, "label": "E:maj"]]],
+            "lyrics": ["synced": true, "matched": "aligned", "timing_note": "Some lyric timing is approximate; all catalog lines are included.",
+                "lines": [
+                    ["time": 18.37, "text": "The opening phrase stays here even when its word timing is missing"],
+                    ["time": 26.8, "text": "We watched the evening clouds as the final note faded", "words": [
+                        ["time": 26.8, "text": "We"], ["time": 27.52, "text": "watched"], ["time": 27.82, "text": "the"],
+                        ["time": 28.24, "text": "evening"], ["time": 28.65, "text": "clouds"], ["time": 29.05, "text": "as"],
+                        ["time": 29.46, "text": "the"], ["time": 29.76, "text": "final"], ["time": 29.98, "text": "note"],
+                        ["time": 30.16, "text": "faded", "end": 30.62]]],
+                    ["time": 31.88, "text": "Then a new phrase begins with a softly ringing chord", "words": [
+                        ["time": 31.88, "text": "Then"], ["time": 32.08, "text": "a"], ["time": 32.2, "text": "new"],
+                        ["time": 32.76, "text": "phrase"], ["time": 33.3, "text": "begins"], ["time": 34.02, "text": "with"],
+                        ["time": 34.64, "text": "a"], ["time": 35.12, "text": "softly"], ["time": 35.36, "text": "ringing"],
+                        ["time": 36.13, "text": "chord"]]],
+                    ["time": 36.9, "text": "Every remaining word stays visible on the following line"]]]])
+        return SongSheetStore(song: song, analysis: payload.analysis, service: .init(request: { _ in payload }, status: { _ in payload }, lyrics: { _ in nil }))
+    }
+
     @MainActor private static func makeStore() -> SongSheetStore {
+        if ProcessInfo.processInfo.arguments.contains("--phrase-boundary-preview") { return phraseBoundaryStore() }
+
         let mapPreview = ProcessInfo.processInfo.arguments.contains("--song-map-preview")
         let meter = 3
         let sampleBars: [[String: Any]] = (0..<26).map { index in
@@ -128,7 +168,9 @@ struct SongSheetPreview: View {
                                      ["start": 12, "end": 20, "label": "A:min"],
                                      ["start": 20, "end": 40, "label": "F:maj7"]],
                          "source": "youtube", "audio_duration": 40, "song_duration": 40, "key": "C major",
-                         "tempo": tempo, "chart_revision": "preview-original"]
+                         "tempo": tempo, "chart_revision": "preview-original", "chord_review": [
+                             ["start": 6, "end": 12, "label": "G:7", "alternatives": ["G:maj", "D:min7"],
+                              "needs_review": true, "reason": "Close alternatives"]]]
         ])
         let arguments = ProcessInfo.processInfo.arguments
         // "estimated": catalog lyrics without timing, spread over the song as the backend does.
@@ -223,6 +265,12 @@ struct SongSheetPreview: View {
             case .undo, .restore: break
             }
             return publish(segments)
+        },
+                                             applyPassage: { _, _ in
+            history.append(raw(status.analysis!))
+            return publish([["start": 0, "end": 6, "label": "C:maj"], ["start": 6, "end": 9, "label": "G:7"],
+                            ["start": 9, "end": 12, "label": "D:min7"], ["start": 12, "end": 20, "label": "A:min"],
+                            ["start": 20, "end": 40, "label": "F:maj7"]])
         },
                                              correctChord: { _, segment, name, revision in
             guard revision == status.analysis?.chartRevision else {

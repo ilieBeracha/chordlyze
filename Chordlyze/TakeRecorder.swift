@@ -139,7 +139,9 @@ final class TakeRecorder {
             var squareSum: Float = 0
             for index in 0..<Int(buffer.frameLength) { squareSum += samples[index] * samples[index] }
             let rms = sqrt(Double(squareSum) / Double(buffer.frameLength))
-            let normalized = max(0, min(1, (20 * log10(max(rms, 0.000001)) + 60) / 60))
+            // Show soft input that the detector can hear (down to ~−78 dBFS).
+            // The old −60 dB floor displayed silence for valid quiet chords.
+            let normalized = max(0, min(1, (20 * log10(max(rms, 0.000001)) + 90) / 90))
             lock.lock(); level = normalized; lock.unlock()
         }
     }

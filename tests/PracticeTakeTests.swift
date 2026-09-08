@@ -59,6 +59,13 @@ struct Track {
             return expectedReport
         }
         precondition(recovered.takes.count == 1 && recovered.takes[0].note?.contains("interrupted") == true)
+        precondition(recovered.recordings(for: song.id).map(\.id) == [take.id])
+        precondition(recovered.recordings(for: "another-recording").isEmpty)
+        precondition(recovered.recordings(matching: "  TEST SONG  ").map(\.id) == [take.id])
+        precondition(recovered.recordings(matching: "artist").map(\.id) == [take.id])
+        precondition(recovered.recordings(matching: "no such song").isEmpty)
+        precondition(recovered.recordings(for: "another-recording", matching: "Test song").isEmpty,
+                     "Title search cannot leak another song's recordings into its page")
         try store.finish(take, note: "Spotify paused; partial take saved.")
         do { _ = try await store.score(store.takes[0]); fatalError("Upload should fail") }
         catch { precondition(error is URLError) }
@@ -98,6 +105,17 @@ struct Track {
         try Data("broken".utf8).write(to: corrupt.appendingPathComponent("take.json"))
         store.reload()
         precondition(store.takes.count == 1 && store.error != nil)
+        let otherSong = SongDescriptor(trackID: "different-edition", title: song.title, artist: song.artist)
+        let otherTake = try store.prepare(song: otherSong, plan: plan)
+        try Data("another recording".utf8).write(to: store.audioURL(otherTake))
+        try store.finish(otherTake)
+        precondition(store.recordings().count == 2, "Library includes every healthy local take")
+        precondition(store.recordings(for: song.id).map(\.id) == [valid.id], "Identical titles cannot mix editions")
+        precondition(store.recordings(for: otherSong.id).map(\.id) == [otherTake.id])
+        precondition(store.recordings(matching: song.title).count == 2, "Library search includes both matching editions")
+        try store.delete(otherTake)
+        precondition(store.recordings(for: otherSong.id).isEmpty && store.recordings().count == 1,
+                     "Deletion updates both song and Library recording lists")
         print("Practice take tests passed: range/pace mapping, interrupted recovery, offline retry, report persistence, upload races, deletion and corrupt metadata isolation")
     }
 }

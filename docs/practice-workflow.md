@@ -2,11 +2,45 @@
 
 ## Navigation
 
-Home, Search, Practice and Library are persistent tabs. Search, saved song sheets,
-recorded practice and drills are accessible without Spotify login. Connecting
-Spotify adds playlists and live following. Home offers a link back to the most
-recently practiced song. The Practice tab offers chord-change drills and saved
-recordings/results; Library labels analyzed charts as Saved songs.
+Home, Search and Library are the three persistent tabs. Practice starts from the
+**Song options (•••) → Practice** action on a prepared song sheet, or from a selected passage.
+There is no separate Practice tab or song-selection landing page.
+
+Home's **Instrument tools** opens standalone chord recognition and chord-change
+drills. When a saved take exists, **Continue practicing → Practice again** opens
+setup for its song. It does not automatically start playback or the microphone,
+or restore the previous take's range and pace. An unavailable chart offers its
+existing loading, analysis and retry controls.
+
+Library separates **Songs** and **Recordings**. Recordings can be searched by
+song title or artist; each song sheet also links to its own recordings, even
+when its chart is unavailable. These are views of the same local take store,
+filtered by track ID rather than title. Existing files, playback, scoring retry
+and deletion are preserved without migration or duplication. The main account
+navigation retains its existing sign-in requirements; standalone chord
+recognition remains accessible from the login screen.
+
+## Playing along without a take
+
+On a prepared song sheet, the green **Play** icon starts Spotify and follows the chords
+in place. It creates no practice session, recording or score, never requests
+microphone access and does not require headphones. A different song starts at
+0:00; the same paused song resumes at its reported position; an already playing
+song is left uninterrupted. Spotify keeps its original tempo and key.
+
+The action uses the existing phone-device discovery and confirmed-start flow.
+Pending commands disable repeated taps. Device failures offer the existing
+Spotify recovery controls, and other failures offer opening the song in Spotify.
+The music-note button beside the running timeline opens Spotify's playback
+controls. The header's green waveform also opens Spotify controls while playing.
+Leaving the sheet does not stop the music. **Song options (•••) → Practice**
+remains a separate action for recording and feedback.
+
+The compact header contains back, song information, Play and Song options.
+Practice, Key & capo, Save song, Recordings and Song map are labeled menu items.
+The same menu shows or hides chord diagrams; the existing visibility preference
+is retained. Visible diagrams scroll with the lyrics rather than occupying a
+fixed area above them. Song recordings remain reachable when a chart fails.
 
 ## Practicing a passage
 
@@ -22,12 +56,12 @@ Charts with detected bars also have a **Song map** button. Select a recurring
 section or a numbered bar range and choose **Record selected bars** to open
 setup with those boundaries. See [song structure](song-structure.md).
 
-## Looping a passage in Live
+## Live following and connection recovery
 
 A temporary song-status connection failure keeps an already loaded full chart
 usable, including chord diagrams, Live following and passage selection. The sheet
 offers **Reconnect** and continues retrying status reads without requesting new
-analysis. Loops and transposition remain in place. This preserves the chart in
+analysis. Transposition remains in place. This preserves the chart in
 memory; it does not add offline music playback or persist sheets across app
 restarts. Explicit server resets still clear the reference, and unknown-offset
 previews cannot become practice charts during an outage.
@@ -38,12 +72,9 @@ does not replace them with estimated timing. A replacement recording (identified
 by its audio hash), or a library reset, invalidates the old recording's word times
 and allows fresh lyrics to load.
 
-Live has an A–B repeat for rehearsing a change before recording it: tap
-**Loop** at the passage start, then **B** at its end (or long-press a line and
-choose **Loop this line**). When Spotify reaches the end, the app seeks it back
-to the start, once per pass; the green chip shows the range and clears it. The
-loop lives in Live only; a practice take never loops, since a jump would break
-its timeline.
+Live follows playback continuously. Tap a line or use the song map to jump to
+a passage; select **Record selected bars** to practice it. Automatic repeating
+and A–B loop controls were removed on September 8, 2026.
 
 ## Playing from Spotify
 
@@ -103,10 +134,12 @@ before it ends the take; a track change ends it at once.
 
 The take is captured through one `AVAudioEngine` tap. Each buffer is written to
 the .m4a and handed to `ChordDrillDetector` in its general form (any chord in
-the vocabulary, same 70 ms dwell), so the detector's sample time is the frame's
+the vocabulary, 250 ms of consecutive evidence), so the detector's sample time is the frame's
 position in the file: feedback and the backend score the same timeline.
 
-`PracticeFeedback` judges each chart chord from the first accepted chord timestamp in captured audio. The detector retains this timestamp across coalesced UI updates, so a busy main thread cannot move the reported strum later. Its 0.35-second analysis-delay correction remains an estimate, not a measured device calibration. It is applied in real seconds before chart-rate conversion. Live timing labels therefore say "estimated ... vs chart" or "near chart change" rather than asserting that the player was late. A chord already sounding when the take begins is held, not a missed earlier transition.
+`PracticeFeedback` judges each chart chord from the first accepted chord timestamp in captured audio. The detector retains this timestamp across coalesced UI updates, so a busy main thread cannot move the reported strum later. Each snapshot carries an estimated delay from the sample rate, analysis window and confirmation duration (about 0.53 seconds at 44.1 kHz). This is not a measured device calibration. It is applied in real seconds before chart-rate conversion. Live timing labels therefore say "estimated ... vs chart" or "near chart change" rather than asserting that the player was late. A chord already sounding when the take begins is held, not a missed earlier transition.
+
+Live targets use `SheetModel.events`, so beat-snapped chips and verdicts share the same boundaries. A sustained chord is credited only after it is heard inside the next target, never in advance. The live panel shows the target, confirmed heard chord, microphone level, provisional/quiet status, and the last check. With a capo, the target is labeled Sounding. Detection failures are reported while the recording continues.
 
 Matching uses pitch-class sets after transposition. Silence and uncertain detections remain unjudged in live feedback; confirmed wrong chords name what was heard. Matching chords can upgrade an earlier wrong verdict. Actual detector latency still depends on evidence quality and device input; no software constant establishes the player's acoustic timing.
 

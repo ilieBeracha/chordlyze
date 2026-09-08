@@ -82,7 +82,7 @@ requests.
 
 Analysis version 3 includes an audio-derived [song map](song-structure.md).
 Sheet and Live expose detected sections and inclusive bar ranges for navigation,
-Spotify looping and recording setup. Selection uses source-audio boundaries;
+manual Spotify seeking and recording setup. Selection uses source-audio boundaries;
 seeks apply the saved timing calibration. Only complete detected bars are
 selectable. Install `scripts/setup_rhythm.sh` alongside the chord recognizer;
 export `CHORDLYZE_RHYTHM_DIR` when using a custom local path. Docker installs it.

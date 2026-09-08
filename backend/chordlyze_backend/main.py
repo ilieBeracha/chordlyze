@@ -55,6 +55,7 @@ from .analysis.keyfinder import analyze
 from .auth import current_user
 from .song_jobs import SongJobs, generation, library_lock
 from .users import UserLibrary
+from .lyrics_repair import repaired_entry
 
 CACHE_DIR = Path(os.environ.get("CHORDLYZE_CACHE",
                                 str(Path(__file__).resolve().parent.parent / "analysis_cache")))
@@ -171,6 +172,9 @@ class SubmittedSegment(BaseModel):
     label: str
 
 
+from .analysis.review import ChordReview, matching_review
+
+
 class SubmittedAnalysis(BaseModel):
     """Chords recognized off-server (the ingest worker runs the
     large-vocabulary model on its own machine) for the server to key, score
@@ -178,6 +182,7 @@ class SubmittedAnalysis(BaseModel):
     track_id: str
     model: str
     segments: list[SubmittedSegment]
+    chord_review: list[ChordReview] | None = Field(default=None, max_length=20000)
     source: str = "youtube"
     title: str | None = None
     artist: str | None = None
@@ -213,6 +218,8 @@ def _submit_analysis(body: SubmittedAnalysis, require_lease: bool = False) -> di
     if require_lease and not jobs.valid_lease(body.track_id, body.job_id or "", body.lease or "",
                                             body.library_generation or ""):
         raise HTTPException(409, "analysis job was reset, expired or replaced")
+    if require_lease and jobs.get(body.track_id).get('kind', 'analysis') != 'analysis':
+        raise HTTPException(409, "This job cannot publish a full-song chart.")
     if body.model not in _MODEL_RANK:
         raise HTTPException(422, f"unknown model {body.model!r}")
     if body.analysis_version == ANALYSIS_VERSION and (
@@ -235,6 +242,11 @@ def _submit_analysis(body: SubmittedAnalysis, require_lease: bool = False) -> di
             raise HTTPException(422, str(exc)) from exc
         segments.append(ChordSegment(seg.start, seg.end, chord.label if chord else "N"))
     result = analyze(merge_adjacent(segments))
+    if body.chord_review is not None:
+        try:
+            result['chord_review'] = matching_review([r.model_dump() for r in body.chord_review], result['chords'])
+        except ValueError as error:
+            raise HTTPException(422, str(error))
     try:
         result["tempo"] = validate_tempo(body.tempo, body.audio_duration or segments[-1].end)
     except ValueError as exc:
@@ -393,6 +405,8 @@ def finish_song(body: WorkerUpdate, authorization: str | None = Header(default=N
     elif body.error_code == 'provider_limit':
         message = ('Waiting for the recording service; it has reached its usage limit.' if body.state == "queued"
                    else 'The recording service has reached its usage limit. Please try again later.')
+    elif body.error_code == 'passage_recording_mismatch':
+        message = 'The recording differs from the one used for this chart. No chords were changed.'
     elif body.error_code == 'provider_timeout':
         message = 'The recording download took too long. Retry this song.'
     if not jobs.finish(body.track_id or "", body.job_id or "", body.lease or "",
@@ -419,6 +433,7 @@ class AlignedLyrics(BaseModel):
     library_generation: str
     lines: list[AlignedLine] = Field(min_length=1, max_length=2000)
     aligner: str = Field(min_length=1, max_length=200)
+    timing_note: str | None = Field(default=None, max_length=300)
     # catalog_aligned: catalog text timed to the recording; transcribed: the transcript itself.
     source: str = Field(default="catalog_aligned", pattern=r"^(catalog_aligned|transcribed)$")
 
@@ -446,13 +461,16 @@ def attach_lyrics(body: AlignedLyrics, authorization: str | None = Header(defaul
         entry["lyrics"] = {"lines": lines, "synced": True,
                            "matched": "transcribed" if body.source == "transcribed" else "aligned",
                            "instrumental": False, "aligner": body.aligner}
+        if body.timing_note:
+            entry["lyrics"]["timing_note"] = body.timing_note
+        entry = repaired_entry(entry, CACHE_DIR) or entry
         _write_analysis(path, entry)
         isrc = entry.get("isrc")
         if isrc:
             alias = _isrc_cache_path(isrc)
             if alias.exists() and json.loads(alias.read_text()).get("audio_sha256") == entry.get("audio_sha256"):
                 _write_analysis(alias, entry)
-    return {"ok": True, "lines": len(lines)}
+    return {"ok": True, "lines": len(entry["lyrics"]["lines"])}
 
 
 # MARK: - Lyrics
@@ -724,7 +742,11 @@ def edit_boundary(track_id: str, body: BoundaryEdit, user: str = Depends(current
             if not current["can_undo"]:
                 raise HTTPException(409, "There is no edit to undo on this chart.")
             history = overlay["history"]
-            mine.set_corrections(track_id, {"base_revision": corrections.revision(chart), "segments": history[-1], "history": history[:-1]})
+            review_history = overlay.get("review_history", [None] * len(history))
+            restored = {"base_revision": corrections.revision(chart), "segments": history[-1], "history": history[:-1],
+                        "review_history": review_history[:-1]}
+            if review_history and review_history[-1] is not None: restored["review"] = review_history[-1]
+            mine.set_corrections(track_id, restored)
             return _song_status(track_id, user=user)
         segments = corrections.raw(current["chords"])
         if body.operation == "restore":
@@ -1010,3 +1032,7 @@ async def practice_take(
             **recognition.metadata(), "reference_analysis_version": reference.get("analysis_version", 0),
             "reference_model_revision": reference.get("model_revision"),
             "reference_chart_revision": reference["chart_revision"]}
+
+
+from .passages import router as passage_router
+app.include_router(passage_router(lambda: CACHE_DIR, _editable_chart, _song_status, _worker_authorized))

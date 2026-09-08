@@ -5,15 +5,21 @@ struct LibraryView: View {
     var isRoot = false
     var findSong: (() -> Void)? = nil
     @StateObject private var collection: MusicCollection
+    @ObservedObject private var takes: PracticeTakeStore
+    enum Section: String, CaseIterable { case songs = "Songs", recordings = "Recordings" }
+    @State private var section: Section
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var query = ""
     @State private var filter: MusicFilter = .all
     @AppStorage("librarySort") private var sortRaw = MusicSort.recent.rawValue
 
     init(isRoot: Bool = false, findSong: (() -> Void)? = nil,
+         takes: PracticeTakeStore? = nil, initialSection: Section = .songs,
          fetch: @escaping () async throws -> [BackendClient.LibraryItem] = { try await BackendClient.library() }) {
         self.isRoot = isRoot
         self.findSong = findSong
+        self.takes = takes ?? .shared
+        _section = State(initialValue: initialSection)
         _collection = StateObject(wrappedValue: MusicCollection(fetch: fetch))
     }
 
@@ -24,30 +30,39 @@ struct LibraryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                MusicHeader(title: "Your library", subtitle: "Saved and analyzed songs.", isRoot: isRoot)
-                summary
-                MusicSearchField(prompt: "Search your library", text: $query)
-                MusicFilters(selection: $filter)
-                if let error = collection.error {
-                    MusicNotice(title: "Couldn’t refresh your songs", message: error,
-                                actionTitle: "Try again") { Task { await collection.load() } }
-                }
-                if collection.loading && collection.items.isEmpty {
-                    ProgressView("Loading your songs…").frame(maxWidth: .infinity, minHeight: 100)
-                } else if collection.items.isEmpty && collection.error == nil {
-                    VStack(alignment: .leading, spacing: 18) {
-                        MusicNotice(title: "Start with a song you love", message: "Find a song in Search, then save its chart or request an analysis. It will appear here.")
-                        discoveryLink
+                MusicHeader(title: "Your library", subtitle: "Your songs and recordings.", isRoot: isRoot)
+                Picker("Library section", selection: $section) {
+                    ForEach(Section.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }.pickerStyle(.segmented).accessibilityIdentifier("library-section")
+                if section == .recordings {
+                    RecordingsContent(takes: takes)
+                } else {
+                    summary
+                    MusicSearchField(prompt: "Search your library", text: $query)
+                    MusicFilters(selection: $filter)
+                    if let error = collection.error {
+                        MusicNotice(title: "Couldn’t refresh your songs", message: error,
+                                    actionTitle: "Try again") { Task { await collection.load() } }
                     }
-                } else if !collection.items.isEmpty {
-                    songList
+                    if collection.loading && collection.items.isEmpty {
+                        ProgressView("Loading your songs…").frame(maxWidth: .infinity, minHeight: 100)
+                    } else if collection.items.isEmpty && collection.error == nil {
+                        VStack(alignment: .leading, spacing: 18) {
+                            MusicNotice(title: "Start with a song you love", message: "Find a song in Search, then save its chart or request an analysis. It will appear here.")
+                            discoveryLink
+                        }
+                    } else if !collection.items.isEmpty {
+                        songList
+                    }
+                    spotifyCollections
                 }
-                spotifyCollections
             }.padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 32)
         }
         .scrollDismissesKeyboard(.interactively)
         .modifier(MusicSurface())
-        .refreshable { await collection.load() }
+        .refreshable {
+            if section == .recordings { takes.reload() } else { await collection.load() }
+        }
         .task {
             sortRaw = MusicSort.restored(sortRaw).rawValue
             await collection.load()

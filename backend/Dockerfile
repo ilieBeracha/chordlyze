@@ -16,7 +16,7 @@ RUN python -c "from faster_whisper import download_model; [download_model(name, 
 COPY requirements-ismir.txt .
 COPY scripts/setup_ismir.sh ./scripts/setup_ismir.sh
 # Only model-loading code invalidates the expensive model installation layer.
-COPY chordlyze_backend/analysis/ismir_worker.py chordlyze_backend/analysis/provenance.py ./chordlyze_backend/analysis/
+COPY chordlyze_backend/analysis/ismir_worker.py chordlyze_backend/analysis/provenance.py chordlyze_backend/analysis/acoustic_review.py chordlyze_backend/analysis/chord.py ./chordlyze_backend/analysis/
 
 ENV CHORDLYZE_ISMIR_DIR=/opt/chordlyze/ismir2019 \
     CHORDLYZE_TORCH_THREADS=2

@@ -18,10 +18,6 @@ struct LiveNowView: View {
     @State private var seekDenied = false
     @State private var showSongMap = false
     private var beatGrid: BeatGrid? { store.beatGrid }
-    /// A–B repeat: when the song reaches the end, Spotify is sent back to the
-    /// start. The range lives on the store; only the arming is view state.
-    @State private var loopStart: Double?
-    @State private var loopArmed = true
     /// The strip of chord fingerings above the words; a bottom-bar toggle.
     @AppStorage("chordRail") private var showRail = false
 
@@ -40,15 +36,8 @@ struct LiveNowView: View {
                             withAnimation(.easeInOut(duration: 0.25)) { showRail.toggle() }
                         }
                         if let grid = beatGrid, !grid.bars.isEmpty, onSeek != nil {
-                            HeaderCircle(icon: "map", on: false, label: "Song map and bar loops", identifier: "song-map") {
+                            HeaderCircle(icon: "map", on: false, label: "Song map and bar selection", identifier: "song-map") {
                                 showSongMap = true
-                            }
-                        }
-                        if onSeek != nil {
-                            HeaderCircle(icon: "repeat", on: store.loop != nil || loopStart != nil,
-                                         label: store.loop != nil ? "Clear loop" : loopStart == nil ? "Loop from here" : "Loop until here",
-                                         identifier: store.loop != nil ? "loop-active" : "loop-start") {
-                                loopTapped(at: wordPosition)
                             }
                         }
                     }
@@ -73,8 +62,6 @@ struct LiveNowView: View {
                                        onRowTap: { row in
                                            guard let onSeek else { return }
                                            Task { seekDenied = !(await onSeek(store.timing.spotifyTime(row.start))) }
-                                       }, onLoopRow: onSeek == nil ? nil : { row in
-                                           store.loop = row.start...max(row.start + 1, row.end); loopStart = nil; loopArmed = true
                                        }, verdict: verdict, wordPlayhead: wordPosition)
                             .padding(.horizontal, 24).padding(.top, 40)
                             .padding(.bottom, 320)  // the last lines can roll up to the reading height too
@@ -88,21 +75,11 @@ struct LiveNowView: View {
                         Text(mmss(position)).font(.system(size: 13, weight: .semibold, design: .monospaced))
                             .foregroundStyle(.white).accessibilityIdentifier("live-position")
                         ProgressView(value: position, total: max(1, duration)).tint(.spotifyGreen)
-                        loopChip
                     }
                     .padding(.horizontal, 20).padding(.bottom, 24)
                 }
                 .onChange(of: wordPosition) { _, value in
                     lastPosition = value
-                    // Back to the start once per pass; re-arm after the jump lands.
-                    if let loop = store.loop, let onSeek {
-                        if value >= loop.upperBound, loopArmed {
-                            loopArmed = false
-                            Task { seekDenied = !(await onSeek(store.timing.spotifyTime(loop.lowerBound))) }
-                        } else if value < loop.upperBound - min(1, (loop.upperBound - loop.lowerBound) / 2) {
-                            loopArmed = true
-                        }
-                    }
                 }
             }
         }
@@ -112,44 +89,11 @@ struct LiveNowView: View {
         .sheet(isPresented: $showSongMap) {
             if let grid = beatGrid, let onSeek {
                 SongMapSheet(grid: grid, position: lastPosition, onJump: { time in
-                    store.loop = nil; loopStart = nil
                     Task { seekDenied = !(await onSeek(store.timing.spotifyTime(time))) }
-                }, onLoop: { range in
-                    store.loop = range; loopStart = nil; loopArmed = true
-                    Task { seekDenied = !(await onSeek(store.timing.spotifyTime(range.lowerBound))) }
                 })
             }
         }
         .chordDiagram($selectedChord)
         .observes(store)
-    }
-
-    /// The loop circle in the header: first tap marks A, the second marks B
-    /// and starts the loop, a tap on a running loop clears it. Long-pressing
-    /// a line loops that line directly.
-    private func loopTapped(at now: Double) {
-        if store.loop != nil {
-            store.loop = nil
-        } else if let start = loopStart {
-            guard now > start + 1 else { return }
-            store.loop = start...now; loopStart = nil; loopArmed = true
-        } else {
-            loopStart = now
-        }
-    }
-
-    /// Under the progress line, only while a loop is being set or running.
-    @ViewBuilder private var loopChip: some View {
-        if let loop = store.loop {
-            HStack(spacing: 5) {
-                Image(systemName: "repeat").font(.system(size: 11, weight: .bold))
-                Text("\(mmss(loop.lowerBound))–\(mmss(loop.upperBound))").monospacedDigit()
-            }
-            .font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.spotifyGreen)
-            .accessibilityIdentifier("loop-range")
-        } else if let loopStart {
-            Text("A \(mmss(loopStart)) · tap again at B").font(.system(size: 13, weight: .semibold)).monospacedDigit()
-                .foregroundStyle(Color.spotifyGreen)
-        }
     }
 }

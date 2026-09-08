@@ -16,6 +16,7 @@ from pathlib import Path
 from .provenance import ISMIR_VOCABULARY_HASH, ISMIR_WEIGHT_HASHES
 
 
+
 def _check(path: Path, expected: str) -> None:
     if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
         raise RuntimeError(f"missing or incompatible model asset: {path.name}")
@@ -31,6 +32,7 @@ def main() -> None:
         sys.path.insert(0, str(root))
         with contextlib.redirect_stdout(sys.stderr):
             import numpy as np
+            from chordlyze_backend.analysis.acoustic_review import acoustic_review
             import torch
             from chordnet_ismir_naive import ChordNet
             from extractors.cqt import CQTV2
@@ -61,8 +63,14 @@ def main() -> None:
                 predictions = [net.inference(entry.cqt) for net in networks]
                 probs = [np.mean([p[i] for p in predictions], axis=0)
                          for i in range(len(predictions[0]))]
+                # The passage pass uses less temporal smoothing, with context supplied by the caller.
+                decoder.diff_trans_penalty = 10.0 if request.get("passage") else 30.0
                 rows = decoder.decode_to_chordlab(entry, probs, False)
-            print(json.dumps({"segments": [[float(a), float(b), str(c)] for a, b, c in rows]},
+                review = []
+                if request.get("review"):
+                    labels, observations = decoder.get_chord_tag_obs(probs)
+                    review = acoustic_review(rows, labels, observations, DEFAULT_HOP_LENGTH / DEFAULT_SR)
+            print(json.dumps({"segments": [[float(a), float(b), str(c)] for a, b, c in rows], "review": review},
                              allow_nan=False), flush=True)
         except Exception as exc:
             print(json.dumps({"error": str(exc)}), flush=True)

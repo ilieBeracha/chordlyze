@@ -39,11 +39,13 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
 
 @main struct SongSheetTests {
     @MainActor static func main() async throws {
+        lyricCompletenessTests()
         modelTests()
         barMapTests()
         runnerTests()
         try await documentTests()
         try await correctionTests()
+        try await passageTests()
         try await synchronizationAndBoundaryTests()
         try await loadedChartRecoveryTests()
         try await recordingLyricsRecoveryTests()
@@ -86,14 +88,13 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
                 return latest
             }))
         store.manualShift = 2
-        store.loop = 2...8
         let observing = Task { await store.observe() }
         defer { observing.cancel() }
         try await waitFor { staleRead != nil }
         try await store.correctChord(original.analysis!.chords[0], name: "Dm7", expectedRevision: "old")
         check(store.analysis == corrected.analysis && store.saved, "Saved correction updates the shared document")
         check(store.rows.flatMap(\.chords).first?.event.display(transposedBy: store.shift) == "Em7", "Live and sheet use corrected, transposed events")
-        check(store.manualShift == 2 && store.loop == 2...8, "Correction preserves playing settings")
+        check(store.manualShift == 2, "Correction preserves playing settings")
         check(store.analysis?.chords[0].originalLabel == "C:maj", "Original remains available for undo")
         staleRead?.resume(returning: original)
         try await Task.sleep(for: .milliseconds(30))
@@ -206,7 +207,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(clicks.count == 6 && clicks.enumerated().filter { $0.element.downbeat }.map(\.offset) == [0, 3], "Metronome accents every third beat")
         let map = TimingMap(offset: 2, scale: 1.01)
         let range = triple.barRange(first: 2, last: 3)!
-        check(abs(map.chartTime(map.spotifyTime(range.lowerBound))-range.lowerBound) < 1e-9, "Bar loop endpoints survive calibrated clock mapping")
+        check(abs(map.chartTime(map.spotifyTime(range.lowerBound))-range.lowerBound) < 1e-9, "Bar selection endpoints survive calibrated clock mapping")
         var broken = data; broken["beat_positions"] = [1]
         check(grid(broken)!.bars.isEmpty && grid(broken)!.sections.isEmpty, "Malformed positions disable bar actions")
         broken = data; broken["bars"] = [["start": 1, "end": 99, "beats": 3]]
@@ -214,7 +215,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         broken = data; broken["sections"] = [["start": 1, "end": 7, "start_bar": 0, "end_bar": 4, "label": "A", "occurrence": 1]]
         check(grid(broken)!.sections.isEmpty && grid(broken)!.bars.count == 4, "Bad section cannot corrupt valid bars")
         broken = data; broken["bars"] = [bars[0], bars[2]]; broken["sections"] = []
-        check(grid(broken)!.barRange(first: 1, last: 2) == nil, "No loop across missing bar")
+        check(grid(broken)!.barRange(first: 1, last: 2) == nil, "No bar selection across missing bar")
         data["bars"] = []; data["sections"] = []; data["beat_positions"] = []
         let unmetered = grid(data)!
         check(unmetered.bars.isEmpty && !unmetered.isDownbeat(0), "New beat-only analyses never invent 4/4 downbeats")
@@ -284,6 +285,49 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         // Right-to-left text runs the other way.
         let rtlPoints = LyricPlayhead.waypoints(rowStart: 8, rowEnd: 30, words: words, wordTimes: times, chordStarts: [], rtl: true)
         check(rtlPoints.first!.x == 290 && rtlPoints.last!.x == 0, "Right-to-left rows enter at the right edge and leave at the left")
+    }
+
+    @MainActor static func lyricCompletenessTests() {
+        let analysis: ChordAnalysis = decode(["source": "youtube", "audio_duration": 45, "chords": [
+            ["start": 0, "end": 30.16, "label": "E:maj"],
+            ["start": 30.16, "end": 31.82, "label": "B:min"],
+            ["start": 31.82, "end": 34.9, "label": "D:maj"],
+            ["start": 34.9, "end": 36.74, "label": "F#:min"],
+            ["start": 36.74, "end": 45, "label": "E:maj"]]])
+        // Authored text with Horse to Water's observed phrase boundary pattern.
+        let lines = [
+            LyricLine(time: 26.8, text: "First phrase ends", words: [
+                WordStamp(time: 26.8, text: "First", end: 28), WordStamp(time: 28, text: "phrase", end: 30),
+                WordStamp(time: 30.16, text: "ends", end: 30.62)]),
+            LyricLine(time: 31.88, text: "Next phrase starts", words: [
+                WordStamp(time: 31.88, text: "Next", end: 33), WordStamp(time: 34.64, text: "phrase", end: 35.82),
+                WordStamp(time: 36.13, text: "starts")]),
+            LyricLine(time: 36.9, text: "Another phrase", words: [WordStamp(time: 36.9, text: "Another", end: 38),
+                WordStamp(time: 39, text: "phrase", end: 40)])]
+        let rows = SheetModel.build(analysis: analysis, lines: lines, duration: 45)
+        let sung = rows.filter { !$0.text.isEmpty }
+        check(sung[1].start == 31.82 && sung[1].chords.first?.event.chord?.display == "D"
+              && sung[1].chords.first?.wordIndex == 0, "Anticipated D leads the next phrase instead of the previous last word")
+        check(sung[2].start == 36.74 && sung[2].chords.first?.event.chord?.display == "E", "Short anticipation also handles an inferred word end")
+        check(sung[0].chords.contains { $0.event.chord?.display == "Bm" }, "Change during the previous word stays with that word")
+        check(rows.flatMap(\.chords).map(\.event) == SheetModel.events(analysis), "Phrase association preserves all chord events and timestamps exactly")
+        var held = lines
+        held[0] = LyricLine(time: 26.8, text: "Still singing", words: [WordStamp(time: 26.8, text: "Still", end: 29), WordStamp(time: 30, text: "singing", end: 31.87)])
+        let heldRows = SheetModel.build(analysis: analysis, lines: held, duration: 45)
+        check(heldRows.first { $0.text == "Still singing" }!.chords.contains { $0.event.chord?.display == "D" }, "Do not move a chord while the previous word still sounds")
+        for words in [
+            [WordStamp(time: 1, text: "keep")],
+            [WordStamp(time: 1, text: "keep"), WordStamp(time: 9, text: "every"), WordStamp(time: 10, text: "word")],
+            [WordStamp(time: 2, text: "keep"), WordStamp(time: 1, text: "every"), WordStamp(time: 3, text: "word")]
+        ] {
+            let incomplete = SheetModel.build(analysis: chart(), lines: [LyricLine(time: 1, text: "keep every word", words: words), LyricLine(time: 8, text: "next line", words: nil)], duration: 20)
+            let first = incomplete.first { !$0.text.isEmpty }!
+            check(first.text == "keep every word" && first.words == nil, "Incomplete or invalid timing falls back to full text, without losing words")
+        }
+        let shortIntro = SheetModel.build(analysis: chart(), lines: [LyricLine(time: 0.2, text: "Early entrance", words: nil)], duration: 20)
+        check(shortIntro.flatMap(\.chords).map(\.event) == SheetModel.events(chart()), "A sub-second wordless gap cannot swallow its chord change")
+        let shared = SheetModel.build(analysis: chart(), lines: [LyricLine(time: 2, text: "first line", words: nil), LyricLine(time: 2, text: "second line", words: nil)], duration: 20)
+        check(shared.first { !$0.text.isEmpty }?.text == "first line second line", "Distinct lyrics sharing a timestamp both survive")
     }
 
     @MainActor static func modelTests() {
@@ -555,14 +599,13 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         try await waitFor { sheet.canPractice && !sheet.lyricsLoading }
         let originalChords = sheet.rows.flatMap(\.chords).map(\.event)
         let originalText = sheet.rows.map(\.text)
-        sheet.loop = 4...12
         sheet.manualShift = 2
         mode = 1
         try await waitFor { sheet.state == "connection" }
         check(sheet.canPractice, "A loaded full chart remains usable through a status timeout")
         check(sheet.rows.flatMap(\.chords).map(\.event) == originalChords && sheet.rows.map(\.text) == originalText
-              && sheet.loop == 4...12 && sheet.manualShift == 2,
-              "Connection loss retains chord rows, selected loop and transposition")
+              && sheet.manualShift == 2,
+              "Connection loss retains chord rows, transposition")
         check(sheet.actionTitle == "Reconnect", "Connection recovery never offers misleading reanalysis")
         let beforeRetry = polls
         sheet.retry()
@@ -758,8 +801,29 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         catch let error as SpotifyNowPlaying.PlayError { check(error == .notConfirmed, "Play never assumes playback Spotify did not report") }
         check(started.count == 3, "Failed requests never reach Spotify twice")
         starter.reset()
+        var casualTrack = "one"
+        var casualPosition = 17.0
+        var casualPlaying = false
+        var casualStarts: [(String, Double)] = []
+        let casual = SpotifyNowPlaying(service: .init(
+            current: { playback(id: casualTrack, milliseconds: Int(casualPosition * 1000), playing: casualPlaying, deviceID: "phone") },
+            seek: { _ in fatalError("Play along must not seek an already playing song") },
+            play: { id, at, _ in
+                casualStarts.append((id, at))
+                casualTrack = id; casualPosition = at; casualPlaying = true
+            }, devices: { [phone] }, sleep: { _ in try await Task.sleep(for: .milliseconds(10)) }), sheetProvider: provider)
+        casual.resume()
+        try await waitFor { casual.playing != nil }
+        try await casual.playAlong(trackID: "one")
+        check(casualStarts.count == 1 && casualStarts[0].1 == 17, "Casual playing resumes the paused song at its position")
+        try await casual.playAlong(trackID: "one")
+        check(casualStarts.count == 1, "Casual playing does not restart a song already playing")
+        try await casual.playAlong(trackID: "two")
+        check(casualStarts.count == 2 && casualStarts[1].0 == "two" && casualStarts[1].1 == 0,
+              "Selecting a different song starts it from the beginning")
+        casual.reset()
         let unconnected = SpotifyNowPlaying(sheetProvider: provider)
-        do { try await unconnected.play(trackID: "one", at: 0); fatalError("Signed out cannot start playback") }
+        do { try await unconnected.playAlong(trackID: "one"); fatalError("Signed out cannot start playback") }
         catch let error as SpotifyNowPlaying.PlayError { check(error == .notConnected, "Play without a Spotify session is an explicit error") }
 
         check(requested == 0, "Playing a song never requests its analysis")
@@ -1098,5 +1162,56 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(third.rows.contains { !$0.chords.isEmpty }, "A momentary empty playback response does not strand the pending chart")
         live.cancel(); await live.value
         player.reset()
+    }
+}
+
+extension SongSheetTests {
+    @MainActor static func passageTests() async throws {
+        func job(_ state: String) -> PassageJob {
+            decode(["id": "proposal", "state": state, "start": 2, "end": 8, "chart_revision": "chart-one",
+                    "segments": [["start": 2, "end": 8, "label": "A:min"]]])
+        }
+        var reads = 0, requests = 0
+        let model = PassageAnalysisModel(service: .init(read: { _ in
+            reads += 1
+            if requests == 0 { return nil }
+            return job(reads < 3 ? "processing" : "ready")
+        }, request: { _, start, end, revision in
+            requests += 1
+            check(start == 2 && end == 8 && revision == "chart-one", "passage request carries selected times and revision")
+            return job("queued")
+        }, sleep: { _ in }))
+        await model.follow(track: "song")
+        check(requests == 0 && reads == 1 && model.loaded && model.job == nil, "opening only discovers, never starts analysis")
+        await model.request(track: "song", start: 2, end: 8, revision: "chart-one")
+        await model.request(track: "song", start: 2, end: 8, revision: "chart-one")
+        check(requests == 1, "pending preparation cannot be submitted twice")
+        await model.follow(track: "song")
+        check(model.job?.state == "ready" && requests == 1, "polling follows preparation to ready without a POST")
+        let reopened = PassageAnalysisModel(service: .init(read: { _ in job("ready") }, request: { _,_,_,_ in fatalError("read-only reopen") }))
+        await reopened.follow(track: "song")
+        check(reopened.job?.state == "ready", "result survives a new screen model")
+        var failures = 0
+        let offline = PassageAnalysisModel(service: .init(read: { _ in failures += 1; throw URLError(.notConnectedToInternet) }, sleep: { _ in }))
+        await offline.follow(track: "song")
+        check(failures == 3 && offline.error != nil && !offline.loaded, "failed discovery is bounded and visible")
+        var stored = false
+        let lostResponse = PassageAnalysisModel(service: .init(read: { _ in stored ? job("ready") : nil }, request: { _,_,_,_ in
+            stored = true; throw URLError(.timedOut)
+        }, sleep: { _ in }))
+        await lostResponse.follow(track: "song")
+        await lostResponse.request(track: "song", start: 2, end: 8, revision: "chart-one")
+        await lostResponse.follow(track: "song")
+        check(lostResponse.job?.state == "ready", "lost POST response is recovered by reading the durable result")
+        let review: ChordReview = decode(["start": 2, "end": 8, "label": "A:min", "alternatives": ["C:maj"], "needs_review": true, "reason": "Close alternatives"])
+        check(review.matches(job("ready").segments![0]), "review cue matches exact chord identity")
+        check(!review.matches(ChordSegment(start: 2, end: 9, label: "A:min", roman: nil)), "timing edits invalidate stale evidence")
+        check(!review.matches(ChordSegment(start: 2, end: 8, label: "C:maj", roman: nil)), "label edits invalidate stale evidence")
+        var continuation: CheckedContinuation<PassageJob?, Error>?
+        let delayed = PassageAnalysisModel(service: .init(read: { _ in try await withCheckedThrowingContinuation { continuation = $0 } }))
+        let task = Task { await delayed.follow(track: "song") }
+        try await waitFor { continuation != nil }
+        task.cancel(); continuation?.resume(returning: job("ready")); await task.value
+        check(delayed.job == nil && !delayed.loaded, "cancelled screen ignores a late status response")
     }
 }

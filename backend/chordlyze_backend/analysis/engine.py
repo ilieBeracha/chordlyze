@@ -46,6 +46,7 @@ class Recognition:
     duration: float
     audio_sha256: str
     model: str
+    review: list | None = None
 
     def metadata(self) -> dict:
         return {**model_metadata(self.model), "audio_duration": self.duration,
@@ -75,12 +76,13 @@ _MADMOM_LOCK = threading.Lock()
 
 
 def recognize_audio(audio_path: str | Path, model: str = "ismir2019", *,
-                    max_duration: float | None = None) -> Recognition:
+                    max_duration: float | None = None, review: bool = False, passage: bool = False) -> Recognition:
     """Recognize with explicit capabilities; never silently change models."""
     model_metadata(model)  # Reject an unknown model before processing audio.
     src = Path(audio_path)
     if not src.exists():
         raise FileNotFoundError(src)
+    evidence = None
     with tempfile.TemporaryDirectory() as tmp:
         wav = Path(tmp) / "audio.wav"
         try:
@@ -98,13 +100,23 @@ def recognize_audio(audio_path: str | Path, model: str = "ismir2019", *,
                 digest.update(chunk)
         if model == "ismir2019":
             from .ismir import recognize
-            raw = recognize(wav)
+            if review:
+                from .ismir import recognize_review
+                result = recognize_review(wav, passage=passage)
+                raw, evidence = result['segments'], result.get('review', [])
+            else:
+                raw = recognize(wav)
         else:
             with _MADMOM_LOCK:
                 features, decoder = _processors()
                 raw = decoder(features(str(wav)))
     segments = validated_segments(raw, duration)
-    return Recognition(segments, duration, digest.hexdigest(), model)
+    if evidence is not None:
+        from .review import matching_review
+        # Decoder's final frame can extend slightly past the decoded audio.
+        evidence = [{**item, 'end': min(item['end'], duration)} for item in evidence if item['start'] < duration]
+        evidence = matching_review(evidence, [s.to_dict() for s in segments])
+    return Recognition(segments, duration, digest.hexdigest(), model, evidence)
 
 
 def validated_segments(raw, duration: float) -> list[ChordSegment]:

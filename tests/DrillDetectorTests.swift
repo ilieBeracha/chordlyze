@@ -49,6 +49,16 @@ struct DrillDetectorTests {
             return
         }
         for sr in [44100.0, 48000.0] {
+            let free = try ChordDrillDetector(sampleRate: sr)
+            for (name, notes) in [("C", [48,52,55]), ("Fm", [53,56,60]), ("D7", [50,54,57,60])] {
+                free.reset()
+                let frames = feed(free, tone(notes, sr: sr))
+                check(frames.contains { $0.current == name }, "Unrestricted recognition hears \(name) at \(sr)")
+            }
+            free.reset()
+            check(feed(free, tone([60], sr: sr)).allSatisfy { $0.current == nil }, "Free listening rejects a single note")
+            free.reset()
+            check(feed(free, tone([], sr: sr)).allSatisfy { $0.current == nil }, "Free listening does not invent chords in silence")
             let detector = try ChordDrillDetector(sampleRate: sr, chordA: "C", chordB: "Am")
             let rejectionCases: [(String, [Int], Int)] = [
                 ("F guitar voicing", [41,45,48,53,57,60], 6),
@@ -117,6 +127,14 @@ struct DrillDetectorTests {
             check(feed(alternate, sequence, block: 333) == frames, "\(sr) arbitrary tap sizes give identical events")
             let quiet = try ChordDrillDetector(sampleRate: sr, chordA: "C", chordB: "Am")
             check(feed(quiet, tone([48,52,55], sr: sr, gain: 0.008)).last?.current == "C", "quiet clean chords recognized")
+            for (name, notes) in [("C", [48,52,55,60,64]), ("Am", [45,52,57,60,64])] {
+                for gain in [0.002, 0.001] {
+                    let soft = try ChordDrillDetector(sampleRate: sr, chordA: "C", chordB: "Am")
+                    let heard = feed(soft, tone(notes, sr: sr, gain: gain, strum: 0.02, decay: 2.0))
+                    check(heard.contains { $0.current == name }, "Soft decaying \(name) works in paired drills at gain \(gain)")
+                    check(heard.compactMap(\.current).allSatisfy { $0 == name }, "Soft chord cannot turn into its rival")
+                }
+            }
             let strummed = try ChordDrillDetector(sampleRate: sr, chordA: "C", chordB: "Am")
             check(feed(strummed, tone([48,52,55,60,64], sr: sr, strum: 0.018, decay: 0.7)).last?.current == "C", "guitar strum and decay recognized")
 

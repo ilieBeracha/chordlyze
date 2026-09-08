@@ -5,24 +5,23 @@ import SwiftUI
 /// Launch --music-preview with --music-library, --music-search, --music-empty,
 /// --music-error, or --music-large-type to inspect each state without an account.
 struct MusicPreview: View {
+    @StateObject private var recordings = SavedTakePreviewModel()
     @State private var tab: MainTabsView.Tab
     private let args = ProcessInfo.processInfo.arguments
     init() {
         let args = ProcessInfo.processInfo.arguments
-        _tab = State(initialValue: args.contains("--music-library") ? .library : args.contains("--music-search") ? .search : .home)
+        _tab = State(initialValue: (args.contains("--music-library") || args.contains("--music-recordings")) ? .library : args.contains("--music-search") ? .search : .home)
     }
     var body: some View {
         TabView(selection: $tab) {
-            HomeView(openSearch: { tab = .search }, openLibrary: { tab = .library }, openPractice: { tab = .practice },
-                     fetch: load, preview: true)
+            HomeView(openSearch: { tab = .search }, openLibrary: { tab = .library },
+                     fetch: load, preview: true, takes: recordings.store)
                 .tabItem { Label("Home", systemImage: "house") }.tag(MainTabsView.Tab.home)
             NavigationStack {
                 SearchView(isRoot: true, fetch: load, discovery: SongDiscovery(fetch: { _ in [] }))
             }.tabItem { Label("Search", systemImage: "magnifyingglass") }.tag(MainTabsView.Tab.search)
-            NavigationStack {
-                Text("Practice preview is available with --song-sheet-preview.").padding()
-            }.tabItem { Label("Practice", systemImage: "guitars") }.tag(MainTabsView.Tab.practice)
-            NavigationStack { LibraryView(isRoot: true, findSong: { tab = .search }, fetch: load) }
+            NavigationStack { LibraryView(isRoot: true, findSong: { tab = .search }, takes: recordings.store,
+                                         initialSection: args.contains("--music-recordings") ? .recordings : .songs, fetch: load) }
                 .tabItem { Label("Library", systemImage: "music.note.list") }.tag(MainTabsView.Tab.library)
         }
         .tint(MusicStyle.accent)

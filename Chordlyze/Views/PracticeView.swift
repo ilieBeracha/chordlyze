@@ -55,6 +55,8 @@ struct PracticeView: View {
     @State private var feedback: PracticeFeedback?
     @State private var feedbackTap: FeedbackTap?
     @State private var lastJudged: String?
+    @State private var liveSnapshot: DrillSnapshot?
+    @State private var feedbackError: String?
 
     private var songEnd: Double { max(1, analysis.coverageEnd) }
     private var grid: BeatGrid? { BeatGrid(tempo: analysis.tempo, chords: analysis.chords) }
@@ -412,25 +414,23 @@ struct PracticeView: View {
             .safeAreaInset(edge: .bottom) {
                 VStack(alignment: .leading, spacing: 10) {
                     if let feedback {
-                        HStack(spacing: 8) {
-                            Image(systemName: "ear").font(.system(size: 12, weight: .semibold))
-                            Text(lastJudged ?? "Listening for your chords…").lineLimit(1)
-                            Spacer()
-                            if !feedback.judged.isEmpty {
-                                Text("\(feedback.hits)/\(feedback.judged.count)").monospacedDigit()
-                            }
+                        TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+                            PracticeListeningPanel(
+                                expected: feedback.targets.first { $0.start <= (position() ?? 0) && (position() ?? 0) < $0.end }?.name,
+                                snapshot: liveSnapshot, inputLevel: recorder.inputLevel,
+                                lastJudged: lastJudged, error: feedbackError, capo: activePlan?.capo ?? 0)
                         }
-                        .font(.footnote).foregroundStyle(Palette.secondary)
-                        .accessibilityIdentifier("live-feedback")
                     }
-                    HStack {
+                    (dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+                     : AnyLayout(HStackLayout())) {
                         Label(!recordTake ? "Playing along" : synced ? "Recording · Spotify on \(nowPlaying.playbackDevice ?? "phone")" : "Recording · \(Int(rate * 100))%", systemImage: "record.circle")
                             .font(.subheadline).foregroundStyle(Palette.destructive)
                         Spacer()
                         if !synced, let grid {
                             BeatDots(grid: grid) { position() }
                         }
-                        Button(recordTake ? "Finish take" : "Finish practice") { finish() }.buttonStyle(.borderedProminent).tint(.spotifyGreen)
+                        Button(recordTake ? "Finish take" : "Finish practice") { finish() }
+                            .buttonStyle(.borderedProminent).tint(.spotifyGreen).foregroundStyle(.black)
                     }
                 }.padding().background(Palette.card)
             }
@@ -513,9 +513,15 @@ struct PracticeView: View {
             if recordTake {
                 let take = try takes.prepare(song: songStore.song, plan: plan)
                 activeTake = take
-                feedback = PracticeFeedback(chords: analysis.chords, start: plan.start, end: plan.end, transpose: plan.transpose)
+                feedback = PracticeFeedback(analysis: analysis, start: plan.start, end: plan.end, transpose: plan.transpose)
                 lastJudged = nil
-                let tap = FeedbackTap { snapshot in judge(snapshot, plan: plan) }
+                liveSnapshot = nil
+                feedbackError = nil
+                let tap = FeedbackTap(onSnapshot: { snapshot in judge(snapshot, plan: plan) }, onFailure: {
+                    guard phase == .recording else { return }
+                    liveSnapshot = nil
+                    feedbackError = "Live detection unavailable. Your take is still recording."
+                })
                 feedbackTap = tap
                 try recorder.start(maxDuration: plan.recordingDuration, at: takes.audioURL(take)) { samples, sampleTime, sampleRate in
                     tap.handle(samples, sampleTime: sampleTime, sampleRate: sampleRate)
@@ -569,9 +575,13 @@ struct PracticeView: View {
     /// of recorded audio, mapped through the plan like the backend does.
     private func judge(_ snapshot: DrillSnapshot, plan: PracticePlan) {
         guard phase == .recording, feedback != nil else { return }
+        if liveSnapshot?.evidence != snapshot.evidence || liveSnapshot?.current != snapshot.current {
+            liveSnapshot = snapshot
+        }
         let chartTime = plan.position(elapsed: snapshot.time)
         if let index = feedback!.observe(current: snapshot.current, chartTime: chartTime, chartRate: plan.chartRate,
-                                         recognizedAt: snapshot.recognizedAt.map { plan.position(elapsed: $0) }) {
+                                         recognizedAt: snapshot.recognizedAt.map { plan.position(elapsed: $0) },
+                                         detectorLatency: snapshot.latency) {
             let target = feedback!.targets[index]
             lastJudged = PracticeFeedback.describe(target, feedback!.verdicts[index]!)
         }
@@ -641,24 +651,114 @@ struct PracticeView: View {
     }
 }
 
-/// Bridges the recorder's sample stream to the chord detector. The detector
-/// needs the microphone's sample rate, known only once audio flows, so the
-/// worker is created on the first buffer.
+/// Shows current evidence separately from the most recent chart judgment.
+struct PracticeListeningPanel: View {
+    let expected: String?
+    let snapshot: DrillSnapshot?
+    let inputLevel: Double
+    let lastJudged: String?
+    let error: String?
+    var capo: Int = 0
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    private var matchesExpected: Bool {
+        guard let heard = snapshot?.current.flatMap(Chord.init(display:)),
+              let expected = expected.flatMap(Chord.init(display:)),
+              let mask = PracticeFeedback.mask(heard) else { return false }
+        return mask == PracticeFeedback.mask(expected)
+    }
+
+    private var status: String {
+        if let error { return error }
+        if snapshot?.current != nil { return matchesExpected ? "Matches the chart" : "Chord recognized" }
+        switch snapshot?.evidence {
+        case .chord: return "Confirming chord…"
+        case .uncertain: return "Sound received · finding the chord"
+        default: return "Listening for your next chord"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+             : AnyLayout(HStackLayout(spacing: 20))) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(capo > 0 ? "Sounding" : "Chart").foregroundStyle(Palette.secondaryAlt)
+                    Text(expected ?? "—").font(.title3.bold())
+                }.accessibilityElement(children: .combine)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("Heard").foregroundStyle(Palette.secondaryAlt)
+                    Text(snapshot?.current ?? "—").font(.title3.bold())
+                        .foregroundStyle(snapshot?.current == nil ? Palette.secondaryAlt : matchesExpected ? Color.spotifyGreen : .white)
+                }.accessibilityElement(children: .combine)
+                HStack(spacing: 6) {
+                    Image(systemName: "mic.fill").foregroundStyle(Palette.secondaryAlt)
+                    ProgressView(value: inputLevel).tint(.spotifyGreen).frame(width: 48)
+                }.accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Microphone input")
+                    .accessibilityValue("\(Int(inputLevel * 100)) percent")
+            }
+            Text(status).foregroundStyle(error == nil ? Palette.secondaryAlt : Palette.warning)
+            if error == nil, let lastJudged {
+                Text("Last check: \(lastJudged)").foregroundStyle(Palette.secondaryAlt)
+            }
+        }.font(.caption).frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("live-feedback")
+    }
+}
+
+#if DEBUG
+/// Pure display fixtures: no microphone, Spotify playback, or real takes.
+struct PracticeListeningPreview: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                MusicHeader(title: "Live feedback", subtitle: "Display preview · sample states")
+                sample("Listening", snapshot: nil, level: 0)
+                sample("Finding a chord", snapshot: .init(time: 1, evidence: .uncertain, current: nil, changes: 0), level: 0.28)
+                sample("Recognized", snapshot: .init(time: 2, evidence: .chord("Am"), current: "Am", changes: 0), level: 0.45,
+                       result: "Am matched · near chart change")
+                sample("Detection interrupted", snapshot: nil, level: 0.3,
+                       error: "Live detection unavailable. Your take is still recording.")
+            }.padding(24)
+        }.modifier(MusicSurface())
+    }
+    private func sample(_ title: String, snapshot: DrillSnapshot?, level: Double, result: String? = nil, error: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionLabel(title)
+            PracticeListeningPanel(expected: "Am", snapshot: snapshot, inputLevel: level, lastJudged: result, error: error)
+                .padding(16).background(Palette.card, in: RoundedRectangle(cornerRadius: 16))
+        }
+    }
+}
+#endif
+
+/// Bridges recorded samples to the detector, using the input's actual sample rate.
 private final class FeedbackTap: @unchecked Sendable {
     private let lock = NSLock()
     private var worker: DrillAudioWorker?
     private var failed = false
     private let onSnapshot: @MainActor @Sendable (DrillSnapshot) -> Void
+    private let onFailure: @MainActor @Sendable () -> Void
 
-    init(onSnapshot: @escaping @MainActor @Sendable (DrillSnapshot) -> Void) {
+    init(onSnapshot: @escaping @MainActor @Sendable (DrillSnapshot) -> Void,
+         onFailure: @escaping @MainActor @Sendable () -> Void) {
         self.onSnapshot = onSnapshot
+        self.onFailure = onFailure
     }
 
     func handle(_ samples: UnsafeBufferPointer<Float>, sampleTime: Int64, sampleRate: Double) {
         lock.lock()
         if worker == nil, !failed {
-            do { worker = DrillAudioWorker(detector: try ChordDrillDetector(sampleRate: sampleRate), onSnapshot: onSnapshot) }
-            catch { failed = true }
+            do {
+                // Use the same stable, full-vocabulary recognition as the live
+                // chord tool; transition mixtures must not become wrong verdicts.
+                worker = DrillAudioWorker(detector: try ChordDrillDetector(sampleRate: sampleRate, mode: .practiceFeedback),
+                                          onSnapshot: onSnapshot, onFailure: onFailure)
+            } catch {
+                failed = true
+                DispatchQueue.main.async(execute: onFailure)
+            }
         }
         let worker = worker
         lock.unlock()

@@ -27,7 +27,7 @@ Confirmation permits a one-second lower tolerance and a two-second upper toleran
 
 The Web API does not identify which account device is the physical handset running Chordlyze. The controller prefers the active controllable smartphone, otherwise the only controllable smartphone. If the intended phone is unavailable, open Spotify on it and select it there.
 
-Spotify still owns actual audio playback, device availability and command timing. Network-driven loops are not gapless; this work does not replace audio-based synchronization or remove Bluetooth latency. Physical-phone Spotify playback, audio routing and microphone/practice startup have not been validated by these offline checks.
+Spotify still owns actual audio playback, device availability and command timing. This work does not replace audio-based synchronization or remove Bluetooth latency. Physical-phone Spotify playback, audio routing and microphone/practice startup have not been validated by these offline checks.
 
 ## Verification
 

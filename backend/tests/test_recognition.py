@@ -145,3 +145,23 @@ def test_rich_model_silence_keeps_the_recording_duration(real_rich_result, tmp_p
     assert result.duration == 2
     assert all(s.label == "N" for s in result.segments)
     assert result.segments[-1].end == 2
+
+
+def test_real_model_review_and_passage_do_not_change_normal_decoder(real_rich_result):
+    wav, normal = real_rich_result
+    reviewed = recognize_audio(wav, review=True)
+    assert reviewed.segments == normal.segments
+    assert reviewed.review and all('confidence' not in cue for cue in reviewed.review)
+    local = recognize_audio(wav, review=True, passage=True)
+    assert local.review and local.duration == normal.duration
+    assert recognize_audio(wav).segments == normal.segments, "passage tuning must not leak into later full songs"
+
+
+def test_real_contextual_crop_covers_only_the_requested_passage(real_rich_result):
+    from chordlyze_backend.analysis.passage import recognize_passage
+    wav, normal = real_rich_result
+    result = recognize_passage(wav, {'start': 4, 'end': 12, 'audio_sha256': normal.audio_sha256})
+    assert result['audio_sha256'] == normal.audio_sha256
+    assert result['segments'][0]['start'] == 4 and result['segments'][-1]['end'] == 12
+    assert all(4 <= s['start'] < s['end'] <= 12 for s in result['segments'])
+    assert result['chord_review']

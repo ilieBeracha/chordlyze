@@ -401,6 +401,15 @@ final class SpotifyNowPlaying: ObservableObject {
         throw PlayError.notConfirmed
     }
 
+    /// Casual playing shares Spotify's confirmed transport, without a practice
+    /// session. Keep an already playing song intact and resume a paused one.
+    func playAlong(trackID: String) async throws {
+        let sameSong = playing?.track.id == trackID
+        if sameSong, playing?.isPlaying == true { return }
+        let position = sameSong ? (livePosition() ?? 0) : 0
+        try await play(trackID: trackID, at: position)
+    }
+
     func play(trackID: String, at seconds: Double) async throws {
         guard let service else { throw PlayError.notConnected }
         guard seconds.isFinite, seconds < Double(Int.max / 1000), !trackID.isEmpty else { throw PlayError.invalidPosition }

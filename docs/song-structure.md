@@ -2,8 +2,8 @@
 
 Analysis version 3 adds audio-derived downbeats and complete bars to the chord
 chart. The map button in Sheet and Live opens a native song map. Select a
-recurring section or an inclusive range of numbered bars, then jump to its start,
-loop it during Spotify playback, or open recording setup for that exact passage.
+recurring section or an inclusive range of numbered bars, then jump to its start
+or open recording setup for that exact passage.
 Source-audio boundaries pass through the saved timing calibration when seeking
 Spotify. Static sheets scroll to the selected passage.
 
@@ -43,9 +43,8 @@ grid. If the model returns fewer than two beats, librosa may supply beats alone;
 missing model installation fails explicitly.
 
 Practice count-in, accents and beat dots use the selected bar's detected beat
-count and local interval. Slower practice scales that interval. Spotify loops
-use remote seeks and can have a gap at each repeat; exact chart boundaries do
-not make streaming playback sample-accurate.
+count and local interval. Slower practice scales that interval. Manual Spotify
+seeks use the calibrated chart boundaries; streaming playback is not sample-accurate.
 
 ## Installation and runtime
 
@@ -164,11 +163,19 @@ constant/repeated harmony, audio feature extraction, process reuse, crash
 recovery and timeout cleanup.
 
 The Simulator fixture verified section selection, correct 12–24 second recording
-setup and repeated 0–12 second playback. Launch Debug with
+setup. Looping was removed on September 8, 2026; bar navigation and practice selection remain. Launch Debug with
 `--song-sheet-preview --song-map-preview`, adding
-`--song-sheet-preview-playing` for loops or `--song-map-large-type` for
+`--song-sheet-preview-playing` for playback or `--song-map-large-type` for
 accessibility text. The final accessibility-size visual check was interrupted
 by a locked Mac; real Spotify timing still needs a physical-device check.
 
 Upstream references: [Beat This source and model instructions](https://github.com/CPJKU/beat_this),
 [GuitarSet dataset](https://guitarset.weebly.com/).
+
+## Loop removal validation — September 8, 2026
+
+Removed A–B controls, line/bar loop actions, repeat seeks and shared loop state.
+All 1,212 song/playback checks pass and the Debug simulator build succeeds.
+The installed offline fixture showed no repeat control while playing; its map
+retains Go to start and Record selected bars. Selecting Section B opened practice
+setup at 0:12–0:24 without starting playback or microphone capture.

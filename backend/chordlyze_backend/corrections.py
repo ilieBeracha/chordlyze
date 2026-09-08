@@ -36,6 +36,10 @@ def apply(chart: dict, overlay: dict | None) -> dict:
             originals = [s for s in chart["chords"] if s["start"] <= segment["start"] and s["end"] >= segment["end"]]
             if len(originals) == 1 and originals[0]["label"] != segment["label"]:
                 segment["original_label"] = originals[0]["label"]
+    from .analysis.review import matching_review
+    evidence = active.get('review', chart.get('chord_review')) if active else chart.get('chord_review')
+    if evidence is not None:
+        result['chord_review'] = matching_review(evidence, result['chords'])
     result["chart_revision"] = revision(result)
     result["corrections_stale"] = stale
     result["can_undo"] = bool(active and active.get("history"))
@@ -45,6 +49,8 @@ def apply(chart: dict, overlay: dict | None) -> dict:
 
 def commit(chart: dict, current: dict, overlay: dict | None, segments: list[dict]) -> dict:
     history = list(overlay.get("history", [])) if overlay and overlay.get("base_revision") == revision(chart) else []
+    review_history = list(overlay.get("review_history", [None] * len(history))) if overlay and overlay.get("base_revision") == revision(chart) else []
     if raw(current["chords"]) != raw(segments):
         history = (history + [raw(current["chords"])])[-10:]
-    return {"base_revision": revision(chart), "segments": raw(segments), "history": history}
+        review_history = (review_history + [current.get("chord_review")])[-10:]
+    return {"base_revision": revision(chart), "segments": raw(segments), "history": history, "review": current.get("chord_review", []), "review_history": review_history}

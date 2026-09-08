@@ -40,8 +40,8 @@ committing. A cancellation racing an already completed commit may still have
 saved; the next status read reconciles the authoritative state.
 
 Accepted maps are account-specific and identify the chart revision, audio hash
-and Spotify track. The shared song document applies them to Sheet, Live, seeking,
-loops and new practice recordings. A changed chart disables incompatible timing
+and Spotify track. The shared song document applies them to Sheet, Live, seeking
+and new practice recordings. A changed chart disables incompatible timing
 instead of continuing to use a stale map. Undoing the edit can restore its match.
 Maps survive reconnects through the existing playback clock/status polling.
 They do not continuously reopen the microphone or silently adjust during practice.

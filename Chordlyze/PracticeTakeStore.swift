@@ -69,6 +69,17 @@ final class PracticeTakeStore: ObservableObject {
     }
 
     func audioURL(_ take: PracticeTake) -> URL { folder(take).appendingPathComponent("audio.m4a") }
+
+    /// Song identity is the track ID, never a title shared by different recordings.
+    /// Library and song pages read the same files and preserve newest-first order.
+    func recordings(for songID: String? = nil, matching query: String = "") -> [PracticeTake] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return takes.filter { take in
+            (songID == nil || take.song.id == songID)
+                && (query.isEmpty || take.song.title.localizedStandardContains(query)
+                    || take.song.artist.localizedStandardContains(query))
+        }
+    }
     private func folder(_ take: PracticeTake) -> URL { directory.appendingPathComponent(take.id.uuidString) }
 
     func reload() {

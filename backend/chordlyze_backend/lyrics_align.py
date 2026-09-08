@@ -155,6 +155,67 @@ def time_lines(lines: list[str], transcript: list[dict]) -> tuple[list[dict], in
     return result, matched, len(lyric)
 
 
+
+def complete_lyrics(catalog: dict, aligned: list[dict]) -> tuple[list[dict], str | None]:
+    """Keep every catalog line, using recording times only for matched text.
+
+    Missing text gets line-level timing, never invented word stamps. Interpolate
+    between recording anchors; use their nearest offset at the edges. The note
+    makes these estimates explicit. Matching is ordered and occurrence-aware.
+    """
+    import bisect
+    import copy
+    source = [line for line in catalog.get('lines', []) if line.get('text', '').strip()]
+    if not source:
+        return copy.deepcopy(aligned), None
+    norm = lambda text: ' '.join(text.split()).casefold()
+    a = [norm(line['text']) for line in source]
+    b = [norm(line['text']) for line in aligned]
+    pairs = {}
+    for block in SequenceMatcher(None, a, b, autojunk=False).get_matching_blocks():
+        for offset in range(block.size):
+            pairs[block.a + offset] = block.b + offset
+    # A different catalog edition must not absorb unrelated transcript text.
+    if len(pairs) != len(aligned):
+        result = copy.deepcopy(source)
+        for line in result:
+            line.pop('words', None)
+        return result, 'Approximate lyric timing: complete catalog text retained.'
+    result = [copy.deepcopy(aligned[pairs[i]]) if i in pairs else copy.deepcopy(line)
+              for i, line in enumerate(source)]
+    anchors = sorted(pairs)
+    for i, line in enumerate(result):
+        if i in pairs:
+            # Partial word arrays must never hide words still present in line text.
+            words = line.get('words') or []
+            if words and norm(' '.join(w['text'] for w in words)) != norm(line['text']):
+                line.pop('words', None)
+            continue
+        line.pop('words', None)
+        k = bisect.bisect_left(anchors, i)
+        before = anchors[k-1] if k else None
+        after = anchors[k] if k < len(anchors) else None
+        t = float(source[i]['time'])
+        if before is not None and after is not None:
+            ca, cb = float(source[before]['time']), float(source[after]['time'])
+            share = (t-ca)/(cb-ca) if cb > ca else (i-before)/(after-before)
+            t = result[before]['time'] + share*(result[after]['time']-result[before]['time'])
+        elif before is not None:
+            t += result[before]['time'] - float(source[before]['time'])
+        elif after is not None:
+            t += result[after]['time'] - float(source[after]['time'])
+        line['time'] = round(max(0, t), 3)
+    # Conflicting anchors cannot provide a safe mixed timeline. Preserve the
+    # complete catalog instead, rather than dropping or reordering its text.
+    if any(x['time'] >= y['time'] for x, y in zip(result, result[1:])):
+        result = copy.deepcopy(source)
+        for line in result:
+            line.pop('words', None)
+        return result, 'Approximate lyric timing: complete catalog text retained.'
+    approximate = len(pairs) != len(source) or any(not line.get('words') for line in result)
+    return result, 'Some lyric timing is approximate; all catalog lines are included.' if approximate else None
+
+
 def transcribe_words(audio: Path, language: str | None) -> list[dict]:
     """Word-timed transcript: [{'start', 'text', 'p', 'segment'}, ...] from the
     configured transcriber."""

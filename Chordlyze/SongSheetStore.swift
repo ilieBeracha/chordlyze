@@ -20,6 +20,7 @@ final class SongSheetStore: ObservableObject {
         var synchronize: (String, [BackendClient.SyncClip], String, String) async throws -> SongStatus = {
             try await BackendClient.synchronize(trackID: $0, clips: $1, chartRevision: $2, timingRevision: $3)
         }
+        var applyPassage: (String, PassageJob) async throws -> SongStatus = { try await BackendClient.applyPassage(trackID: $0, job: $1) }
         var correctChord: (String, ChordSegment, String?, String) async throws -> SongStatus = {
             try await BackendClient.correctChord(trackID: $0, segment: $1, name: $2, revision: $3)
         }
@@ -61,9 +62,6 @@ final class SongSheetStore: ObservableObject {
     @Published private(set) var timingError: String?
     @Published private(set) var timingIsStale = false
     private(set) var timingRevision: String?
-    /// Live A–B repeat in chart time. On the document, not the view, so a
-    /// blink in Spotify's poll that rebuilds Live does not drop it.
-    @Published var loop: ClosedRange<Double>?
     @Published private(set) var capo = 0
     private(set) var lyricsResult: BackendClient.LyricsResult?
     private var service: Service
@@ -210,6 +208,13 @@ final class SongSheetStore: ObservableObject {
         try await commitChange { try await self.service.correctChord(self.song.id, segment, name, expectedRevision) }
     }
 
+    func applyPassage(_ job: PassageJob) async throws {
+        guard analysis?.chartRevision == job.chartRevision else {
+            throw BackendError(status: 409, detail: "The chart changed. Reanalyze the passage before applying it.")
+        }
+        try await commitChange { try await self.service.applyPassage(self.song.id, job) }
+    }
+
     func editBoundary(_ edit: BackendClient.BoundaryEdit) async throws {
         guard analysis?.chartRevision == edit.chartRevision else {
             throw BackendError(status: 409, detail: "The chart changed. Reopen the chord before editing.")
@@ -313,7 +318,11 @@ final class SongSheetStore: ObservableObject {
             lines = aligned.lines
             lyricsLoading = false
             lyricsFailed = false
-            lyricsNote = aligned.matched == "transcribed" ? "Transcribed from the recording" : "Lyrics timed from the recording"
+            let incompleteWords = aligned.lines.enumerated().contains { index, line in
+                !line.text.isEmpty && SheetModel.completeWords(line, before: index + 1 < aligned.lines.count ? aligned.lines[index + 1].time : .infinity) == nil
+            }
+            lyricsNote = aligned.timingNote ?? (incompleteWords ? "Some lyric timing is approximate." :
+                aligned.matched == "transcribed" ? "Transcribed from the recording" : "Lyrics timed from the recording")
         }
         state = status.job.state
         if let flag = status.saved { saved = flag }

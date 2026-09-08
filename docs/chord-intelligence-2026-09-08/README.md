@@ -1,0 +1,41 @@
+# Chord recognition and passage review
+
+## Using it
+
+- Practice → **Recognize a chord** → **Listen** recognizes a held instrument chord on the phone. The sign-in screen also offers this tool without an account. Opening it does not activate the microphone. Stop, leaving the screen, backgrounding, interruptions and route changes release the microphone. Audio is neither saved nor uploaded. Recent confirmed changes are capped at 12; tap a chord to see its fingering.
+- Song sheet → **Correct chords** → **Show uncertain chords only** filters occurrences with review evidence. Open an occurrence to see acoustic alternatives. Selecting one fills the editor; **Save** remains explicit. Older charts have no such evidence until a new analysis or a passage reanalysis provides it.
+- **Correct chords → Reanalyze a passage** accepts 2–30 seconds on the original recording timeline. It retrieves the matching recording, analyzes a crop with four seconds of context on either side, and presents the current/proposed chords. **Apply passage changes** updates only the personal chart; **Undo last edit** restores the prior chart. Opening or reopening only reads status; it never starts preparation.
+
+## Behavior and limits
+
+The live detector reuses the deterministic NNLS pitch/chord classifier and bounded DSP worker used for practice. It rejects silence and ambiguous input instead of keeping the last chord on screen. It works best with one clearly held instrument; its synthetic regression tests are not a claim of accuracy for every instrument, room or playing style. Explicitly starting microphone capture may interrupt other playback.
+
+Review alternatives are ranked by mean acoustic log support from the pinned ISMIR ensemble over the decoded interval. A disagreement with the temporal decoder, a close leading alternative, or a very short change flags review. These are heuristic review cues, not calibrated confidence percentages. Manual label/boundary changes discard cues that no longer match. Undo restores the previous cues.
+
+The passage decoder uses the same verified weights, with a transition penalty of 10 instead of 30 to allow more local changes. The normal penalty is explicitly restored on every ordinary inference request. This can produce a different proposal, not necessarily a better one; nothing applies automatically. The entire recording must still be retrieved and decoded to verify its exact PCM SHA-256 identity. Only the contextual crop enters chord inference. A different recording is rejected without changing the chart.
+
+Passage jobs reuse the durable leased song queue and existing worker. No extra worker, model download, isolation component or audio cache is introduced. Jobs are private to account and track, scoped to the library generation, limited to 3 pending per account and 12 globally. Chart revision and recording identity are checked before applying. All intervals different from the base analysis are preserved, including prior accepted passage edits. A repeat Apply after a lost response is idempotent. Status is rediscovered after relaunch; transient reads retry three times before exposing Check status. Provider delays can still delay preparation. Cancel preparation invalidates the lease and permits a fresh request; an old worker result cannot publish afterward.
+
+## Validation
+
+Backend coverage includes the HTTP lifecycle, per-account isolation, range/identity/revision/lease checks, manual and boundary edit preservation, undo with evidence, worker cleanup, cancellation, crop mapping, and inference with the actual pinned weights. Swift checks cover read-only reopening, no duplicate requests, bounded failure retries, lost-response discovery and rejection of late cancelled results, alongside the existing song/playback and audio suites. Debug-only screenshot fixtures use authored charts and injected services; they cannot publish or fetch real songs.
+
+Debug previews: `--chord-recognition-preview`, or `--song-sheet-preview --passage-preview`, or `--song-sheet-preview --chord-corrections-preview`.
+
+Verified on September 8, 2026: 395 backend tests passed, with 17 existing expected model limitations; 1,212 song/playback checks; 346 detector, 43 audio-worker, 6 input-format and 27 practice-feedback checks. Practice take/report/metronome suites also passed. Simulator Debug and iPhone Release builds succeeded. Simulator screenshots confirm the idle recognition screen and passage selection/comparison layout; physical microphone behavior still needs a check with the user's instrument.
+
+## Live transition stability fix
+
+**Subsequent practice update:** song practice now shares this stable 250 ms policy and adaptive sensitivity. Paired drills retain 70 ms confirmation with the same improved soft-input gate. The historical milestone below describes the original standalone-only release. See [practice improvements](../practice-improvements-2026-09-08/README.md).
+
+Standalone microphone recognition now selects `ChordDrillDetector.Mode.liveRecognition`, requiring 250 ms of consecutive chord evidence before accepting a new label. The default and paired-drill modes retain their 70 ms timing, including practice feedback timestamps. Quiet input, uncertain evidence, changed candidates, resets and sample gaps break confirmation; elapsed time across a gap cannot promote an old guess. Recent chords receives confirmed labels only.
+
+During a transition the card retains the last confirmed chord in secondary text color with “Listening · last confirmed chord.” This is explicitly historical, not a fresh detection. Before any confirmation it shows “Confirming chord…” or uncertain status; quiet input and stopping clear the card. Brief provisional labels never replace the main chord or enter history.
+
+`tests/LiveChordRecognitionTests.swift`, run by `scripts/test_drill.sh`, adds 995 assertions across 44.1/48 kHz, continuous Am–C–G changes, varied strums and release tails, one-second changes, brief F7/Cmaj7/Dm9/C°7/Cm bursts, genuine held F7/Cmaj7/D7/Cm/Dm9/C°7 chords and C–Cmaj7–C changes, silence, restarts, sample gaps, and unchanged practice-policy timestamps. The focused suite and iPhone Release build pass. First confirmation of the tested held chords remains below 850 ms; the fix adds approximately 190 ms relative to the former policy in the initial probe. This addresses reproduced transient insertions, not every possible acoustic misclassification; the user's exact recording was unavailable.
+
+## Soft chord sensitivity fix
+
+Live recognition now starts with a lower noise floor and learns rising background levels from non-tonal input. A fading tonal chord cannot raise its own noise gate. A lower continuation threshold lets the same candidate finish confirmation as a strum decays; a different candidate must meet the entry threshold and complete a fresh 250 ms confirmation. A sharp drop in level resets pending evidence so an abruptly muted chord cannot confirm from leftover FFT samples. Practice feedback retains its previous thresholds and timing.
+
+The live suite now passes 1,147 checks, including soft held and decaying Am/C/G at 44.1/48 kHz, background noise, soft chords over noise, abrupt muting, and single-note rejection. The full drill script also passes 346 detector, 43 worker, 6 input-format checks and 3 benchmark tests. These synthetic regressions demonstrate the targeted behavior, not universal microphone accuracy. The Debug simulator build succeeded and was installed in the Chordlyze redesign review simulator; recognition reopened at Ready/Listen without starting capture.

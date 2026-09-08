@@ -173,12 +173,14 @@ def test_worker_times_only_untimed_catalog_lyrics(tmp_path):
     plain = {'synced': False, 'lines': [{'time': 12, 'text': 'Come up to meet you'}, {'time': 40, 'text': 'Tell you I need you'}]}
     client = Client(plain)
     assert song_worker.attach_lyrics(client, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'aligned'
-    assert client.posted == [('/internal/jobs/lyrics', {'track_id': 'song', 'library_generation': 'gen',
-                                                         'lines': aligned, 'aligner': lyrics_align.ALIGNER})]
+    repaired = client.posted[0][1]
+    assert [line['text'] for line in repaired['lines']] == [line['text'] for line in plain['lines']]
+    assert repaired['lines'][0]['time'] == 27.4 and 'words' not in repaired['lines'][0]
+    assert repaired['timing_note'] and repaired['aligner'].endswith('+complete-v2')
     # Catalog line times are not word times: synced lines are aligned too.
     synced = Client({'synced': True, 'lines': plain['lines']})
     assert song_worker.attach_lyrics(synced, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'aligned'
-    assert synced.posted and synced.posted[0][1]['lines'] == aligned
+    assert synced.posted and len(synced.posted[0][1]['lines']) == 2
     worded = Client({'synced': True, 'lines': [{'time': 12, 'text': 'Come up to meet you', 'words': [{'time': 12, 'text': 'Come'}]}]})
     assert song_worker.attach_lyrics(worded, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'synced'
     instrumental = Client({'synced': True, 'instrumental': True, 'lines': []})
@@ -234,7 +236,7 @@ def test_published_chart_hands_audio_to_the_aligner(monkeypatch, tmp_path, capsy
     audio = tmp_path / 'song.mp3'; audio.write_bytes(b'x')
     monkeypatch.setattr(song_worker, 'fetch_full_track', lambda *a, **kw: audio)
     monkeypatch.setattr(song_worker, 'recognize_audio', lambda *a, **kw: types.SimpleNamespace(
-        duration=200.0, segments=[], metadata=lambda: {'model': 'ismir2019'}))
+        duration=200.0, segments=[], review=[], metadata=lambda: {'model': 'ismir2019'}))
     monkeypatch.setattr(song_worker, 'track_beats', lambda path: None)
     handed = []
     class Aligner:
@@ -351,7 +353,7 @@ def test_lyrics_lookup_retries_a_503_and_lines_are_made_publishable(tmp_path):
     assert outcome == 'aligned' and waits == [song_worker.LYRICS_LOOKUP_PAUSE] * 2
     posted = client.posted[0][1]['lines']
     assert [line['time'] for line in posted] == [27.4, 40], 'lines are in time order and blank lines dropped'
-    assert posted[0]['words'] == [{'time': 27.4, 'text': 'Come'}], 'empty words are dropped'
+    assert 'words' not in posted[0] and posted[0]['text'] == 'Come up', 'partial timing cannot hide the remaining word'
     assert 'words' not in posted[1] or posted[1]['words'] == [{'time': 40.0, 'text': 'Second'}]
     always_down = Flaky(None)
     answers[:] = [urllib.error.HTTPError('u', 503, 'down', {}, None)] * 3
@@ -359,3 +361,50 @@ def test_lyrics_lookup_retries_a_503_and_lines_are_made_publishable(tmp_path):
         song_worker.attach_lyrics(always_down, SONG, tmp_path / 'a.mp3', 'gen',
                                   align=lambda *a, **k: aligned, sleep=waits.append)
     assert len(waits) == 4, 'three attempts, then the error surfaces'
+
+
+def test_complete_lyrics_recovers_edges_and_internal_missing_lines():
+    catalog = {'synced': True, 'lines': [{'time': i*5, 'text': text} for i, text in enumerate(
+        ['Opening phrase', 'First anchor', 'Middle phrase', 'Second anchor', 'Closing phrase'])]}
+    aligned = [{'time': 6, 'text': 'First anchor', 'words': words('First anchor', 6)},
+               {'time': 16, 'text': 'Second anchor', 'words': words('Second anchor', 16)}]
+    # Production stamps use time, not the transcriber's start field.
+    for line in aligned:
+        line['words'] = [{'time': w['start'], 'text': w['text'], 'end': w['end']} for w in line['words']]
+    result, note = lyrics_align.complete_lyrics(catalog, aligned)
+    assert [x['text'] for x in result] == [x['text'] for x in catalog['lines']]
+    assert [x['time'] for x in result] == [1, 6, 11, 16, 21]
+    assert result[1] == aligned[0] and result[3] == aligned[1]
+    assert all('words' not in result[i] for i in (0, 2, 4)) and note
+    assert catalog['lines'][0]['time'] == 0, 'input is never mutated'
+
+
+def test_complete_lyrics_keeps_repeated_occurrences():
+    catalog = {'synced': True, 'lines': [{'time': i*5, 'text': text} for i, text in enumerate(
+        ['Opening', 'Repeat', 'Between', 'Repeat', 'Ending'])]}
+    aligned = [{'time': 6, 'text': 'Repeat'}, {'time': 11, 'text': 'Between'}, {'time': 16, 'text': 'Repeat'}]
+    result, note = lyrics_align.complete_lyrics(catalog, aligned)
+    assert [x['text'] for x in result] == ['Opening', 'Repeat', 'Between', 'Repeat', 'Ending']
+    assert [x['time'] for x in result] == [1, 6, 11, 16, 21] and note
+
+
+def test_complete_lyrics_cannot_hide_partial_words_or_discard_unrelated_text():
+    catalog = {'synced': True, 'lines': [{'time': 2, 'text': 'Keep every word'}]}
+    result, note = lyrics_align.complete_lyrics(catalog, [{'time': 3, 'text': 'Keep every word', 'words': [{'time': 3, 'text': 'Keep'}]}])
+    assert result == [{'time': 3, 'text': 'Keep every word'}] and note
+    result, note = lyrics_align.complete_lyrics(catalog, [{'time': 20, 'text': 'Different edition'}])
+    assert result == catalog['lines'] and note
+
+
+def test_complete_lyrics_falls_back_when_anchors_conflict():
+    catalog = {'synced': True, 'lines': [{'time': 2, 'text': 'First'}, {'time': 4, 'text': 'Second'}]}
+    result, note = lyrics_align.complete_lyrics(catalog, [{'time': 10, 'text': 'First'}, {'time': 5, 'text': 'Second'}])
+    assert result == catalog['lines'] and note
+
+
+def test_complete_lyrics_retains_complete_alignment_unchanged():
+    catalog = {'synced': True, 'lines': [{'time': 2, 'text': 'First'}, {'time': 4, 'text': 'Second'}]}
+    aligned = [{'time': 3, 'text': 'First', 'words': [{'time': 3, 'text': 'First'}]},
+               {'time': 5, 'text': 'Second', 'words': [{'time': 5, 'text': 'Second'}]}]
+    result, note = lyrics_align.complete_lyrics(catalog, aligned)
+    assert result == aligned and note is None

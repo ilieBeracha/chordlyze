@@ -27,6 +27,8 @@ private let latency = PracticeFeedback.detectorLatency
         check(feedback.observe(current: "G", chartTime: 8.5 + latency) == nil, "A sustained chord is not a second strum")
         guard case .hit(let offset)? = feedback.verdicts[1] else { fatalError("G should be a hit") }
         check(abs(offset - 0.1) < 1e-9, "Offset is measured from the chart change with detector latency removed")
+        check(feedback.verdicts[2] == nil, "A later bass change cannot be credited before it is heard")
+        check(feedback.observe(current: "G", chartTime: 12.1 + latency) == 2, "Sustaining into the next target earns held feedback")
         check(feedback.verdicts[2] == .held, "The same chord over a bass change is held, not demanded again")
         check(feedback.verdict(startingAt: 12) == .held && feedback.verdict(startingAt: 99) == nil, "Verdicts are looked up by chart start")
 
@@ -66,6 +68,25 @@ private let latency = PracticeFeedback.detectorLatency
         slowed.observe(current: "G", chartTime: 8 + (0.4 + latency) * 0.5, chartRate: 0.5)
         guard case .hit(let slowOffset)? = slowed.verdicts[1] else { fatalError("Expected slow G") }
         check(abs(slowOffset - 0.4) < 1e-8, "Detector correction and reported offset use real seconds at half speed")
+        var stable = PracticeFeedback(chords: chart, start: 0, end: 20)
+        stable.observe(current: "G", chartTime: 10, chartRate: 0.5, recognizedAt: 8.265, detectorLatency: 0.53)
+        guard case .hit(let stableOffset)? = stable.verdicts[1] else { fatalError("Expected latency-adjusted G") }
+        check(abs(stableOffset) < 1e-8, "Longer confirmation is compensated in audio time, including slowed practice")
+
+        let analysis = try! JSONDecoder().decode(ChordAnalysis.self, from: Data("""
+        {"chords":[{"start":0.08,"end":2.08,"label":"C:maj"},{"start":2.08,"end":4.08,"label":"G:maj"}],
+         "analyzed_end":4.08,"tempo":{"bpm":120,"beats":[0,0.5,1,1.5,2,2.5,3,3.5,4]}}
+        """.utf8))
+        let events = SheetModel.events(analysis)
+        check(events[1].start != analysis.chords[1].start, "Regression fixture actually snaps the displayed chord")
+        var aligned = PracticeFeedback(analysis: analysis, start: 0, end: 4.08)
+        aligned.heard("G", at: events[1].start)
+        check(aligned.verdict(startingAt: events[1].start) == .hit(offset: 0), "Visible beat-aligned chip finds its feedback")
+        check(aligned.targets.map(\.start) == events.map(\.start), "Practice and chart share exact event identities")
+        var stopped = PracticeFeedback(chords: segments([(0, 2, "C:maj"), (2, 4, "C:maj")]), start: 0, end: 4)
+        stopped.observe(current: "C", chartTime: latency)
+        stopped.observe(current: nil, chartTime: 2.1 + latency)
+        check(stopped.judged.count == 1 && stopped.verdict(startingAt: 2) == nil, "Stopping before a repetition never earns a future hit")
         print("Practice feedback: \(checks)/\(checks) checks passed")
     }
 }

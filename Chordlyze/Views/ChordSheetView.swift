@@ -2,29 +2,35 @@ import SwiftUI
 
 /// The song page: one song document, the rows Live and Practice use, at
 /// Live's size. When Spotify has the song up the page follows it in place:
-/// sounding chord bright, sung words lit, loop and seek by tapping a line.
-/// The header holds the chord-shape rail toggle and, while playing, the loop.
+/// sounding chord bright, sung words lit, and seeking by tapping a line.
+/// The header holds playback and a menu for secondary song actions.
 struct AnalysisTabsView: View {
     @StateObject private var store: SongSheetStore
+    @ObservedObject private var takes: PracticeTakeStore
     @State private var selectedChord: SelectedChord?
     @State private var showSettings = false
     @State private var showSongMap = false
+    @State private var showPractice = false
+    @State private var showRecordings = false
     @State private var navigationTime: Double?
     @State private var practiceRange: ClosedRange<Double>?
     @State private var lastPosition = 0.0
     @State private var seekDenied = false
-    /// A–B repeat: the range lives on the store; only the arming is view state.
-    @State private var loopStart: Double?
-    @State private var loopArmed = true
+    @State private var startingPlayback = false
+    @State private var playbackError: String?
+    @State private var needsPlaybackDevice = false
+    @Environment(\.openURL) private var openURL
     @AppStorage("chordLead") private var lead = 0.0
     @AppStorage("chordRail") private var showRail = false
 
     /// The Spotify poller behind seeks and calibration; the offline fixture passes its own.
     @ObservedObject var nowPlaying: SpotifyNowPlaying
 
-    @MainActor init(song: SongDescriptor, store: SongSheetStore? = nil, nowPlaying: SpotifyNowPlaying? = nil) {
+    @MainActor init(song: SongDescriptor, store: SongSheetStore? = nil, nowPlaying: SpotifyNowPlaying? = nil,
+                    takes: PracticeTakeStore? = nil) {
         _store = StateObject(wrappedValue: store ?? SongSheetStore.shared(for: song))
         _nowPlaying = ObservedObject(wrappedValue: nowPlaying ?? .shared)
+        self.takes = takes ?? .shared
     }
 
     /// Spotify has this song up, playing or paused, whoever started it.
@@ -37,23 +43,14 @@ struct AnalysisTabsView: View {
         VStack(spacing: 0) {
             SongSheetHeader(store: store) {
                 if store.canPractice {
-                    HeaderCircle(icon: "guitars", on: showRail, label: showRail ? "Hide chord shapes" : "Show chord shapes",
-                                 identifier: "chord-rail-toggle") {
-                        withAnimation(.easeInOut(duration: 0.25)) { showRail.toggle() }
-                    }
-                    if let grid = beatGrid, !grid.bars.isEmpty {
-                        HeaderCircle(icon: "map", on: false, label: "Song map and bar loops", identifier: "song-map") {
-                            showSongMap = true
-                        }
-                    }
-                    if songIsUp {
-                        HeaderCircle(icon: "repeat", on: store.loop != nil || loopStart != nil,
-                                     label: store.loop != nil ? "Clear loop" : loopStart == nil ? "Loop from here" : "Loop until here",
-                                     identifier: store.loop != nil ? "loop-active" : "loop-start") {
-                            loopTapped(at: lastPosition)
-                        }
-                    }
+                    HeaderCircle(icon: startingPlayback || nowPlaying.isControlling ? "ellipsis" : songIsUp && nowPlaying.playing?.isPlaying == true ? "waveform" : "play.fill",
+                                 on: true, label: songIsUp && nowPlaying.playing?.isPlaying == true ? "Open playback controls in Spotify" : songIsUp ? "Resume song" : "Play along",
+                                 identifier: "song-play-along") {
+                        if songIsUp && nowPlaying.playing?.isPlaying == true { openSpotify() }
+                        else { startPlayingAlong() }
+                    }.disabled(startingPlayback || nowPlaying.isControlling)
                 }
+                songMenu
             }
             if songIsUp {
                 TimelineView(.periodic(from: .now, by: 0.1)) { _ in
@@ -63,7 +60,6 @@ struct AnalysisTabsView: View {
                     page(playhead: position, wordPlayhead: wordPosition)
                         .onChange(of: wordPosition) { _, value in
                             lastPosition = value
-                            loopCheck(at: value)
                         }
                 }
             } else {
@@ -77,17 +73,22 @@ struct AnalysisTabsView: View {
         .sheet(isPresented: $showSongMap) {
             if let grid = beatGrid {
                 SongMapSheet(grid: grid, position: lastPosition, onJump: { time in
-                    store.loop = nil; loopStart = nil
                     navigationTime = nil
                     Task { @MainActor in
                         navigationTime = time
                         if songIsUp { seekDenied = !(await nowPlaying.seek(to: store.timing.spotifyTime(time))) }
                     }
-                }, onLoop: songIsUp ? { range in
-                    store.loop = range; loopStart = nil; loopArmed = true
-                    Task { seekDenied = !(await nowPlaying.seek(to: store.timing.spotifyTime(range.lowerBound))) }
-                } : nil, onPractice: { practiceRange = $0 })
+                }, onPractice: { practiceRange = $0 })
             }
+        }
+        .navigationDestination(isPresented: $showPractice) {
+            if let chart = store.analysis {
+                PracticeView(analysis: chart, title: store.song.title, artist: store.song.artist,
+                             album: store.song.album, trackID: store.song.id, songStore: store, nowPlaying: nowPlaying)
+            }
+        }
+        .navigationDestination(isPresented: $showRecordings) {
+            RecordingsView(song: store.song, takes: takes)
         }
         .sheet(isPresented: $showSettings) { SongPlayingSettings(store: store, nowPlaying: nowPlaying) }
         .navigationDestination(isPresented: Binding(get: { practiceRange != nil },
@@ -97,26 +98,31 @@ struct AnalysisTabsView: View {
                     album: store.song.album, trackID: store.song.id, songStore: store, initialRange: range, nowPlaying: nowPlaying)
             }
         }
-        .onChange(of: songIsUp) { _, up in if !up { loopStart = nil } }
         .observes(store)
+        .onAppear { takes.reload() }
     }
 
-    /// Rail, toolbar, status, the chart, and while playing the time line.
+    /// Optional diagrams, status, the chart, and while playing the time line.
     /// `playhead` is the chart second Spotify is at plus the display lead;
     /// `wordPlayhead` the same without the lead.
     private func page(playhead: Double?, wordPlayhead: Double?) -> some View {
         let activeID = wordPlayhead.flatMap { SheetModel.activeRow(store.rows, at: $0)?.id }
         return VStack(spacing: 0) {
-            if showRail, store.canPractice {
-                ChordRailView(events: SheetModel.events(store.analysis), position: playhead ?? 0, transposeBy: store.shift,
-                              onTap: { selectedChord = SelectedChord(name: $0) })
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        if store.canPractice { toolbar(playhead: playhead) }
-                        SongSheetStatus(store: store)
+                        if showRail, store.canPractice {
+                            ChordRailView(events: SheetModel.events(store.analysis), position: playhead ?? 0, transposeBy: store.shift,
+                                          onTap: { selectedChord = SelectedChord(name: $0) })
+                                .padding(.horizontal, -24)
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                        if nowPlaying.isControlling || playbackError != nil || store.saveError != nil || nowPlaying.controlMessage != nil || needsPlaybackDevice {
+                            playbackStatus
+                        }
+                        if store.actionTitle != nil || !store.message.isEmpty || store.lyricsLoading || (store.lyricsFailed && store.lyricsNote != nil) {
+                            SongSheetStatus(store: store)
+                        }
                         ChordSheetView(store: store, playhead: playhead, style: .live,
                                        onChordTap: { selectedChord = SelectedChord(name: $0) },
                                        onRowTap: songIsUp ? { row in
@@ -124,9 +130,6 @@ struct AnalysisTabsView: View {
                                        } : nil,
                                        onPracticeRow: store.canPractice ? { row in
                                            practiceRange = row.start...min(row.end, store.analysis?.coverageEnd ?? row.end)
-                                       } : nil,
-                                       onLoopRow: songIsUp ? { row in
-                                           store.loop = row.start...max(row.start + 1, row.end); loopStart = nil; loopArmed = true
                                        } : nil,
                                        wordPlayhead: wordPlayhead)
                     }
@@ -147,96 +150,90 @@ struct AnalysisTabsView: View {
             }
             if let playhead {
                 HStack(spacing: 12) {
+                    Button { openSpotify() } label: {
+                        Image(systemName: "music.note").frame(width: 44, height: 44)
+                    }.tint(.spotifyGreen).accessibilityLabel("Open playback controls in Spotify")
                     Text(mmss(playhead)).font(.system(size: 13, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white).accessibilityIdentifier("live-position")
                     ProgressView(value: playhead, total: max(1, duration)).tint(.spotifyGreen)
-                    loopChip
                 }
                 .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 24)
             }
         }
     }
 
-    /// One row under the header: practice, key and capo, save. The page
-    /// follows the song when it plays in Spotify; it does not start playback
-    /// itself.
-    private func toolbar(playhead: Double?) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                if let chart = store.analysis {
-                    NavigationLink {
-                        PracticeView(analysis: chart, title: store.song.title, artist: store.song.artist,
-                                     album: store.song.album, trackID: store.song.id, songStore: store, nowPlaying: nowPlaying)
-                    } label: { tool("Practice") }
-                    .buttonStyle(.plain)
+    /// Secondary actions stay labeled in one menu, outside the reading area.
+    private var songMenu: some View {
+        Menu {
+            if store.canPractice {
+                Button("Practice", systemImage: "guitars") { showPractice = true }
+                    .accessibilityIdentifier("song-practice")
+                Button("Key & capo", systemImage: "slider.horizontal.3") { showSettings = true }
+                Button(showRail ? "Hide chord diagrams" : "Show chord diagrams", systemImage: "rectangle.grid.1x2") {
+                    withAnimation(.easeInOut(duration: 0.25)) { showRail.toggle() }
+                }.accessibilityIdentifier("chord-rail-toggle")
+                if let grid = beatGrid, !grid.bars.isEmpty {
+                    Button("Song map", systemImage: "map") { showSongMap = true }
+                        .accessibilityIdentifier("song-map")
                 }
-                Button { showSettings = true } label: { tool("Key & capo") }.buttonStyle(.plain)
-                Button {
-                    Task { await store.setSaved(!store.saved) }
-                } label: {
-                    Image(systemName: store.saved ? "bookmark.fill" : "bookmark")
-                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(store.saved ? Color.spotifyGreen : .white)
-                        .frame(width: 44, height: 42)
-                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.card))
-                }
-                .buttonStyle(.plain).accessibilityIdentifier("save-toggle")
             }
+            Button(store.saved ? "Remove from saved songs" : "Save song", systemImage: store.saved ? "bookmark.fill" : "bookmark") {
+                Task { await store.setSaved(!store.saved) }
+            }.accessibilityIdentifier("save-toggle")
+            let recordings = takes.recordings(for: store.song.id)
+            if !recordings.isEmpty {
+                Button("Recordings (\(recordings.count))", systemImage: "waveform") { showRecordings = true }
+                    .accessibilityIdentifier("song-recordings")
+            }
+            Button("Open in Spotify", systemImage: "arrow.up.forward.app", action: openSpotify)
+        } label: {
+            Image(systemName: "ellipsis").font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white).frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }.accessibilityLabel("Song options").accessibilityIdentifier("song-options")
+    }
+
+    private var playbackStatus: some View {
+        VStack(alignment: .leading, spacing: 8) {
             if nowPlaying.isControlling {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Waiting for Spotify…").font(.footnote).foregroundStyle(Palette.secondary)
                 }.accessibilityIdentifier("spotify-control-pending")
             }
-            if let note = store.saveError ?? nowPlaying.controlMessage {
+            if let note = playbackError ?? store.saveError ?? nowPlaying.controlMessage {
                 Text(note).font(.footnote).foregroundStyle(Palette.warning)
             }
-        }
-    }
-
-    private func tool(_ title: String) -> some View {
-        Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
-            .frame(maxWidth: .infinity, minHeight: 42)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.card))
-    }
-
-    /// The loop circle: first tap marks A, the second marks B and starts the
-    /// loop, a tap on a running loop clears it. Long-pressing a line loops it.
-    private func loopTapped(at now: Double) {
-        if store.loop != nil {
-            store.loop = nil
-        } else if let start = loopStart {
-            guard now > start + 1 else { return }
-            store.loop = start...now; loopStart = nil; loopArmed = true
-        } else {
-            loopStart = now
-        }
-    }
-
-    /// Back to the start once per pass; re-arm after the jump lands.
-    private func loopCheck(at value: Double) {
-        guard let loop = store.loop, nowPlaying.playing?.isPlaying == true, !nowPlaying.isControlling else { return }
-        if value >= loop.upperBound, loopArmed {
-            loopArmed = false
-            Task { seekDenied = !(await nowPlaying.seek(to: store.timing.spotifyTime(loop.lowerBound))) }
-        } else if value < loop.upperBound - min(1, (loop.upperBound - loop.lowerBound) / 2) {
-            loopArmed = true
-        }
-    }
-
-    /// Beside the progress line, only while a loop is being set or running.
-    @ViewBuilder private var loopChip: some View {
-        if let loop = store.loop {
-            HStack(spacing: 5) {
-                Image(systemName: "repeat").font(.system(size: 11, weight: .bold))
-                Text("\(mmss(loop.lowerBound))–\(mmss(loop.upperBound))").monospacedDigit()
+            if needsPlaybackDevice {
+                SpotifyDeviceRecoveryView(nowPlaying: nowPlaying, trackID: store.song.id, retryTitle: "Retry play along",
+                                          onRetry: startPlayingAlong)
+            } else if playbackError != nil {
+                Button("Open song in Spotify", action: openSpotify).frame(minHeight: 44).tint(.spotifyGreen)
             }
-            .font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.spotifyGreen)
-            .accessibilityIdentifier("loop-range")
-        } else if let loopStart {
-            Text("A \(mmss(loopStart)) · tap again at B").font(.system(size: 13, weight: .semibold)).monospacedDigit()
-                .foregroundStyle(Color.spotifyGreen)
         }
     }
+
+    private func startPlayingAlong() {
+        guard !startingPlayback, !nowPlaying.isControlling else { return }
+        startingPlayback = true
+        playbackError = nil
+        needsPlaybackDevice = false
+        Task { @MainActor in
+            defer { startingPlayback = false }
+            do { try await nowPlaying.playAlong(trackID: store.song.id) }
+            catch {
+                playbackError = error.localizedDescription
+                needsPlaybackDevice = (error as? SpotifyNowPlaying.PlayError)?.needsDeviceRecovery == true
+            }
+        }
+    }
+
+    private func openSpotify() {
+        guard let url = URL(string: "spotify:track:\(store.song.id)") else { return }
+        openURL(url)
+    }
+
+
 }
 
 /// Title, artist, key and the current capo/transpose, over every song surface.
@@ -365,8 +362,6 @@ struct ChordSheetView: View {
     var onChordTap: ((String) -> Void)? = nil
     var onRowTap: ((SheetModel.Row) -> Void)? = nil
     var onPracticeRow: ((SheetModel.Row) -> Void)? = nil
-    /// Live: repeat this line until cleared.
-    var onLoopRow: ((SheetModel.Row) -> Void)? = nil
     var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
     /// Song time for the words, without the chord display lead.
     var wordPlayhead: Double? = nil
@@ -388,9 +383,6 @@ struct ChordSheetView: View {
                         }
                         if let onPracticeRow, row.start < (store.analysis?.coverageEnd ?? 0) {
                             Button("Practice this passage", systemImage: "mic.fill") { onPracticeRow(row) }
-                        }
-                        if let onLoopRow, row.start < (store.analysis?.coverageEnd ?? 0) {
-                            Button("Loop this line", systemImage: "repeat") { onLoopRow(row) }
                         }
                     }
             }
@@ -516,7 +508,6 @@ struct SongMapSheet: View {
     let grid: BeatGrid
     let position: Double
     let onJump: (Double) -> Void
-    var onLoop: ((ClosedRange<Double>) -> Void)? = nil
     var onPractice: ((ClosedRange<Double>) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var first = 1
@@ -566,19 +557,11 @@ struct SongMapSheet: View {
                     Button("Go to start", systemImage: "arrow.right.to.line") {
                         guard let range else { return }; dismiss(); onJump(range.lowerBound)
                     }.disabled(range == nil).accessibilityIdentifier("bar-jump")
-                    if let onLoop {
-                        Button("Loop selected bars", systemImage: "repeat") {
-                            guard let range else { return }; dismiss(); onLoop(range)
-                        }.disabled(range == nil).accessibilityIdentifier("bar-loop")
-                    }
                     if let onPractice {
                         Button("Record selected bars", systemImage: "mic") {
                             guard let range else { return }; dismiss(); onPractice(range)
                         }.disabled(range == nil).accessibilityIdentifier("bar-practice")
                     }
-                } footer: {
-                    if onLoop == nil { Text("Play this song in Spotify to loop the selected bars.") }
-                    else { Text("Spotify seeks between the selected boundaries. Network and player delays can leave a gap between repeats.") }
                 }
                 Section {
                     DisclosureGroup("About this map") {
@@ -605,11 +588,13 @@ struct SongMapSheet: View {
 struct ChordCorrectionsView: View {
     @ObservedObject var store: SongSheetStore
     var range: ClosedRange<Double>? = nil
+    @State private var uncertainOnly = false
     @State private var selected: ChordSegment?
     @State private var editError: String?
 
     private var segments: [ChordSegment] {
         (store.analysis?.chords ?? []).filter { segment in
+            if uncertainOnly && store.analysis?.chordReview?.contains(where: { $0.matches(segment) && $0.needsReview }) != true { return false }
             guard let range else { return true }
             return segment.start < range.upperBound && segment.end > range.lowerBound
         }
@@ -639,6 +624,18 @@ struct ChordCorrectionsView: View {
                 }
                 if let editError { Text(editError).foregroundStyle(.orange) }
             }
+            Section {
+                NavigationLink {
+                    PassageAnalysisView(store: store, range: range)
+                } label: { Label("Reanalyze a passage", systemImage: "waveform.path") }.disabled(store.analysis?.chartRevision == nil || store.analysis?.isPreview == true)
+                Toggle("Show uncertain chords only", isOn: $uncertainOnly)
+                if store.analysis?.chordReview == nil || store.analysis?.chordReview?.isEmpty == true {
+                    Text("This chart has no review evidence yet. Reanalyze a passage to inspect it.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                } else if uncertainOnly && segments.isEmpty {
+                    Text("No uncertain chords flagged in this selection.").foregroundStyle(.secondary)
+                }
+            }
             Section("Chords") {
                 ForEach(segments) { segment in
                     Button { selected = segment } label: {
@@ -647,6 +644,9 @@ struct ChordCorrectionsView: View {
                                 .monospacedDigit().foregroundStyle(.secondary)
                             Spacer()
                             Text(segment.displayName).fontWeight(.semibold)
+                            if store.analysis?.chordReview?.contains(where: { $0.matches(segment) && $0.needsReview }) == true {
+                                Image(systemName: "questionmark.circle").foregroundStyle(.orange).accessibilityLabel("Worth reviewing")
+                            }
                             if segment.originalLabel != nil {
                                 Image(systemName: "pencil.circle.fill")
                                     .accessibilityLabel("Corrected")
@@ -719,6 +719,21 @@ private struct ChordCorrectionEditor: View {
                     }
                     .disabled(store.savingCorrection || changed)
                     .accessibilityIdentifier("edit-chord-boundary")
+                }
+                if let review = store.analysis?.chordReview?.first(where: { $0.matches(segment) }), !review.alternatives.isEmpty {
+                    Section("Alternatives from the recording") {
+                        Text(review.reason).font(.footnote).foregroundStyle(.secondary)
+                        ForEach(review.alternatives, id: \.self) { label in
+                            let display = Chord(label: label)?.display ?? (label == "N" ? "N.C." : label)
+                            Button(display) { name = display }.disabled(changed || store.savingCorrection)
+                        }
+                        Text("Tap an alternative, then Save to use it.").font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                Section {
+                    NavigationLink("Reanalyze around this chord") {
+                        PassageAnalysisView(store: store, range: max(0, segment.start - 2)...min(store.analysis?.coverageEnd ?? segment.end, segment.end + 2))
+                    }.disabled(changed || store.savingCorrection)
                 }
                 if let original = segment.originalLabel {
                     Section {

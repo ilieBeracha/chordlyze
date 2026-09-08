@@ -53,6 +53,9 @@
 		EE1D390F6833C894ACE0E77C /* MusicPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17F62D2BFE3A1CEA5FFB371 /* MusicPreview.swift */; };
 		F0FF13C989C9AC89EE725FD0 /* SongSheetPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4225FA3FADDF11F0F346E8F8 /* SongSheetPreview.swift */; };
 		F4D6A14494B7A9BE7FB7459C /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F5B942830EA8AE8A9C87C42 /* ProfileView.swift */; };
+		6B96E7E9A6CFAB1300B430AA /* LiveChordRecognitionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A8DEC225F529F3FAE6A356F /* LiveChordRecognitionView.swift */; };
+		F2F29719EE6F47CE185E7373 /* PassageAnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BDA1816EEB52B69C57C3337 /* PassageAnalysisView.swift */; };
+		5D2A369AD129047405B07FA5 /* PassageAnalysisModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C436880791BE1537E0C428E /* PassageAnalysisModel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -104,6 +107,9 @@
 		F55B762EFBB35519E23900A3 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		F8F0EDF9900CB420690140C3 /* TimingCalibrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimingCalibrationView.swift; sourceTree = "<group>"; };
 		FC9839963ADF8918052143AE /* PracticeFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeFeedback.swift; sourceTree = "<group>"; };
+		1A8DEC225F529F3FAE6A356F /* LiveChordRecognitionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveChordRecognitionView.swift; sourceTree = "<group>"; };
+		8BDA1816EEB52B69C57C3337 /* PassageAnalysisView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PassageAnalysisView.swift; sourceTree = "<group>"; };
+		9C436880791BE1537E0C428E /* PassageAnalysisModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PassageAnalysisModel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -134,6 +140,8 @@
 				E7DAC5B56631AB864ECE413D /* MusicDesign.swift */,
 				74327AC9AC251365E2B4429F /* PlaylistsView.swift */,
 				5D39A53C100E29AD1F5A6E72 /* PracticeHubView.swift */,
+				8BDA1816EEB52B69C57C3337 /* PassageAnalysisView.swift */,
+				1A8DEC225F529F3FAE6A356F /* LiveChordRecognitionView.swift */,
 				4845970AA4AB01CC93DB733C /* PracticeView.swift */,
 				6F5B942830EA8AE8A9C87C42 /* ProfileView.swift */,
 				F0F811F0C5F3043C10F537F8 /* ReportCardView.swift */,
@@ -164,6 +172,7 @@
 				9D18A5847FAF187D94D2E7ED /* ChordMath.swift */,
 				30ACA8DA715E5954990AADD9 /* ChordShapes.swift */,
 				E1614B50A45FA29707012533 /* DrillAudioWorker.swift */,
+				9C436880791BE1537E0C428E /* PassageAnalysisModel.swift */,
 				5EAB26A01240370A7EAF0A82 /* Info.plist */,
 				4808D969DCC674CF4F8881C7 /* Keychain.swift */,
 				3312C302F9B53B1895F12621 /* LyricPlayhead.swift */,
@@ -273,6 +282,7 @@
 				335DE6B244A15F9E1B74E91F /* ChordView.swift in Sources */,
 				79274A76D689856807A47A46 /* ChordlyzeApp.swift in Sources */,
 				91650A2B258E73E2DD2C1CAE /* DrillAudioWorker.swift in Sources */,
+				5D2A369AD129047405B07FA5 /* PassageAnalysisModel.swift in Sources */,
 				D647C63988F12719D2495568 /* DrillView.swift in Sources */,
 				E7D8FF3747FE41AF1E3F5CB9 /* Keychain.swift in Sources */,
 				387811BFFCDDEE897C63ADCB /* LibraryView.swift in Sources */,
@@ -287,6 +297,8 @@
 				B674DCCE4D245E938BC179F2 /* PlaylistsView.swift in Sources */,
 				AB2FC8022809197A04A10DEF /* PracticeFeedback.swift in Sources */,
 				A06633ABA3BEAB893FD7B5B5 /* PracticeHubView.swift in Sources */,
+				F2F29719EE6F47CE185E7373 /* PassageAnalysisView.swift in Sources */,
+				6B96E7E9A6CFAB1300B430AA /* LiveChordRecognitionView.swift in Sources */,
 				10FC0A4E94368041EFDFFAD3 /* PracticeTakeStore.swift in Sources */,
 				D9FBBE3071F11A8A1924B803 /* PracticeView.swift in Sources */,
 				F4D6A14494B7A9BE7FB7459C /* ProfileView.swift in Sources */,
