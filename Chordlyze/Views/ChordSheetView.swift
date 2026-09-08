@@ -2,8 +2,8 @@ import SwiftUI
 
 /// The song page: one song document, the rows Live and Practice use, at
 /// Live's size. When Spotify has the song up the page follows it in place:
-/// sounding chord bright, sung words lit, loop and seek by tapping a line.
-/// The header holds the chord-shape rail toggle and, while playing, the loop.
+/// sounding chord bright, sung words lit, and seeking by tapping a line.
+/// The header holds the chord-shape rail toggle and song map.
 struct AnalysisTabsView: View {
     @StateObject private var store: SongSheetStore
     @State private var selectedChord: SelectedChord?
@@ -13,9 +13,6 @@ struct AnalysisTabsView: View {
     @State private var practiceRange: ClosedRange<Double>?
     @State private var lastPosition = 0.0
     @State private var seekDenied = false
-    /// A–B repeat: the range lives on the store; only the arming is view state.
-    @State private var loopStart: Double?
-    @State private var loopArmed = true
     @AppStorage("chordLead") private var lead = 0.0
     @AppStorage("chordRail") private var showRail = false
 
@@ -42,15 +39,8 @@ struct AnalysisTabsView: View {
                         withAnimation(.easeInOut(duration: 0.25)) { showRail.toggle() }
                     }
                     if let grid = beatGrid, !grid.bars.isEmpty {
-                        HeaderCircle(icon: "map", on: false, label: "Song map and bar loops", identifier: "song-map") {
+                        HeaderCircle(icon: "map", on: false, label: "Song map and bar selection", identifier: "song-map") {
                             showSongMap = true
-                        }
-                    }
-                    if songIsUp {
-                        HeaderCircle(icon: "repeat", on: store.loop != nil || loopStart != nil,
-                                     label: store.loop != nil ? "Clear loop" : loopStart == nil ? "Loop from here" : "Loop until here",
-                                     identifier: store.loop != nil ? "loop-active" : "loop-start") {
-                            loopTapped(at: lastPosition)
                         }
                     }
                 }
@@ -63,7 +53,6 @@ struct AnalysisTabsView: View {
                     page(playhead: position, wordPlayhead: wordPosition)
                         .onChange(of: wordPosition) { _, value in
                             lastPosition = value
-                            loopCheck(at: value)
                         }
                 }
             } else {
@@ -77,16 +66,12 @@ struct AnalysisTabsView: View {
         .sheet(isPresented: $showSongMap) {
             if let grid = beatGrid {
                 SongMapSheet(grid: grid, position: lastPosition, onJump: { time in
-                    store.loop = nil; loopStart = nil
                     navigationTime = nil
                     Task { @MainActor in
                         navigationTime = time
                         if songIsUp { seekDenied = !(await nowPlaying.seek(to: store.timing.spotifyTime(time))) }
                     }
-                }, onLoop: songIsUp ? { range in
-                    store.loop = range; loopStart = nil; loopArmed = true
-                    Task { seekDenied = !(await nowPlaying.seek(to: store.timing.spotifyTime(range.lowerBound))) }
-                } : nil, onPractice: { practiceRange = $0 })
+                }, onPractice: { practiceRange = $0 })
             }
         }
         .sheet(isPresented: $showSettings) { SongPlayingSettings(store: store, nowPlaying: nowPlaying) }
@@ -97,7 +82,6 @@ struct AnalysisTabsView: View {
                     album: store.song.album, trackID: store.song.id, songStore: store, initialRange: range, nowPlaying: nowPlaying)
             }
         }
-        .onChange(of: songIsUp) { _, up in if !up { loopStart = nil } }
         .observes(store)
     }
 
@@ -125,9 +109,6 @@ struct AnalysisTabsView: View {
                                        onPracticeRow: store.canPractice ? { row in
                                            practiceRange = row.start...min(row.end, store.analysis?.coverageEnd ?? row.end)
                                        } : nil,
-                                       onLoopRow: songIsUp ? { row in
-                                           store.loop = row.start...max(row.start + 1, row.end); loopStart = nil; loopArmed = true
-                                       } : nil,
                                        wordPlayhead: wordPlayhead)
                     }
                     .padding(.horizontal, 24).padding(.top, 16)
@@ -150,7 +131,6 @@ struct AnalysisTabsView: View {
                     Text(mmss(playhead)).font(.system(size: 13, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white).accessibilityIdentifier("live-position")
                     ProgressView(value: playhead, total: max(1, duration)).tint(.spotifyGreen)
-                    loopChip
                 }
                 .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 24)
             }
@@ -199,44 +179,6 @@ struct AnalysisTabsView: View {
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.card))
     }
 
-    /// The loop circle: first tap marks A, the second marks B and starts the
-    /// loop, a tap on a running loop clears it. Long-pressing a line loops it.
-    private func loopTapped(at now: Double) {
-        if store.loop != nil {
-            store.loop = nil
-        } else if let start = loopStart {
-            guard now > start + 1 else { return }
-            store.loop = start...now; loopStart = nil; loopArmed = true
-        } else {
-            loopStart = now
-        }
-    }
-
-    /// Back to the start once per pass; re-arm after the jump lands.
-    private func loopCheck(at value: Double) {
-        guard let loop = store.loop, nowPlaying.playing?.isPlaying == true, !nowPlaying.isControlling else { return }
-        if value >= loop.upperBound, loopArmed {
-            loopArmed = false
-            Task { seekDenied = !(await nowPlaying.seek(to: store.timing.spotifyTime(loop.lowerBound))) }
-        } else if value < loop.upperBound - min(1, (loop.upperBound - loop.lowerBound) / 2) {
-            loopArmed = true
-        }
-    }
-
-    /// Beside the progress line, only while a loop is being set or running.
-    @ViewBuilder private var loopChip: some View {
-        if let loop = store.loop {
-            HStack(spacing: 5) {
-                Image(systemName: "repeat").font(.system(size: 11, weight: .bold))
-                Text("\(mmss(loop.lowerBound))–\(mmss(loop.upperBound))").monospacedDigit()
-            }
-            .font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.spotifyGreen)
-            .accessibilityIdentifier("loop-range")
-        } else if let loopStart {
-            Text("A \(mmss(loopStart)) · tap again at B").font(.system(size: 13, weight: .semibold)).monospacedDigit()
-                .foregroundStyle(Color.spotifyGreen)
-        }
-    }
 }
 
 /// Title, artist, key and the current capo/transpose, over every song surface.
@@ -365,8 +307,6 @@ struct ChordSheetView: View {
     var onChordTap: ((String) -> Void)? = nil
     var onRowTap: ((SheetModel.Row) -> Void)? = nil
     var onPracticeRow: ((SheetModel.Row) -> Void)? = nil
-    /// Live: repeat this line until cleared.
-    var onLoopRow: ((SheetModel.Row) -> Void)? = nil
     var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
     /// Song time for the words, without the chord display lead.
     var wordPlayhead: Double? = nil
@@ -388,9 +328,6 @@ struct ChordSheetView: View {
                         }
                         if let onPracticeRow, row.start < (store.analysis?.coverageEnd ?? 0) {
                             Button("Practice this passage", systemImage: "mic.fill") { onPracticeRow(row) }
-                        }
-                        if let onLoopRow, row.start < (store.analysis?.coverageEnd ?? 0) {
-                            Button("Loop this line", systemImage: "repeat") { onLoopRow(row) }
                         }
                     }
             }
@@ -516,7 +453,6 @@ struct SongMapSheet: View {
     let grid: BeatGrid
     let position: Double
     let onJump: (Double) -> Void
-    var onLoop: ((ClosedRange<Double>) -> Void)? = nil
     var onPractice: ((ClosedRange<Double>) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var first = 1
@@ -566,19 +502,11 @@ struct SongMapSheet: View {
                     Button("Go to start", systemImage: "arrow.right.to.line") {
                         guard let range else { return }; dismiss(); onJump(range.lowerBound)
                     }.disabled(range == nil).accessibilityIdentifier("bar-jump")
-                    if let onLoop {
-                        Button("Loop selected bars", systemImage: "repeat") {
-                            guard let range else { return }; dismiss(); onLoop(range)
-                        }.disabled(range == nil).accessibilityIdentifier("bar-loop")
-                    }
                     if let onPractice {
                         Button("Record selected bars", systemImage: "mic") {
                             guard let range else { return }; dismiss(); onPractice(range)
                         }.disabled(range == nil).accessibilityIdentifier("bar-practice")
                     }
-                } footer: {
-                    if onLoop == nil { Text("Play this song in Spotify to loop the selected bars.") }
-                    else { Text("Spotify seeks between the selected boundaries. Network and player delays can leave a gap between repeats.") }
                 }
                 Section {
                     DisclosureGroup("About this map") {

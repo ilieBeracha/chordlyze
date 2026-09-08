@@ -22,12 +22,12 @@ Charts with detected bars also have a **Song map** button. Select a recurring
 section or a numbered bar range and choose **Record selected bars** to open
 setup with those boundaries. See [song structure](song-structure.md).
 
-## Looping a passage in Live
+## Live following and connection recovery
 
 A temporary song-status connection failure keeps an already loaded full chart
 usable, including chord diagrams, Live following and passage selection. The sheet
 offers **Reconnect** and continues retrying status reads without requesting new
-analysis. Loops and transposition remain in place. This preserves the chart in
+analysis. Transposition remains in place. This preserves the chart in
 memory; it does not add offline music playback or persist sheets across app
 restarts. Explicit server resets still clear the reference, and unknown-offset
 previews cannot become practice charts during an outage.
@@ -38,12 +38,9 @@ does not replace them with estimated timing. A replacement recording (identified
 by its audio hash), or a library reset, invalidates the old recording's word times
 and allows fresh lyrics to load.
 
-Live has an A–B repeat for rehearsing a change before recording it: tap
-**Loop** at the passage start, then **B** at its end (or long-press a line and
-choose **Loop this line**). When Spotify reaches the end, the app seeks it back
-to the start, once per pass; the green chip shows the range and clears it. The
-loop lives in Live only; a practice take never loops, since a jump would break
-its timeline.
+Live follows playback continuously. Tap a line or use the song map to jump to
+a passage; select **Record selected bars** to practice it. Automatic repeating
+and A–B loop controls were removed on September 8, 2026.
 
 ## Playing from Spotify
 

@@ -87,14 +87,13 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
                 return latest
             }))
         store.manualShift = 2
-        store.loop = 2...8
         let observing = Task { await store.observe() }
         defer { observing.cancel() }
         try await waitFor { staleRead != nil }
         try await store.correctChord(original.analysis!.chords[0], name: "Dm7", expectedRevision: "old")
         check(store.analysis == corrected.analysis && store.saved, "Saved correction updates the shared document")
         check(store.rows.flatMap(\.chords).first?.event.display(transposedBy: store.shift) == "Em7", "Live and sheet use corrected, transposed events")
-        check(store.manualShift == 2 && store.loop == 2...8, "Correction preserves playing settings")
+        check(store.manualShift == 2, "Correction preserves playing settings")
         check(store.analysis?.chords[0].originalLabel == "C:maj", "Original remains available for undo")
         staleRead?.resume(returning: original)
         try await Task.sleep(for: .milliseconds(30))
@@ -207,7 +206,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(clicks.count == 6 && clicks.enumerated().filter { $0.element.downbeat }.map(\.offset) == [0, 3], "Metronome accents every third beat")
         let map = TimingMap(offset: 2, scale: 1.01)
         let range = triple.barRange(first: 2, last: 3)!
-        check(abs(map.chartTime(map.spotifyTime(range.lowerBound))-range.lowerBound) < 1e-9, "Bar loop endpoints survive calibrated clock mapping")
+        check(abs(map.chartTime(map.spotifyTime(range.lowerBound))-range.lowerBound) < 1e-9, "Bar selection endpoints survive calibrated clock mapping")
         var broken = data; broken["beat_positions"] = [1]
         check(grid(broken)!.bars.isEmpty && grid(broken)!.sections.isEmpty, "Malformed positions disable bar actions")
         broken = data; broken["bars"] = [["start": 1, "end": 99, "beats": 3]]
@@ -215,7 +214,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         broken = data; broken["sections"] = [["start": 1, "end": 7, "start_bar": 0, "end_bar": 4, "label": "A", "occurrence": 1]]
         check(grid(broken)!.sections.isEmpty && grid(broken)!.bars.count == 4, "Bad section cannot corrupt valid bars")
         broken = data; broken["bars"] = [bars[0], bars[2]]; broken["sections"] = []
-        check(grid(broken)!.barRange(first: 1, last: 2) == nil, "No loop across missing bar")
+        check(grid(broken)!.barRange(first: 1, last: 2) == nil, "No bar selection across missing bar")
         data["bars"] = []; data["sections"] = []; data["beat_positions"] = []
         let unmetered = grid(data)!
         check(unmetered.bars.isEmpty && !unmetered.isDownbeat(0), "New beat-only analyses never invent 4/4 downbeats")
@@ -556,14 +555,13 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         try await waitFor { sheet.canPractice && !sheet.lyricsLoading }
         let originalChords = sheet.rows.flatMap(\.chords).map(\.event)
         let originalText = sheet.rows.map(\.text)
-        sheet.loop = 4...12
         sheet.manualShift = 2
         mode = 1
         try await waitFor { sheet.state == "connection" }
         check(sheet.canPractice, "A loaded full chart remains usable through a status timeout")
         check(sheet.rows.flatMap(\.chords).map(\.event) == originalChords && sheet.rows.map(\.text) == originalText
-              && sheet.loop == 4...12 && sheet.manualShift == 2,
-              "Connection loss retains chord rows, selected loop and transposition")
+              && sheet.manualShift == 2,
+              "Connection loss retains chord rows, transposition")
         check(sheet.actionTitle == "Reconnect", "Connection recovery never offers misleading reanalysis")
         let beforeRetry = polls
         sheet.retry()

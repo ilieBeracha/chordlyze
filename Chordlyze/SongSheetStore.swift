@@ -62,9 +62,6 @@ final class SongSheetStore: ObservableObject {
     @Published private(set) var timingError: String?
     @Published private(set) var timingIsStale = false
     private(set) var timingRevision: String?
-    /// Live A–B repeat in chart time. On the document, not the view, so a
-    /// blink in Spotify's poll that rebuilds Live does not drop it.
-    @Published var loop: ClosedRange<Double>?
     @Published private(set) var capo = 0
     private(set) var lyricsResult: BackendClient.LyricsResult?
     private var service: Service
