@@ -15,6 +15,7 @@ struct AutomaticSyncView: View {
     @State private var complete = false
     @State private var listening = false
     @State private var needsSpotifyDevice = false
+    @State private var automaticallyOpenSpotify = false
 
     private var windows: [AutomaticSyncPlan.Window] {
         AutomaticSyncPlan.windows(duration: store.song.duration ?? store.analysis?.coverageEnd ?? 0)
@@ -49,7 +50,8 @@ struct AutomaticSyncView: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 if needsSpotifyDevice, work == nil {
-                    SpotifyDeviceRecoveryView(nowPlaying: nowPlaying, trackID: store.song.id, retryTitle: "Retry synchronization") { begin() }
+                    SpotifyDeviceRecoveryView(nowPlaying: nowPlaying, trackID: store.song.id, retryTitle: "Start synchronization",
+                                              automaticallyOpen: automaticallyOpenSpotify) { begin(allowWake: false) }
                 }
                 if let message { Text(message).foregroundStyle(.orange).accessibilityIdentifier("sync-message") }
             }
@@ -72,9 +74,10 @@ struct AutomaticSyncView: View {
         _ = recorder.stop()
     }
 
-    private func begin() {
+    private func begin(allowWake: Bool = true) {
         guard work == nil else { return }
         needsSpotifyDevice = false
+        automaticallyOpenSpotify = allowWake
         message = nil; complete = false; progress = 0; stage = "Preparing…"
         work = Task { @MainActor in
             let idleWasDisabled = UIApplication.shared.isIdleTimerDisabled
@@ -148,11 +151,12 @@ struct AutomaticSyncView: View {
                 message = "Synchronization canceled."
             } catch {
                 needsSpotifyDevice = (error as? SpotifyNowPlaying.PlayError)?.needsDeviceRecovery == true
+                automaticallyOpenSpotify = automaticallyOpenSpotify && (error as? SpotifyNowPlaying.PlayError)?.canWakeApp == true
                 if Task.isCancelled { message = "Synchronization canceled." }
                 else if let backend = error as? BackendError {
                     let body = backend.detail.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
                     message = body?["detail"] as? String ?? backend.detail
-                } else { message = error.localizedDescription }
+                } else { message = automaticallyOpenSpotify ? nil : error.localizedDescription }
             }
         }
     }

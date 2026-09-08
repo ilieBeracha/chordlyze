@@ -24,6 +24,14 @@ final class SpotifyNowPlaying: ObservableObject {
     enum PlayError: LocalizedError, Equatable {
         case notConnected, noDevice, onlyElsewhere(String), premiumRequired, notConfirmed, failed(Int)
         case ambiguousDevice, restrictedDevice, forbidden, rateLimited(Int), connectionLost, invalidPosition
+        /// Only absence can be fixed by waking the app. Other device errors
+        /// need a deliberate selection in Spotify, not another app switch.
+        var canWakeApp: Bool {
+            switch self {
+            case .noDevice, .onlyElsewhere: return true
+            default: return false
+            }
+        }
         var needsDeviceRecovery: Bool {
             switch self {
             case .noDevice, .onlyElsewhere, .ambiguousDevice, .restrictedDevice: return true
@@ -266,16 +274,19 @@ final class SpotifyNowPlaying: ObservableObject {
 
     /// Spotify Connect can take a moment to advertise a recently opened phone.
     /// Retry discovery only; never send playback to a different device as fallback.
-    private func discoverPhone(service: Service, epoch: Int) async throws -> SpotifyAPI.Device {
-        for attempt in 0..<3 {
+    private func discoverPhone(service: Service, epoch: Int, afterAppSwitch: Bool = false) async throws -> SpotifyAPI.Device {
+        let attempts = afterAppSwitch ? 12 : 3
+        let deadline = now().advanced(by: .seconds(12))
+        for attempt in 0..<attempts {
             let devices = try await service.devices()
             try checkCommand(epoch)
             do { return try Self.practiceDevice(devices) }
             catch let error as PlayError {
-                guard attempt < 2 else { throw error }
+                guard attempt < attempts - 1, now() < deadline else { throw error }
                 switch error {
                 case .noDevice, .onlyElsewhere:
-                    try await service.sleep(attempt == 0 ? 0.6 : 1.2)
+                    let delay = min(attempt == 0 ? 0.6 : 1.2, now().duration(to: deadline).seconds)
+                    try await service.sleep(delay)
                     try checkCommand(epoch)
                 default: throw error
                 }
@@ -286,13 +297,13 @@ final class SpotifyNowPlaying: ObservableObject {
 
     /// Read-only recovery after visiting Spotify. This never starts audio or
     /// the microphone; the user explicitly retries the practice/sync session.
-    func checkPracticeDevice() async throws -> SpotifyAPI.Device {
+    func checkPracticeDevice(afterAppSwitch: Bool = false) async throws -> SpotifyAPI.Device {
         guard let service else { throw PlayError.notConnected }
         let epoch = commandEpoch
         do {
             let command = try await acquire(epoch)
             defer { release(command) }
-            return try await discoverPhone(service: service, epoch: epoch)
+            return try await discoverPhone(service: service, epoch: epoch, afterAppSwitch: afterAppSwitch)
         } catch {
             try checkCommand(epoch)
             let error = playbackError(error)
@@ -488,31 +499,53 @@ extension Duration {
 @MainActor
 final class SpotifyDeviceRecovery: ObservableObject {
     enum State: Equatable {
-        case idle, waitingForSpotify, checking, ready(String), failed(String)
+        case idle, waitingForSpotify, awaitingAuthorization, checking, ready(String), failed(String)
     }
     @Published private(set) var state: State = .idle
     private let checkDevice: () async throws -> SpotifyAPI.Device
     private var generation = 0
     private var leftApp = false
+    private var appActive = true
+    private var expectsAuthorization = false
+    private var authorized = false
+    private var checkingGeneration: Int?
+
+    var authorizationWaitID: Int? { state == .awaitingAuthorization ? generation : nil }
 
     init(checkDevice: @escaping () async throws -> SpotifyAPI.Device) { self.checkDevice = checkDevice }
 
-    @discardableResult func openRequested() -> Int {
+    @discardableResult func openRequested(expectsAuthorization: Bool = false) -> Int {
         generation += 1
         leftApp = false
+        self.expectsAuthorization = expectsAuthorization
+        authorized = false
         state = .waitingForSpotify
         return generation
     }
     func openCompleted(_ opened: Bool, attempt: Int) {
-        guard attempt == generation, state == .waitingForSpotify else { return }
+        guard attempt == generation, state == .waitingForSpotify || state == .awaitingAuthorization else { return }
         if !opened { state = .failed("Spotify could not open. Install the Spotify app on this phone and sign in to the same account as Chordlyze.") }
     }
+    func authorizationCompleted(error: String?, attempt: Int) {
+        guard attempt == generation, state == .waitingForSpotify || state == .awaitingAuthorization else { return }
+        if let error { state = .failed(error); return }
+        authorized = true
+        if appActive { retry() }
+    }
+    /// Returning manually without an SDK callback must not leave a spinner
+    /// forever or automatically resume an authorization the user dismissed.
+    func authorizationTimedOut(attempt: Int) {
+        guard generation == attempt, state == .awaitingAuthorization else { return }
+        state = .failed("Spotify connection wasn’t completed. Open Spotify again to connect, or check the connection if you already started the song there.")
+    }
     func sceneChanged(active: Bool) {
+        appActive = active
         if !active {
             if state == .waitingForSpotify { leftApp = true }
             if state == .checking { cancel() }
         } else if state == .waitingForSpotify, leftApp {
-            retry()
+            if expectsAuthorization && !authorized { state = .awaitingAuthorization }
+            else { retry() }
         }
     }
     func retry() {
@@ -523,6 +556,9 @@ final class SpotifyDeviceRecovery: ObservableObject {
     func check() async {
         guard state == .checking else { return }
         let token = generation
+        guard checkingGeneration != token else { return }
+        checkingGeneration = token
+        defer { if checkingGeneration == token { checkingGeneration = nil } }
         do {
             let device = try await checkDevice()
             guard !Task.isCancelled, generation == token else { return }

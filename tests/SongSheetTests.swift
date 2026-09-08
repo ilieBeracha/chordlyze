@@ -54,6 +54,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         try await playbackTests()
         try await playbackReliabilityTests()
         try await spotifyDeviceRecoveryTests()
+        try await spotifyStartupTests()
         recentPlaysTests()
         print("Song sheet and playback: \(checks)/\(checks) checks passed")
     }
@@ -1152,6 +1153,142 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
               !SpotifyNowPlaying.PlayError.premiumRequired.needsDeviceRecovery &&
               !SpotifyNowPlaying.PlayError.notConnected.needsDeviceRecovery,
               "Device handoff is offered only for device availability errors")
+    }
+
+    @MainActor static func spotifyStartupTests() async throws {
+        let phone: SpotifyAPI.Device = decode(["id": "phone", "name": "This phone", "type": "Smartphone", "is_active": true])
+        let laptop: SpotifyAPI.Device = decode(["id": "mac", "name": "MacBook", "type": "Computer", "is_active": true])
+        var checksRun = 0
+        let recovery = SpotifyDeviceRecovery(checkDevice: { checksRun += 1; return phone })
+        let attempt = recovery.openRequested(expectsAuthorization: true)
+        recovery.openCompleted(true, attempt: attempt)
+        recovery.sceneChanged(active: false)
+        recovery.sceneChanged(active: true)
+        await recovery.check()
+        check(recovery.state == .awaitingAuthorization && checksRun == 0,
+              "Installed/opened does not authorize playback; foreground waits for the SDK callback")
+        recovery.authorizationCompleted(error: nil, attempt: attempt)
+        check(recovery.state == .checking, "Authorization arriving after foreground begins discovery")
+        await recovery.check()
+        check(recovery.state == .ready("This phone") && checksRun == 1,
+              "A successful app handoff checks exactly once and sends no playback command")
+        recovery.authorizationCompleted(error: "late duplicate", attempt: attempt)
+        check(recovery.state == .ready("This phone"), "Duplicate callbacks cannot overwrite a completed handoff")
+
+        let early = recovery.openRequested(expectsAuthorization: true)
+        recovery.sceneChanged(active: false)
+        recovery.authorizationCompleted(error: nil, attempt: early)
+        check(recovery.state == .waitingForSpotify, "Authorization in background waits for active before checking")
+        recovery.sceneChanged(active: true)
+        await recovery.check()
+        check(recovery.state == .ready("This phone") && checksRun == 2,
+              "Callback-before-foreground is handled without losing the pending song")
+
+        let denied = recovery.openRequested(expectsAuthorization: true)
+        recovery.sceneChanged(active: false)
+        recovery.authorizationCompleted(error: "Permission denied", attempt: denied)
+        recovery.sceneChanged(active: true)
+        await recovery.check()
+        check(recovery.state == .failed("Permission denied") && checksRun == 2,
+              "Denied authorization never schedules automatic continuation")
+
+        let missing = recovery.openRequested(expectsAuthorization: true)
+        recovery.openCompleted(false, attempt: missing)
+        if case .failed(let message) = recovery.state {
+            check(message.contains("Install"), "A missing native app has an actionable installation error")
+        } else { fatalError("Missing app must fail") }
+
+        let dismissed = recovery.openRequested(expectsAuthorization: true)
+        recovery.sceneChanged(active: false)
+        recovery.sceneChanged(active: true)
+        recovery.authorizationTimedOut(attempt: dismissed)
+        if case .failed = recovery.state {
+            check(checksRun == 2, "Returning without authorizing stops waiting with no automatic playback")
+        } else { fatalError("Manual return cannot spin forever") }
+        let newer = recovery.openRequested(expectsAuthorization: true)
+        recovery.sceneChanged(active: false)
+        recovery.sceneChanged(active: true)
+        recovery.authorizationTimedOut(attempt: dismissed)
+        recovery.authorizationCompleted(error: nil, attempt: dismissed)
+        check(recovery.state == .awaitingAuthorization, "Old callbacks and deadlines cannot alter a newer handoff")
+        recovery.cancel()
+        recovery.authorizationCompleted(error: nil, attempt: newer)
+        check(recovery.state == .idle, "Leaving the song or signing out invalidates the pending handoff")
+
+        var pending: CheckedContinuation<SpotifyAPI.Device, Never>?
+        var concurrentChecks = 0
+        let concurrent = SpotifyDeviceRecovery(checkDevice: {
+            concurrentChecks += 1
+            return await withCheckedContinuation { pending = $0 }
+        })
+        concurrent.retry()
+        let firstCheck = Task { await concurrent.check() }
+        try await waitFor { pending != nil }
+        await concurrent.check()
+        check(concurrentChecks == 1, "Repeated lifecycle events share one device check")
+        concurrent.cancel()
+        pending?.resume(returning: phone)
+        await firstCheck.value
+        check(concurrent.state == .idle, "Late discovery cannot revive a canceled startup")
+
+        var discoveries = 0
+        var writes = 0
+        var instant = ContinuousClock.now
+        let player = SpotifyNowPlaying(service: .init(current: { nil }, seek: { _ in writes += 1 },
+            play: { _, _, _ in writes += 1 }, devices: {
+                discoveries += 1
+                return discoveries < 7 ? [laptop] : [phone]
+            }, sleep: { instant = instant.advanced(by: .seconds($0)) }), now: { instant })
+        let available = try await player.checkPracticeDevice(afterAppSwitch: true)
+        check(available.id == "phone" && discoveries == 7 && writes == 0,
+              "Cold Spotify startup allows delayed advertisement beyond the old three reads, without playing on the Mac")
+        player.reset()
+
+        discoveries = 0
+        let unavailable = SpotifyNowPlaying(service: .init(current: { nil }, seek: { _ in }, devices: {
+            discoveries += 1
+            instant = instant.advanced(by: .seconds(5))
+            return []
+        }, sleep: { instant = instant.advanced(by: .seconds($0)) }), now: { instant })
+        do { _ = try await unavailable.checkPracticeDevice(afterAppSwitch: true); fatalError("Unavailable phone must fail") }
+        catch let error as SpotifyNowPlaying.PlayError {
+            check(error == .noDevice && discoveries == 3, "Slow discovery respects the startup deadline")
+        }
+        unavailable.reset()
+
+        discoveries = 0
+        let limited = SpotifyNowPlaying(service: .init(current: { nil }, seek: { _ in }, devices: {
+            discoveries += 1
+            throw NSError(domain: "SpotifyAPI", code: 429, userInfo: ["retryAfter": 20.0])
+        }))
+        do { _ = try await limited.checkPracticeDevice(afterAppSwitch: true); fatalError("Rate limit must fail") }
+        catch let error as SpotifyNowPlaying.PlayError {
+            check(error == .rateLimited(20) && discoveries == 1, "Startup never retries a rate-limited read")
+        }
+        do { _ = try await limited.checkPracticeDevice(afterAppSwitch: true); fatalError("Cooldown must block") }
+        catch { check(discoveries == 1, "Further connection checks honor the existing cooldown") }
+        limited.reset()
+
+        check(SpotifyNowPlaying.PlayError.noDevice.canWakeApp && SpotifyNowPlaying.PlayError.onlyElsewhere("Mac").canWakeApp &&
+              !SpotifyNowPlaying.PlayError.ambiguousDevice.canWakeApp && !SpotifyNowPlaying.PlayError.restrictedDevice.canWakeApp &&
+              !SpotifyNowPlaying.PlayError.premiumRequired.canWakeApp && !SpotifyNowPlaying.PlayError.notConnected.canWakeApp &&
+              !SpotifyNowPlaying.PlayError.connectionLost.canWakeApp,
+              "Only missing-device errors trigger an app switch")
+
+        check(SpotifyLaunchCallback.matches(URL(string: "chordlyze://callback#access_token=fixture")!, redirectURI: "chordlyze://callback"),
+              "The registered native callback is recognized")
+        for url in ["other://callback", "chordlyze://wrong", "chordlyze://callback/extra", "chordlyze://callback:42", "chordlyze://user@callback"] {
+            check(!SpotifyLaunchCallback.matches(URL(string: url)!, redirectURI: "chordlyze://callback"),
+                  "A different callback destination is rejected")
+        }
+        check(SpotifyLaunchCallback.result(accessToken: nil, error: nil) == nil &&
+              SpotifyLaunchCallback.result(accessToken: "", error: nil) == nil,
+              "An unrelated PKCE callback or empty SDK token cannot complete native startup")
+        check(SpotifyLaunchCallback.result(accessToken: "fixture", error: nil) == .success,
+              "SDK authorization success is independent of saved Web API credentials")
+        if case .failure(let message) = SpotifyLaunchCallback.result(accessToken: "fixture", error: "sensitive callback detail") {
+            check(!message.contains("sensitive"), "Authorization errors take precedence and do not expose raw callback data")
+        } else { fatalError("Authorization error must fail") }
     }
 
     /// Production Live: the Spotify poller and the Live screen share one document

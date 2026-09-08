@@ -125,21 +125,30 @@ struct WaitingView: View {
     }
 }
 
-/// Shared by practice and automatic synchronization when Connect can't see
-/// the phone. Opening Spotify is explicit; returning only checks its device.
+/// Wake Spotify after an explicit play request. Discovery on return is
+/// read-only; only casual play-along opts into automatically continuing.
 struct SpotifyDeviceRecoveryView: View {
     let trackID: String
     var retryTitle = "Retry playback"
     var onRetry: () -> Void
+    var automaticallyOpen = false
+    var continueWhenReady = false
     @StateObject private var recovery: SpotifyDeviceRecovery
-    @Environment(\.openURL) private var openURL
+    @State private var didAutomaticallyOpen = false
+    @State private var launchID: UUID?
+    @State private var spotifyNotInstalled = false
     @Environment(\.scenePhase) private var scenePhase
 
-    @MainActor init(nowPlaying: SpotifyNowPlaying, trackID: String, retryTitle: String, onRetry: @escaping () -> Void) {
+    @MainActor init(nowPlaying: SpotifyNowPlaying, trackID: String, retryTitle: String,
+                    automaticallyOpen: Bool = false, continueWhenReady: Bool = false, onRetry: @escaping () -> Void) {
         self.trackID = trackID
         self.retryTitle = retryTitle
         self.onRetry = onRetry
-        _recovery = StateObject(wrappedValue: SpotifyDeviceRecovery(checkDevice: { try await nowPlaying.checkPracticeDevice() }))
+        self.automaticallyOpen = automaticallyOpen
+        self.continueWhenReady = continueWhenReady
+        _recovery = StateObject(wrappedValue: SpotifyDeviceRecovery(checkDevice: {
+            try await nowPlaying.checkPracticeDevice(afterAppSwitch: true)
+        }))
     }
 
     var body: some View {
@@ -150,9 +159,9 @@ struct SpotifyDeviceRecoveryView: View {
             Text("The iOS Simulator cannot run the Spotify app. To play on your phone, run Chordlyze there and open Spotify using the same account.")
                 .font(.subheadline).foregroundStyle(.secondary)
             #else
-            Label("Connect Spotify on this phone", systemImage: "iphone.and.arrow.forward")
+            Label("Connect Spotify", systemImage: "iphone.and.arrow.forward")
                 .font(.headline)
-            Text("In Spotify, select this phone in the device picker and start the song. Then return here. Use the same Spotify account in both apps.")
+            Text("Spotify will open with this song and return you here. Allow Chordlyze to connect if asked. Use the same Spotify account in both apps.")
                 .font(.subheadline).foregroundStyle(.secondary)
             #endif
             switch recovery.state {
@@ -166,24 +175,28 @@ struct SpotifyDeviceRecoveryView: View {
             case .failed(let message):
                 Text(message).font(.footnote).foregroundStyle(.orange)
                     .accessibilityIdentifier("spotify-device-error")
+                if spotifyNotInstalled {
+                    Link("Install Spotify", destination: URL(string: "https://apps.apple.com/app/spotify-music-and-podcasts/id324684580")!)
+                        .buttonStyle(.borderedProminent)
+                }
             case .waitingForSpotify:
-                Text("Return from Spotify when this phone is selected. We’ll check the connection without starting a recording.")
+                Text(continueWhenReady ? "Opening Spotify… Your song will continue here once connected." : "Opening Spotify… Your settings are kept. Return here and tap \(retryTitle) when you’re ready.")
                     .font(.footnote).foregroundStyle(.secondary)
+            case .awaitingAuthorization:
+                ProgressView("Finishing Spotify connection…")
             case .idle: EmptyView()
             }
             if case .ready = recovery.state { } else {
                 #if !targetEnvironment(simulator)
-                Button("Open Spotify", systemImage: "arrow.up.forward.app") {
-                    let attempt = recovery.openRequested()
-                    openURL(URL(string: "spotify:track:\(trackID)")!) { opened in
-                        recovery.openCompleted(opened, attempt: attempt)
-                    }
-                }
+                Button("Open Spotify", systemImage: "arrow.up.forward.app", action: openSpotify)
                 .buttonStyle(.borderedProminent)
-                .disabled(recovery.state == .checking)
+                .disabled(recovery.state == .checking || recovery.state == .waitingForSpotify || recovery.state == .awaitingAuthorization)
                 .accessibilityIdentifier("open-spotify-recovery")
                 #endif
-                Button("Check connection again") { recovery.retry() }
+                Button("Check connection again") {
+                    cancelLaunch()
+                    recovery.retry()
+                }
                     .disabled(recovery.state == .checking)
                     .accessibilityIdentifier("check-spotify-device")
             }
@@ -194,7 +207,40 @@ struct SpotifyDeviceRecoveryView: View {
         .task(id: recovery.state == .checking) {
             if recovery.state == .checking { await recovery.check() }
         }
+        .task {
+            #if !targetEnvironment(simulator)
+            guard automaticallyOpen, !didAutomaticallyOpen else { return }
+            didAutomaticallyOpen = true
+            openSpotify()
+            #endif
+        }
+        .task(id: recovery.authorizationWaitID) {
+            guard let attempt = recovery.authorizationWaitID else { return }
+            do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            recovery.authorizationTimedOut(attempt: attempt)
+            cancelLaunch()
+        }
+        .onChange(of: recovery.state) { _, state in
+            if continueWhenReady, case .ready = state { onRetry() }
+        }
         .onChange(of: scenePhase) { _, phase in recovery.sceneChanged(active: phase == .active) }
-        .onDisappear { recovery.cancel() }
+        .onDisappear { recovery.cancel(); cancelLaunch() }
+    }
+
+    private func openSpotify() {
+        cancelLaunch()
+        spotifyNotInstalled = false
+        let attempt = recovery.openRequested(expectsAuthorization: true)
+        launchID = SpotifyAppLauncher.shared.open(trackID: trackID, opened: {
+            spotifyNotInstalled = !$0
+            recovery.openCompleted($0, attempt: attempt)
+        }, authorized: {
+            recovery.authorizationCompleted(error: $0, attempt: attempt)
+        })
+    }
+
+    private func cancelLaunch() {
+        if let launchID { SpotifyAppLauncher.shared.cancel(launchID) }
+        launchID = nil
     }
 }

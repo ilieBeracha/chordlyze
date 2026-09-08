@@ -1,5 +1,38 @@
 # Spotify playback reliability
 
+## Cold-start connection (2026-09-08)
+
+The initial missing-device error came from trying to control Spotify exclusively through the Web API. An installed but suspended Spotify app need not appear in Spotify Connect. Repeating the playback request cannot launch it. Chordlyze now uses Spotify's official iOS SDK, pinned to **5.0.1**, for its supported `authorizeAndPlayURI` app switch. The existing Web API transport still confirms the actual device, track and position.
+
+### What happens when you tap Play
+
+1. If a controllable phone is available, playback starts directly as before.
+2. If no phone is available, Chordlyze opens Spotify with the selected song. Allow Chordlyze to connect if Spotify asks; Spotify returns to Chordlyze using the existing `chordlyze://callback` redirect.
+3. Chordlyze waits for the authorization callback and checks device availability for up to 12 reads within a 12-second retry window. A read already in flight can finish under its own 12-second HTTP timeout.
+4. Play-along continues from the originally requested position and verifies playback. Practice and automatic sync retain their settings and show **Start practice** / **Start synchronization**; returning never starts their microphone automatically.
+
+An SDK handoff is attempted at most once per original Play request. A failed continuation leaves explicit recovery controls. Ambiguous phones, restricted devices, network failures, rate limits and authentication errors do not trigger automatic app switches. An absent Spotify installation shows an App Store link. A denied authorization stops recovery; returning without a callback has a three-second grace period and then offers a retry or a manual connection check. Leaving the screen or signing out invalidates pending callbacks.
+
+### Setup and remaining limits
+
+- Use a physical iPhone with Spotify installed, signed into the same account as Chordlyze. Spotify Premium is required for the Web API's on-demand playback controls.
+- In the Spotify developer application's settings, verify the existing redirect `chordlyze://callback` and the iOS bundle ID `com.ilieberacha.chordlyze`. No client secret belongs in the iOS app. The SDK requests its own app-control authorization; its callback token never replaces Chordlyze's saved PKCE credentials.
+- `project.yml` declares the SDK dependency and the `spotify` query scheme. The generated Xcode project and `Package.resolved` pin its exact revision for reproducible builds.
+- The iOS Simulator cannot host the Spotify app. It keeps the physical-iPhone explanation and never attempts this native launch.
+- Spotify controls app switching, account permissions, actual audio and device availability. The Web API still cannot prove which advertised smartphone is this physical handset. If the wrong phone is active, select the intended phone in Spotify. No background keep-alive trick can guarantee that Spotify stays open forever.
+
+References: Spotify's [iOS launch and authorization guide](https://developer.spotify.com/documentation/ios/getting-started), [app-switch lifecycle](https://developer.spotify.com/documentation/ios/concepts/application-lifecycle), [official SDK](https://github.com/spotify/ios-sdk/tree/v5.0.1), and [playback requirements](https://developer.spotify.com/documentation/web-api/reference/start-a-users-playback).
+
+### Validation
+
+The automated startup regressions cover callback/foreground ordering, declined and missing authorization, unavailable installation, duplicate and late callbacks, canceled discovery, bounded cold-start discovery, rate limits, and callback routing. They use fixtures, not a live Spotify account. Run the verification commands below. The simulator and unsigned iPhone builds verify SDK integration; the actual Spotify app-switch round trip still requires validation on a signed physical iPhone.
+
+Verified on the isolated merge branch: **1,335 song-sheet/playback checks** (27 new startup checks), **18 HTTP/authentication checks**, and the practice suite (persistence, 34 feedback checks, 40 audio checks, report contracts and metronome lifecycle) pass. Both the Debug iOS Simulator and unsigned Release physical-iPhone builds pass with SDK 5.0.1 resolved. The sheet preserves its view identity as playback appears, keeping the handoff alive and its recovery controls in view.
+
+The debug launch flags `--song-sheet-preview --spotify-startup-preview` provide an offline UI fixture: the first Play attempt sees a mock Mac; **Check connection again** advertises a mock phone already playing, and play-along then continues through the real controller. It never contacts Spotify. The older `--spotify-device-recovery-preview` fixture now finds its delayed mock phone within the first extended recovery check.
+
+Physical-device acceptance: quit Spotify, tap Play in Chordlyze, approve the connection if requested, and verify automatic return and audible playback of the selected song. Repeat from a paused position and with Spotify already playing; then check practice/sync preserves settings without recording on return. Also test denial, missing installation, another Spotify account, another active device and a disconnected network. These are remaining device checks, not claimed completed tests.
+
 ## Changes
 
 Spotify commands now run one at a time through `SpotifyNowPlaying`. Each command invalidates older polling requests before sending a write. Startup and seeking read fresh playback state until Spotify confirms the requested track, device and position. An accepted HTTP request alone never moves the app's playhead.
@@ -51,7 +84,9 @@ Physical-device check: open Spotify on the intended phone, start a selected prac
 
 Spotify documents that [player command ordering is not guaranteed](https://developer.spotify.com/documentation/web-api/reference/start-a-users-playback) when endpoints are used together, and that [restricted devices cannot accept Web API commands](https://developer.spotify.com/documentation/web-api/reference/get-a-users-available-devices). The controller serializes its writes and uses the available device state accordingly.
 
-## Missing phone recovery (2026-09-07)
+## Previous manual phone recovery (2026-09-07)
+
+This section records the earlier manual flow, superseded by the cold-start connection above.
 
 The reported MacBook-only error was also visible in the running iOS Simulator. A simulator cannot host Spotify's native iOS app; it cannot advertise itself as a phone playback device. Spotify documents the [physical-device requirement](https://developer.spotify.com/documentation/ios). Web API control of another available device is separate from playing on the simulated handset.
 

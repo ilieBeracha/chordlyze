@@ -9,7 +9,7 @@ Home, Search, Practice and Library tabs make song sheets, saved recordings and c
 ## Recognition and scoring
 
 - **Full-song charts and recorded practice:** one shared ISMIR2019 five-model ensemble and HMM decoder, supporting sevenths, suspended, diminished and augmented chords, selected extensions, and triad inversions.
-- **Spotify controls:** confirmed startup and seeking, ordered commands, recovery from expired tokens and clearer device/connection errors. See the [playback reliability guide](docs/spotify-playback-reliability.md) for behavior, tests and device limits.
+- **Spotify controls:** automatic Spotify app launch when the phone is unavailable, confirmed startup and seeking, ordered commands, and recovery from expired tokens. Play-along continues after connection; practice keeps an explicit start before recording. See the [playback reliability guide](docs/spotify-playback-reliability.md) for setup, tests and device limits.
 - **Unified song sheets:** chords above lyrics in Search, Library, Live and Practice. New requests analyze complete recordings; unknown-offset previews are never aligned to a song. Live follows Spotify automatically.
 - **Personal timing and corrections:** automatic speaker/microphone synchronization across three passages; move, split or merge chord intervals with ten-edit undo. See the [synchronization and boundary-editing guide](docs/synchronization-and-boundary-editing.md) for controls, confidence checks and physical-device limits.
 - **Song map:** audio-derived bars and recurring sections, bar-range navigation and recording setup for selected bars. Count-in follows detected meter and local beat spacing. See the [song-structure guide](docs/song-structure.md) for the benchmark and limits.
