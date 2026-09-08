@@ -80,7 +80,8 @@ struct ChordRowView: View {
         }
         .frame(maxWidth: .infinity, minHeight: style == .sheet ? 22 : 30, alignment: rtl ? .trailing : .leading)
         .overlayPreferenceValue(ChordAnchors.self) { anchors in
-            if style == .live, let playhead, row.contains(playhead), !row.chords.isEmpty {
+            if style == .live, let playhead, row.contains(playhead),
+               let first = row.chords.first, playhead >= first.event.start {
                 GeometryReader { geo in
                     let points = LyricPlayhead.waypoints(rowStart: row.start, rowEnd: row.end,
                         words: anchors.mapValues { geo[$0] }, wordTimes: nil,
