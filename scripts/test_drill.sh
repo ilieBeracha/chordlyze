@@ -16,4 +16,8 @@ swiftc -O -module-cache-path "$drill_test_dir/module-cache" \
   Chordlyze/Chord.swift Chordlyze/ChordDrillDetector.swift tests/DrillInputFormatTests.swift \
   -o "$drill_test_dir/formats"
 "$drill_test_dir/formats"
+swiftc -O -module-cache-path "$drill_test_dir/module-cache" \
+  Chordlyze/Chord.swift Chordlyze/ChordDrillDetector.swift tests/LiveChordRecognitionTests.swift \
+  -o "$drill_test_dir/live-recognition"
+"$drill_test_dir/live-recognition"
 python3 -m unittest discover -s tests -p 'test_drill_benchmark.py' -v

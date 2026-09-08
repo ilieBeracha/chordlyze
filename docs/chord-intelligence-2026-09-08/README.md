@@ -23,3 +23,11 @@ Backend coverage includes the HTTP lifecycle, per-account isolation, range/ident
 Debug previews: `--chord-recognition-preview`, or `--song-sheet-preview --passage-preview`, or `--song-sheet-preview --chord-corrections-preview`.
 
 Verified on September 8, 2026: 395 backend tests passed, with 17 existing expected model limitations; 1,212 song/playback checks; 346 detector, 43 audio-worker, 6 input-format and 27 practice-feedback checks. Practice take/report/metronome suites also passed. Simulator Debug and iPhone Release builds succeeded. Simulator screenshots confirm the idle recognition screen and passage selection/comparison layout; physical microphone behavior still needs a check with the user's instrument.
+
+## Live transition stability fix
+
+Standalone microphone recognition now selects `ChordDrillDetector.Mode.liveRecognition`, requiring 250 ms of consecutive chord evidence before accepting a new label. The default and paired-drill modes retain their 70 ms timing, including practice feedback timestamps. Quiet input, uncertain evidence, changed candidates, resets and sample gaps break confirmation; elapsed time across a gap cannot promote an old guess. Recent chords receives confirmed labels only.
+
+During a transition the card retains the last confirmed chord in secondary text color with “Listening · last confirmed chord.” This is explicitly historical, not a fresh detection. Before any confirmation it shows “Confirming chord…” or uncertain status; quiet input and stopping clear the card. Brief provisional labels never replace the main chord or enter history.
+
+`tests/LiveChordRecognitionTests.swift`, run by `scripts/test_drill.sh`, adds 995 assertions across 44.1/48 kHz, continuous Am–C–G changes, varied strums and release tails, one-second changes, brief F7/Cmaj7/Dm9/C°7/Cm bursts, genuine held F7/Cmaj7/D7/Cm/Dm9/C°7 chords and C–Cmaj7–C changes, silence, restarts, sample gaps, and unchanged practice-policy timestamps. The focused suite and iPhone Release build pass. First confirmation of the tested held chords remains below 850 ms; the fix adds approximately 190 ms relative to the former policy in the initial probe. This addresses reproduced transient insertions, not every possible acoustic misclassification; the user's exact recording was unavailable.

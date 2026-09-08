@@ -350,7 +350,13 @@ struct DrillChordClassifier {
 /// Deterministic streaming core. No AVAudioEngine, wall clock, UI or task queue.
 /// Feed contiguous microphone sample timestamps; a gap resets all pitch history.
 final class ChordDrillDetector {
+    enum Mode {
+        case practiceFeedback
+        case liveRecognition
+        var confirmationDuration: Double { self == .liveRecognition ? 0.25 : 0.07 }
+    }
     let sampleRate: Double
+    private let mode: Mode
     private let analyzer: DrillPitchAnalyzer
     private let classifier: DrillChordClassifier
     private var ring = [Float](repeating: 0, count: DrillPitchAnalyzer.frameSize)
@@ -372,12 +378,14 @@ final class ChordDrillDetector {
         try self.init(sampleRate: sampleRate, classifier: DrillChordClassifier(chordA: chordA, chordB: chordB))
     }
 
-    /// Accepts any vocabulary chord after the same dwell, for practice feedback.
-    convenience init(sampleRate: Double) throws {
-        try self.init(sampleRate: sampleRate, classifier: DrillChordClassifier(targets: []))
+    /// Practice keeps its short timing window. Standalone recognition waits for
+    /// sustained evidence to reject brief mixtures of outgoing/incoming notes.
+    convenience init(sampleRate: Double, mode: Mode = .practiceFeedback) throws {
+        try self.init(sampleRate: sampleRate, classifier: DrillChordClassifier(targets: []), mode: mode)
     }
 
-    private init(sampleRate: Double, classifier: DrillChordClassifier) throws {
+    private init(sampleRate: Double, classifier: DrillChordClassifier, mode: Mode = .practiceFeedback) throws {
+        self.mode = mode
         self.sampleRate = sampleRate
         self.classifier = classifier
         analyzer = try DrillPitchAnalyzer(sampleRate: sampleRate)
@@ -451,7 +459,7 @@ final class ChordDrillDetector {
     private func accept(_ evidence: DrillEvidence, at time: Double) -> DrillSnapshot {
         if case .chord(let name) = evidence, classifier.targets.isEmpty || classifier.targets.contains(name) {
             if candidate?.name != name { candidate = (name, time); current = nil; recognizedAt = nil }
-            if let candidate, time - candidate.since >= 0.07 {
+            if let candidate, time - candidate.since >= mode.confirmationDuration {
                 if previousAccepted != name {
                     if previousAccepted != nil { changes += 1 }
                     previousAccepted = name

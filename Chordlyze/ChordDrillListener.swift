@@ -54,7 +54,7 @@ final class ChordDrillListener: ObservableObject {
                   !format.isInterleaved else { throw DrillConfigurationError.unsupportedSampleRate }
             let sampleRate = format.sampleRate
             let detector: ChordDrillDetector
-            if targets.isEmpty { detector = try ChordDrillDetector(sampleRate: sampleRate) }
+            if targets.isEmpty { detector = try ChordDrillDetector(sampleRate: sampleRate, mode: .liveRecognition) }
             else { detector = try ChordDrillDetector(sampleRate: sampleRate, chordA: targets[0], chordB: targets[1]) }
             let worker = DrillAudioWorker(detector: detector,
                 onSnapshot: { [weak self] snapshot in

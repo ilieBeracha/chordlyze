@@ -10,13 +10,21 @@ struct LiveChordRecognitionView: View {
     @State private var error: String?
     @State private var diagram: String?
 
+    // Retain a dimmed, explicitly labelled last confirmation during a transition.
+    // Quiet input still clears the card; provisional labels never become history.
+    private var displayChord: String? {
+        listener.current ?? (listening && listener.evidence != .quiet ? listener.recent.last : nil)
+    }
+    private var showingPrevious: Bool { listener.current == nil && displayChord != nil }
+
     private var status: String {
         if starting { return "Opening microphone…" }
         if !listening { return "Ready when you are" }
+        if showingPrevious { return "Listening · last confirmed chord" }
         switch listener.evidence {
         case .quiet: return "Waiting for your instrument"
         case .uncertain: return "Listening for a clearer chord"
-        case .chord: return "Chord detected"
+        case .chord: return listener.current == nil ? "Confirming chord…" : "Chord detected"
         }
     }
 
@@ -27,13 +35,14 @@ struct LiveChordRecognitionView: View {
                 Text("Play a chord on your instrument.").foregroundStyle(Palette.secondary)
                 VStack(spacing: 18) {
                     Image(systemName: listening ? "waveform" : "mic").font(.title).foregroundStyle(Color.spotifyGreen)
-                    Button { diagram = listener.current } label: {
-                        Text(listener.current ?? "—")
+                    Button { diagram = displayChord } label: {
+                        Text(displayChord ?? "—")
+                            .foregroundStyle(showingPrevious ? Palette.secondary : .white)
                             .font(.system(size: 76, weight: .bold, design: .rounded))
                             .minimumScaleFactor(0.35).lineLimit(1)
                             .frame(maxWidth: .infinity, minHeight: 110)
-                    }.buttonStyle(.plain).disabled(listener.current == nil)
-                        .accessibilityLabel(listener.current.map { "\($0), show fingering" } ?? "No chord detected")
+                    }.buttonStyle(.plain).disabled(displayChord == nil)
+                        .accessibilityLabel(displayChord.map { "\($0), \(showingPrevious ? "last confirmed chord, " : "")show fingering" } ?? "No chord detected")
                     Text(status).font(.subheadline).foregroundStyle(Palette.secondary)
                 }.padding(24).frame(maxWidth: .infinity)
                     .background(Palette.card, in: RoundedRectangle(cornerRadius: 24))
