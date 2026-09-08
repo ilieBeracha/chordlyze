@@ -5,6 +5,19 @@ instrument tools with saved takes. Practice now belongs to the selected song.
 
 ## Destinations
 
+The latest compact sheet replaces the stacked action rows with a header Play
+icon and a labeled **Song options (•••)** menu. Practice, key/capo, save,
+recordings and the song map are in that menu. Optional chord diagrams now
+scroll with the sheet; their existing visibility preference is preserved.
+The Debug-only Sheet/Live/Practice selector requires
+`--song-sheet-preview-controls` and no longer appears by default.
+
+[Compact sheet](compact-sheet.png) · [Song options](compact-menu.png).
+The simulator build passed and both layouts were visually inspected. The menu
+rendered its expected actions; automated activation of individual native menu
+items was blocked by the computer-use tool returning invalid element IDs.
+The destination code was reviewed, but those menu tap-throughs remain unverified.
+
 | Task | Entry |
 | --- | --- |
 | Find music | Home or Search |

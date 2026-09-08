@@ -22,7 +22,7 @@ struct SongSheetPreview: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if !ProcessInfo.processInfo.arguments.contains("--practice-setup-preview") {
+                if ProcessInfo.processInfo.arguments.contains("--song-sheet-preview-controls") && !ProcessInfo.processInfo.arguments.contains("--practice-setup-preview") {
                 Picker("Display", selection: $mode) {
                     Text("Sheet").tag("Sheet")
                     Text("Live").tag("Live")

@@ -3,13 +3,15 @@ import SwiftUI
 /// The song page: one song document, the rows Live and Practice use, at
 /// Live's size. When Spotify has the song up the page follows it in place:
 /// sounding chord bright, sung words lit, and seeking by tapping a line.
-/// The header holds the chord-shape rail toggle and song map.
+/// The header holds playback and a menu for secondary song actions.
 struct AnalysisTabsView: View {
     @StateObject private var store: SongSheetStore
     @ObservedObject private var takes: PracticeTakeStore
     @State private var selectedChord: SelectedChord?
     @State private var showSettings = false
     @State private var showSongMap = false
+    @State private var showPractice = false
+    @State private var showRecordings = false
     @State private var navigationTime: Double?
     @State private var practiceRange: ClosedRange<Double>?
     @State private var lastPosition = 0.0
@@ -41,16 +43,14 @@ struct AnalysisTabsView: View {
         VStack(spacing: 0) {
             SongSheetHeader(store: store) {
                 if store.canPractice {
-                    HeaderCircle(icon: "guitars", on: showRail, label: showRail ? "Hide chord shapes" : "Show chord shapes",
-                                 identifier: "chord-rail-toggle") {
-                        withAnimation(.easeInOut(duration: 0.25)) { showRail.toggle() }
-                    }
-                    if let grid = beatGrid, !grid.bars.isEmpty {
-                        HeaderCircle(icon: "map", on: false, label: "Song map and bar selection", identifier: "song-map") {
-                            showSongMap = true
-                        }
-                    }
+                    HeaderCircle(icon: startingPlayback || nowPlaying.isControlling ? "ellipsis" : songIsUp && nowPlaying.playing?.isPlaying == true ? "waveform" : "play.fill",
+                                 on: true, label: songIsUp && nowPlaying.playing?.isPlaying == true ? "Open playback controls in Spotify" : songIsUp ? "Resume song" : "Play along",
+                                 identifier: "song-play-along") {
+                        if songIsUp && nowPlaying.playing?.isPlaying == true { openSpotify() }
+                        else { startPlayingAlong() }
+                    }.disabled(startingPlayback || nowPlaying.isControlling)
                 }
+                songMenu
             }
             if songIsUp {
                 TimelineView(.periodic(from: .now, by: 0.1)) { _ in
@@ -81,6 +81,15 @@ struct AnalysisTabsView: View {
                 }, onPractice: { practiceRange = $0 })
             }
         }
+        .navigationDestination(isPresented: $showPractice) {
+            if let chart = store.analysis {
+                PracticeView(analysis: chart, title: store.song.title, artist: store.song.artist,
+                             album: store.song.album, trackID: store.song.id, songStore: store, nowPlaying: nowPlaying)
+            }
+        }
+        .navigationDestination(isPresented: $showRecordings) {
+            RecordingsView(song: store.song, takes: takes)
+        }
         .sheet(isPresented: $showSettings) { SongPlayingSettings(store: store, nowPlaying: nowPlaying) }
         .navigationDestination(isPresented: Binding(get: { practiceRange != nil },
             set: { if !$0 { practiceRange = nil } })) {
@@ -93,23 +102,27 @@ struct AnalysisTabsView: View {
         .onAppear { takes.reload() }
     }
 
-    /// Rail, toolbar, status, the chart, and while playing the time line.
+    /// Optional diagrams, status, the chart, and while playing the time line.
     /// `playhead` is the chart second Spotify is at plus the display lead;
     /// `wordPlayhead` the same without the lead.
     private func page(playhead: Double?, wordPlayhead: Double?) -> some View {
         let activeID = wordPlayhead.flatMap { SheetModel.activeRow(store.rows, at: $0)?.id }
         return VStack(spacing: 0) {
-            if showRail, store.canPractice {
-                ChordRailView(events: SheetModel.events(store.analysis), position: playhead ?? 0, transposeBy: store.shift,
-                              onTap: { selectedChord = SelectedChord(name: $0) })
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        if store.canPractice { toolbar(playhead: playhead) }
-                        songRecordings
-                        SongSheetStatus(store: store)
+                        if showRail, store.canPractice {
+                            ChordRailView(events: SheetModel.events(store.analysis), position: playhead ?? 0, transposeBy: store.shift,
+                                          onTap: { selectedChord = SelectedChord(name: $0) })
+                                .padding(.horizontal, -24)
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                        if nowPlaying.isControlling || playbackError != nil || store.saveError != nil || nowPlaying.controlMessage != nil || needsPlaybackDevice {
+                            playbackStatus
+                        }
+                        if store.actionTitle != nil || !store.message.isEmpty || store.lyricsLoading || (store.lyricsFailed && store.lyricsNote != nil) {
+                            SongSheetStatus(store: store)
+                        }
                         ChordSheetView(store: store, playhead: playhead, style: .live,
                                        onChordTap: { selectedChord = SelectedChord(name: $0) },
                                        onRowTap: songIsUp ? { row in
@@ -149,42 +162,39 @@ struct AnalysisTabsView: View {
         }
     }
 
-    /// Casual playback stays on the sheet. Recording is a separate action.
-    private func toolbar(playhead: Double?) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button(action: startPlayingAlong) {
-                Label(startingPlayback ? "Starting Spotify…" : songIsUp && nowPlaying.playing?.isPlaying == true
-                      ? "Playing along" : songIsUp ? "Resume song" : "Play along",
-                      systemImage: songIsUp && nowPlaying.playing?.isPlaying == true ? "waveform" : "play.fill")
-                    .font(.headline).foregroundStyle(.black)
-                    .frame(maxWidth: .infinity, minHeight: 50)
-                    .background(Color.spotifyGreen, in: RoundedRectangle(cornerRadius: 14))
-            }.buttonStyle(.plain)
-                .disabled(startingPlayback || nowPlaying.isControlling || (songIsUp && nowPlaying.playing?.isPlaying == true))
-                .accessibilityIdentifier("song-play-along")
-            Text("Just you and the song. No recording or scoring.")
-                .font(.caption).foregroundStyle(Palette.secondary)
-            HStack(spacing: 8) {
-                if let chart = store.analysis {
-                    NavigationLink {
-                        PracticeView(analysis: chart, title: store.song.title, artist: store.song.artist,
-                                     album: store.song.album, trackID: store.song.id, songStore: store, nowPlaying: nowPlaying)
-                    } label: {
-                        tool("Practice")
-                    }
-                    .buttonStyle(.plain).accessibilityIdentifier("song-practice")
+    /// Secondary actions stay labeled in one menu, outside the reading area.
+    private var songMenu: some View {
+        Menu {
+            if store.canPractice {
+                Button("Practice", systemImage: "guitars") { showPractice = true }
+                    .accessibilityIdentifier("song-practice")
+                Button("Key & capo", systemImage: "slider.horizontal.3") { showSettings = true }
+                Button(showRail ? "Hide chord diagrams" : "Show chord diagrams", systemImage: "rectangle.grid.1x2") {
+                    withAnimation(.easeInOut(duration: 0.25)) { showRail.toggle() }
+                }.accessibilityIdentifier("chord-rail-toggle")
+                if let grid = beatGrid, !grid.bars.isEmpty {
+                    Button("Song map", systemImage: "map") { showSongMap = true }
+                        .accessibilityIdentifier("song-map")
                 }
-                Button { showSettings = true } label: { tool("Key & capo") }.buttonStyle(.plain)
-                Button {
-                    Task { await store.setSaved(!store.saved) }
-                } label: {
-                    Image(systemName: store.saved ? "bookmark.fill" : "bookmark")
-                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(store.saved ? Color.spotifyGreen : .white)
-                        .frame(width: 44, height: 42)
-                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.card))
-                }
-                .buttonStyle(.plain).accessibilityIdentifier("save-toggle")
             }
+            Button(store.saved ? "Remove from saved songs" : "Save song", systemImage: store.saved ? "bookmark.fill" : "bookmark") {
+                Task { await store.setSaved(!store.saved) }
+            }.accessibilityIdentifier("save-toggle")
+            let recordings = takes.recordings(for: store.song.id)
+            if !recordings.isEmpty {
+                Button("Recordings (\(recordings.count))", systemImage: "waveform") { showRecordings = true }
+                    .accessibilityIdentifier("song-recordings")
+            }
+            Button("Open in Spotify", systemImage: "arrow.up.forward.app", action: openSpotify)
+        } label: {
+            Image(systemName: "ellipsis").font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white).frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }.accessibilityLabel("Song options").accessibilityIdentifier("song-options")
+    }
+
+    private var playbackStatus: some View {
+        VStack(alignment: .leading, spacing: 8) {
             if nowPlaying.isControlling {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
@@ -223,21 +233,6 @@ struct AnalysisTabsView: View {
         openURL(url)
     }
 
-    private func tool(_ title: String) -> some View {
-        Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
-            .frame(maxWidth: .infinity, minHeight: 42)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.card))
-    }
-
-    @ViewBuilder private var songRecordings: some View {
-        let recordings = takes.recordings(for: store.song.id)
-        if !recordings.isEmpty {
-            NavigationLink { RecordingsView(song: store.song, takes: takes) } label: {
-                Label("Recordings (\(recordings.count))", systemImage: "waveform")
-                    .font(.subheadline).foregroundStyle(Color.spotifyGreen).frame(minHeight: 44)
-            }.buttonStyle(MusicPressStyle()).accessibilityIdentifier("song-recordings")
-        }
-    }
 
 }
 

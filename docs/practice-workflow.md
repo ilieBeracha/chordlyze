@@ -3,7 +3,7 @@
 ## Navigation
 
 Home, Search and Library are the three persistent tabs. Practice starts from the
-**Practice** action on a prepared song sheet, or from a selected passage.
+**Song options (•••) → Practice** action on a prepared song sheet, or from a selected passage.
 There is no separate Practice tab or song-selection landing page.
 
 Home's **Instrument tools** opens standalone chord recognition and chord-change
@@ -22,7 +22,7 @@ recognition remains accessible from the login screen.
 
 ## Playing along without a take
 
-On a prepared song sheet, **Play along** starts Spotify and follows the chords
+On a prepared song sheet, the green **Play** icon starts Spotify and follows the chords
 in place. It creates no practice session, recording or score, never requests
 microphone access and does not require headphones. A different song starts at
 0:00; the same paused song resumes at its reported position; an already playing
@@ -32,8 +32,15 @@ The action uses the existing phone-device discovery and confirmed-start flow.
 Pending commands disable repeated taps. Device failures offer the existing
 Spotify recovery controls, and other failures offer opening the song in Spotify.
 The music-note button beside the running timeline opens Spotify's playback
-controls. Leaving the sheet does not stop the music. **Practice** remains a
-separate action for recording and feedback.
+controls. The header's green waveform also opens Spotify controls while playing.
+Leaving the sheet does not stop the music. **Song options (•••) → Practice**
+remains a separate action for recording and feedback.
+
+The compact header contains back, song information, Play and Song options.
+Practice, Key & capo, Save song, Recordings and Song map are labeled menu items.
+The same menu shows or hides chord diagrams; the existing visibility preference
+is retained. Visible diagrams scroll with the lyrics rather than occupying a
+fixed area above them. Song recordings remain reachable when a chart fails.
 
 ## Practicing a passage
 
