@@ -8,3 +8,7 @@ swiftc -O -module-cache-path "$song_test_dir/module-cache" \
   Chordlyze/PassageAnalysisModel.swift Chordlyze/SongSheetStore.swift Chordlyze/SpotifyAPI.swift Chordlyze/SpotifyNowPlaying.swift Chordlyze/SpotifyLaunchCallback.swift \
   tests/SongSheetTests.swift -o "$song_test_dir/song-tests"
 "$song_test_dir/song-tests"
+
+# Guard the actual views as well as the data model. The standalone render
+# command can be used to keep PNGs for visual review.
+bash scripts/test_chord_layout.sh "$song_test_dir/rendered-rows"

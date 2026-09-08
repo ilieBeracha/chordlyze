@@ -33,15 +33,17 @@ work. The review worktree is `/tmp/chordlyze-alignment-review`, based on
 | Playback and transposition preserve layout | Render checks at five playback positions and two transpositions; sheet/playback suite. |
 | RTL and oversized content remain usable | Hebrew render checks and manual review; long word/multiple-change fixture stays within the viewport. |
 | Genuine rests still work; estimates do not create rests | Measured/estimated timing matrix, onset-only compatibility, explicit blank lines, malformed timing and phrase-boundary cases. |
-| Old charts and old clients remain compatible | Worker/API field round-trip; both song-read paths; idempotent cache repair with no catalog; unchanged chart revision and cache bytes. |
+| Old charts and old clients remain compatible | Worker/API field round-trip; both song-read paths; idempotent cache repair with no catalog; unchanged chart revision and cache bytes; client refresh accepts provenance-only updates without reanalysis. |
 | Neighboring features remain operational | Practice, Spotify, collection/search, drill and live recognition suites. |
 
 `bash scripts/test_chord_layout.sh` passes **258 checks** and writes **25 PNGs**.
+The standard `test_song_sheet.sh` command now includes this rendered regression
+gate, so its usual invocation covers the views as well as the timing model.
 The same harness, compiled with the previous `ChordRowView` and
 `ChordLyricLine`, fails with the chord detached horizontally from its word.
 This negative control establishes that the test detects the former bug.
 
-`bash scripts/test_song_sheet.sh` passes **1,487 checks** on the isolated branch.
+`bash scripts/test_song_sheet.sh` passes **1,494 checks** on the isolated branch.
 The Spotify suite passes **18**; collection/search **28**; drill detector **362**;
 drill worker **43**; input format **6**; live recognition **2,292**. Practice
 persistence, feedback, audio integration, report and metronome suites pass.
@@ -77,6 +79,10 @@ This fixture has authored words with the reported Shadows timing geometry.
 - The Push's production timestamps have not been inspected. The requested
   read was blocked by automatic approval review and the user permission
   question remains unanswered. Its exact upstream fault is not yet proven.
+- Local release configuration has two backend processes (`app` and `worker`);
+  both need the new worker/API provenance code. The documented iOS release path
+  is the Xcode Cloud workflow after merging into main. Live distribution state
+  has not been verified.
 - No backend deployment, merge, TestFlight upload, or on-device comparison to
   the source recordings has been performed for this correction.
 - Complete acceptance still requires inspecting the two reported production

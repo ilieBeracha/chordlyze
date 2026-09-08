@@ -42,6 +42,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         lyricCompletenessTests()
         independentChordTimingTests()
         estimatedWordTimingTests()
+        try await savedAlignmentRefreshTests()
         modelTests()
         barMapTests()
         runnerTests()
@@ -377,6 +378,43 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(unknownRows.filter { !$0.text.isEmpty }.map(\.text) == [unknown.text], "Legacy onset-only lyrics do not prove silence")
         let stamped: WordStamp = decode(["time": 1, "text": "Estimate", "estimated": true, "end": 2])
         check(!stamped.hasMeasuredOnset && stamped.measuredEnd == nil, "Explicit estimated provenance wins over a supplied end")
+    }
+
+    @MainActor static func savedAlignmentRefreshTests() async throws {
+        func response(estimated: Bool) -> SongStatus {
+            var finalWord: [String: Any] = ["time": 9.0, "text": "phrase"]
+            if estimated { finalWord["estimated"] = true }
+            return decode(["job": ["state": "ready", "worker_online": true], "library_generation": "unchanged",
+                "analysis": ["source": "youtube", "audio_duration": 20, "audio_sha256": "same-recording", "chart_revision": "same-chart",
+                    "chords": [["start": 0, "end": 2.5, "label": "C:maj"],
+                               ["start": 2.5, "end": 9.1, "label": "G:maj"],
+                               ["start": 9.1, "end": 20, "label": "A:min"]]],
+                "lyrics": ["synced": true, "matched": "aligned", "timing_note": "Some lyric timing is approximate.",
+                    "lines": [["time": 1, "text": "Complete phrase", "words": [
+                        ["time": 1, "end": 2, "text": "Complete"], finalWord]]]]])
+        }
+        var current = response(estimated: false)
+        var analysisRequests = 0
+        let sheet = SongSheetStore(song: SongDescriptor(trackID: "saved-alignment", title: "Sample", artist: "Test", duration: 20),
+            service: .init(request: { _ in analysisRequests += 1; return current }, status: { _ in current },
+                lyrics: { _ in nil }))
+        let observation = Task { await sheet.observe() }
+        try await waitFor { sheet.canPractice && sheet.rows.contains { $0.words?.count == 2 } }
+        check(sheet.rows.flatMap(\.chords).first { $0.event.start == 9.1 }?.wordIndex == 1,
+              "The fixture starts with the legacy cached word association")
+        let originalEvents = SheetModel.events(sheet.analysis)
+        current = response(estimated: true)
+        sheet.refresh()
+        try await waitFor { sheet.rows.contains { $0.words?.last?.estimated == true } }
+        check(sheet.rows.flatMap(\.chords).first { $0.event.start == 9.1 }?.wordIndex == nil,
+              "A provenance-only lyric refresh rebuilds the visible placement")
+        check(sheet.analysis?.chartRevision == "same-chart", "Lyric repair does not require a new chord revision")
+        check(SheetModel.events(sheet.analysis) == originalEvents, "Refreshing estimated lyrics does not change musical events")
+        check(sheet.rows.filter { !$0.text.isEmpty }.map(\.text) == ["Complete phrase"], "Cached lyric text remains complete")
+        check(sheet.lyricsNote?.contains("approximate") == true, "The repaired response retains its timing explanation")
+        check(analysisRequests == 0, "Refreshing a saved song never re-requests analysis")
+        observation.cancel()
+        await observation.value
     }
 
     @MainActor static func lyricCompletenessTests() {
