@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from difflib import SequenceMatcher
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -30,6 +31,23 @@ MIN_PLACED_LINES = 0.6    # share of lyric lines that received a time
 MIN_TRANSCRIBED_WORDS = 12       # a transcript kept as the lyrics needs this many words
 MIN_TRANSCRIBED_CONFIDENCE = 0.5  # and this mean word probability
 MAX_TRANSCRIBED_LINE = 9          # words per line when a segment runs long
+MAX_WORD_DURATION = 8.0          # beyond this, retain text but decline word-level precision
+
+
+def reliable_word_times(line: dict) -> bool:
+    """Reject broken transcript spans, not lyric text or long musical rests."""
+    words = line.get('words') or []
+    previous = -1.0
+    for word in words:
+        start = word.get('time')
+        end = word.get('end')
+        if not isinstance(start, (float, int)) or not math.isfinite(start) or start < previous:
+            return False
+        if end is not None and (not isinstance(end, (float, int)) or not math.isfinite(end)
+                                or end <= start or end - start > MAX_WORD_DURATION):
+            return False
+        previous = start
+    return True
 
 
 class AlignmentUnavailable(RuntimeError):
@@ -175,6 +193,24 @@ def complete_lyrics(catalog: dict, aligned: list[dict]) -> tuple[list[dict], str
     for block in SequenceMatcher(None, a, b, autojunk=False).get_matching_blocks():
         for offset in range(block.size):
             pairs[block.a + offset] = block.b + offset
+    # Whisper can stretch an intro word over tens of seconds. Such a line is
+    # not an alignment anchor. Recover its line time from a synchronized catalog
+    # and nearby consistent recording offsets, without inventing word onsets.
+    invalid = {i for i, j in pairs.items() if not reliable_word_times(aligned[j])}
+    if invalid:
+        from statistics import median
+        aligned = copy.deepcopy(aligned)
+        for i in invalid:
+            line = aligned[pairs[i]]
+            line.pop('words', None)
+            if catalog.get('synced'):
+                neighbors = sorted((k for k in pairs if k not in invalid and aligned[pairs[k]].get('words')),
+                                   key=lambda k: abs(k-i))[:5]
+                offsets = [float(aligned[pairs[k]]['time'])-float(source[k]['time']) for k in neighbors]
+                offset = median(offsets) if len(offsets) >= 3 else 0.0
+                consistent = [x for x in offsets if abs(x-offset) <= 1.0]
+                offset = median(consistent) if len(consistent) >= 3 else 0.0
+                line['time'] = round(max(0, float(source[i]['time']) + offset), 3)
     # A different catalog edition must not absorb unrelated transcript text.
     if len(pairs) != len(aligned):
         result = copy.deepcopy(source)

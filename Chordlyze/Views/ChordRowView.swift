@@ -2,8 +2,8 @@ import SwiftUI
 
 /// One timeline row — lyric line, instrumental stretch, or unanalyzed part —
 /// drawn the same way in the sheet and the live view. Chords sit above the
-/// word they start on when the lyrics carry word times; otherwise they are
-/// spread across the row in proportion to time. A chord held over from the
+/// word they start on when reliable timestamps support it; otherwise they
+/// remain independent changes in chronological order. A chord held over from the
 /// previous row is not drawn again.
 struct ChordRowView: View {
     enum Style {
@@ -46,11 +46,13 @@ struct ChordRowView: View {
     private var rtl: Bool { row.text.isRTLText }
     /// With no playhead nothing is being sung, and no line sits back.
     private var active: Bool { playhead.map(row.contains) ?? true }
+    private var independentChanges: Bool { !row.text.isEmpty && row.chords.contains { $0.wordIndex == nil } }
 
     var body: some View {
         VStack(alignment: rtl ? .trailing : .leading, spacing: style == .sheet ? 4 : 6) {
             if !row.text.isEmpty {
-                ChordLyricLine(text: row.text, chords: row.chords, words: row.words?.map(\.text), transposeBy: transposeBy,
+                if independentChanges { timedRow }
+                ChordLyricLine(text: row.text, chords: independentChanges ? [] : row.chords, words: row.words?.map(\.text), transposeBy: transposeBy,
                                playhead: playhead, style: style, active: active,
                                onChordTap: onChordTap, onLyricTap: onLyricTap, verdict: verdict,
                                rowStart: row.start, rowEnd: row.end, wordTimes: row.words?.map(\.time),
@@ -58,16 +60,15 @@ struct ChordRowView: View {
                     .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
             } else {
                 // A wordless stretch is its chords on a line, nothing more; the
-                // static sheet keeps a small time span so the page can be read.
+                // cursor follows chord time without attaching changes to words.
                 timedRow
             }
         }
         .frame(maxWidth: .infinity, alignment: rtl ? .trailing : .leading)
     }
 
-    /// A wordless stretch: its chords in an even row with equal gaps, as on
-    /// a printed chart, never spread across the width by time. Live, the
-    /// runner walks from chord to chord on their times.
+    /// Keep the existing compact chord flow. Its cursor follows only chord
+    /// onsets, linearly between changes; lyric geometry never retimes it.
     private var timedRow: some View {
         FlowLayout(spacing: style == .sheet ? 14 : 22) {
             ForEach(Array(row.chords.enumerated()), id: \.element.id) { index, placed in
@@ -79,12 +80,12 @@ struct ChordRowView: View {
         }
         .frame(maxWidth: .infinity, minHeight: style == .sheet ? 22 : 30, alignment: rtl ? .trailing : .leading)
         .overlayPreferenceValue(ChordAnchors.self) { anchors in
-            if style == .live, let wordPlayhead, row.contains(wordPlayhead), !row.chords.isEmpty {
+            if style == .live, let playhead, row.contains(playhead), !row.chords.isEmpty {
                 GeometryReader { geo in
-                    let points = LyricPlayhead.waypoints(rowStart: row.start, rowEnd: row.end, words: anchors.mapValues { geo[$0] },
-                                                         wordTimes: nil,
-                                                         chordStarts: row.chords.enumerated().map { ($0.element.event.start, $0.offset) }, rtl: rtl)
-                    if let point = LyricPlayhead.position(at: wordPlayhead, along: points, rtl: rtl) {
+                    let points = LyricPlayhead.waypoints(rowStart: row.start, rowEnd: row.end,
+                        words: anchors.mapValues { geo[$0] }, wordTimes: nil,
+                        chordStarts: row.chords.enumerated().map { ($0.element.event.start, $0.offset) }, rtl: rtl)
+                    if let point = LyricPlayhead.position(at: playhead, along: points, rtl: rtl, eased: false) {
                         RoundedRectangle(cornerRadius: 1)
                             .fill(Color.spotifyGreen.opacity(0.5))
                             .frame(width: 2, height: point.height + 4)
@@ -102,21 +103,6 @@ struct ChordRowView: View {
         static func reduce(value: inout [Int: Anchor<CGRect>], nextValue: () -> [Int: Anchor<CGRect>]) {
             value.merge(nextValue(), uniquingKeysWith: { $1 })
         }
-    }
-
-    private var caption: some View {
-        HStack(spacing: 8) {
-            if row.isInstrumental {
-                Image(systemName: "music.quarternote.3")
-                Text("Instrumental")
-            } else if row.kind == .uncovered {
-                Text("Chords pending")
-            }
-            Text(Self.span(row))
-                .font(.system(size: style == .sheet ? 10 : 12, design: .monospaced))
-        }
-        .font(.system(size: style == .sheet ? 10 : 14, weight: .semibold, design: .rounded))
-        .foregroundStyle(Palette.tertiary)
     }
 
     static func span(_ row: SheetModel.Row) -> String {

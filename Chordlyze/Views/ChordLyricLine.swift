@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Chords above lyric tokens. The model uses word timestamps when available,
-/// otherwise a clearly labeled estimate within the timestamped lyric line.
+/// Chords above lyric tokens only where reliable word timestamps support it.
+/// Unanchored changes are rendered separately by ChordRowView.
 struct ChordLyricLine: View {
     struct Token: Identifiable {
         let id: Int
@@ -83,37 +83,8 @@ struct ChordLyricLine: View {
                         .animation(.easeInOut(duration: 0.35), value: betweenWords)
                         .animation(.easeInOut(duration: 0.45), value: active)
                         .onTapGesture { onLyricTap?() }
-                        // The word's own text bounds, not the word-and-chords column.
-                        .anchorPreference(key: WordAnchors.self, value: .bounds) { [token.id: $0] }
                 }
             }
-        }
-        .overlayPreferenceValue(WordAnchors.self) { anchors in
-            // The runner only on lines without word timing: with words timed, the
-            // sung word lights and a moving line just makes the player chase it.
-            if style == .live, wordTimes == nil, let wordPlayhead, rowEnd > rowStart, wordPlayhead >= rowStart, wordPlayhead < rowEnd {
-                GeometryReader { geo in
-                    let points = LyricPlayhead.waypoints(rowStart: rowStart, rowEnd: rowEnd, words: anchors.mapValues { geo[$0] },
-                                                         wordTimes: nil,
-                                                         chordStarts: chords.map { ($0.event.start, $0.wordIndex ?? 0) }, rtl: rtl)
-                    if let point = LyricPlayhead.position(at: wordPlayhead, along: points, rtl: rtl) {
-                        RoundedRectangle(cornerRadius: 1)
-                            .fill(Color.spotifyGreen.opacity(0.5))
-                            .frame(width: 2, height: point.height + 6)
-                            .position(x: point.x, y: point.y)
-                            .allowsHitTesting(false)
-                    }
-                }
-            }
-        }
-    }
-
-    private var rtl: Bool { text.isRTLText }
-
-    struct WordAnchors: PreferenceKey {
-        static var defaultValue: [Int: Anchor<CGRect>] = [:]
-        static func reduce(value: inout [Int: Anchor<CGRect>], nextValue: () -> [Int: Anchor<CGRect>]) {
-            value.merge(nextValue(), uniquingKeysWith: { $1 })
         }
     }
 
@@ -138,7 +109,8 @@ struct ChordLyricLine: View {
         guard !words.isEmpty else { return [] }
         var byWord: [Int: [SheetModel.Placed]] = [:]
         for chord in chords {
-            let index = max(0, min(chord.wordIndex ?? 0, words.count - 1))
+            guard let wordIndex = chord.wordIndex else { continue }
+            let index = max(0, min(wordIndex, words.count - 1))
             byWord[index, default: []].append(chord)
         }
         return words.enumerated().map { index, word in

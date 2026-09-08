@@ -56,3 +56,34 @@ def test_repair_does_not_touch_other_recording_alias_or_transcription(tmp_path):
 
 def test_missing_catalog_is_not_guessed(tmp_path):
     assert repaired_entry({'lyrics': {'matched': 'aligned', 'lines': []}}, tmp_path) is None
+
+
+def test_song_read_repairs_old_intro_without_rewriting_chart(tmp_path, monkeypatch):
+    from chordlyze_backend import main
+    from chordlyze_backend.analysis.provenance import model_metadata
+    monkeypatch.setattr(main, 'CACHE_DIR', tmp_path)
+    entry = fixture(tmp_path)
+    entry.update(model_metadata('ismir2019'))
+    entry.update(source='youtube', audio_duration=245)
+    entry['lyrics']['lines'].insert(0, {'time': 0, 'text': 'Opening phrase', 'words': [
+        {'time': 0, 'end': 1, 'text': 'Opening'}, {'time': 1, 'end': 18, 'text': 'phrase'}]})
+    path = tmp_path / 'track-song.json'
+    path.write_text(json.dumps(entry))
+    original = path.read_bytes()
+    revision = main.corrections.revision(entry)
+    result = main._song_status('song')
+    assert result['lyrics']['lines'][0] == {'time': 17.45, 'text': 'Opening phrase'}
+    assert result['lyrics']['timing_note']
+    assert result['analysis']['chords'] == entry['chords']
+    assert result['analysis']['chart_revision'] == revision
+    assert result['lyrics'] == main._song_status('song')['lyrics']
+    assert result['lyrics'] == main.get_track_analysis('song', user='tester')['lyrics']
+    assert path.read_bytes() == original, 'response repair must not mutate shared charts'
+
+
+def test_unreadable_catalog_keeps_chart_available(tmp_path):
+    entry = fixture(tmp_path)
+    path = next(tmp_path.glob('lyrics5-*.json'))
+    for invalid in ('{partial', 'null', '[]'):
+        path.write_text(invalid)
+        assert repaired_entry(entry, tmp_path) is None

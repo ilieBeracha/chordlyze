@@ -15,12 +15,13 @@ struct ChordRailView: View {
     var body: some View {
         let changes = SheetModel.changes(events, from: position, count: Self.count)
         let currentID = changes.first?.id
+        let hasCurrent = changes.first?.contains(position) == true
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .bottom, spacing: 10) {
                     ForEach(Array(changes.enumerated()), id: \.element.id) { index, event in
                         let name = event.display(transposedBy: transposeBy)
-                        ChordCard(name: name, shape: ChordShapes.guitar(name), role: index == 0 ? .now : index == 1 ? .next : .later)
+                        ChordCard(name: name, shape: ChordShapes.guitar(name), role: index == 0 && hasCurrent ? .now : index == (hasCurrent ? 1 : 0) ? .next : .later)
                             .onTapGesture { onTap?(name) }
                             .id(event.id)
                     }

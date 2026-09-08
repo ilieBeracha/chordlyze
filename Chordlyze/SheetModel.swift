@@ -162,18 +162,23 @@ enum SheetModel {
                 // A long pause inside a line that carries chord changes is sung as
                 // two parts with an instrumental between; drawn that way, the
                 // chords of the pause are not stacked above the last word before it.
-                // The chord sounding when the next word is sung heads that word's
-                // row, above the word, so the pause row ends where it starts; a
-                // pause whose only change is that chord does not split.
+                // Only a change just before the next word may anticipate that
+                // word. Earlier changes stay in the rest, even a single change.
                 var partStart = start
+                if let first = words.first, first.time - start > 0.35 {
+                    let anticipation = events.last { $0.start >= start && $0.start <= first.time && first.time - $0.start <= 0.35 }
+                    partStart = anticipation?.start ?? first.time
+                    append(start: start, end: partStart)
+                }
                 var part: [WordStamp] = []
                 for (index, word) in words.enumerated() {
                     part.append(word)
                     guard index + 1 < words.count else { break }
                     let nextOnset = words[index + 1].time
-                    let sungEnd = min(nextOnset, (word.end ?? word.time) + lastWordLength)
-                    let changes = events.filter { $0.start > sungEnd && $0.start < nextOnset }.map(\.start)
-                    if nextOnset - sungEnd >= pauseSplit, changes.count >= 2, let resume = changes.last {
+                    let sungEnd = min(nextOnset, word.end ?? (word.time + lastWordLength))
+                    let changes = events.filter { $0.start >= sungEnd && $0.start < nextOnset }.map(\.start)
+                    if nextOnset - sungEnd >= pauseSplit, let lastChange = changes.last {
+                        let resume = nextOnset - lastChange <= 0.35 ? lastChange : nextOnset
                         append(start: partStart, end: sungEnd, text: part.map(\.text).joined(separator: " "), words: part)
                         append(start: sungEnd, end: resume)
                         partStart = resume
@@ -181,8 +186,8 @@ enum SheetModel {
                     }
                 }
                 let text = partStart == start ? line.text : part.map(\.text).joined(separator: " ")
-                if let last = part.last, next - last.time - lastWordLength >= minInstrumental {
-                    let sungEnd = last.time + lastWordLength
+                if let last = part.last, next - (last.end ?? (last.time + lastWordLength)) >= minInstrumental {
+                    let sungEnd = last.end ?? (last.time + lastWordLength)
                     append(start: partStart, end: sungEnd, text: text, words: part)
                     append(start: sungEnd, end: next)
                 } else {
@@ -201,7 +206,10 @@ enum SheetModel {
     /// A partial, out-of-range or reordered array falls back to line timing.
     static func completeWords(_ line: LyricLine, before end: Double) -> [WordStamp]? {
         guard let words = line.words, !words.isEmpty,
-              words.allSatisfy({ $0.time.isFinite && $0.time >= line.time && $0.time < end }),
+              words.allSatisfy({ word in
+                  word.time.isFinite && word.time >= line.time && word.time < end
+                      && (word.end.map { $0.isFinite && $0 > word.time && $0 - word.time <= 8 } ?? true)
+              }),
               zip(words, words.dropFirst()).allSatisfy({ $0.time <= $1.time }),
               normalizedLyric(words.map(\.text).joined(separator: " ")) == normalizedLyric(line.text) else { return nil }
         return words
@@ -213,28 +221,18 @@ enum SheetModel {
 
     private static func place(_ events: [Event], start: Double, end: Double, kind: Kind,
                               text: String, words: [WordStamp]?) -> Row {
-        let tokens = text.split(whereSeparator: \.isWhitespace).map(String.init)
         let held = events.first { $0.start < start && $0.end > start }
         let placed = events.filter { $0.start >= start && $0.start < end }.map { event in
             let position = max(0, (event.start - start) / max(end - start, 0.001))
             let wordIndex: Int?
             if let words, !words.isEmpty {
-                wordIndex = max(0, words.lastIndex(where: { $0.time <= max(start, event.start) }) ?? 0)
-            } else if !tokens.isEmpty {
-                // Line timestamps do not establish word onsets: these are layout
-                // estimates. Actual chord intervals stay on the audio timeline.
-                let sung = sungDuration(words: tokens.count, interval: end - start)
-                let share = min(1, max(0, (event.start - start) / max(sung, 0.001)))
-                let weights = tokens.map { Double(max(1, $0.count)) }
-                let target = share * weights.reduce(0, +)
-                var consumed = 0.0
-                var index = 0
-                for weight in weights.dropLast() {
-                    if consumed + weight > target { break }
-                    consumed += weight
-                    index += 1
-                }
-                wordIndex = index
+                if let sounding = words.lastIndex(where: { $0.time <= event.start }),
+                   event.start < (words[sounding].end ?? (words[sounding].time + 0.75)) {
+                    wordIndex = sounding
+                } else if let upcoming = words.firstIndex(where: { $0.time > event.start && $0.time - event.start <= 0.35 }) {
+                    wordIndex = upcoming
+                } else { wordIndex = nil }
+            // A line timestamp says nothing about which word a change starts on.
             } else { wordIndex = nil }
             return Placed(event: event, position: position, wordIndex: wordIndex)
         }

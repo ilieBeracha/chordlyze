@@ -293,6 +293,9 @@ def _song_status(track_id: str, isrc: str | None = None, user: str | None = None
             and chart.get("model") == "ismir2019"
             and chart.get("model_revision") == MODEL_REVISIONS["ismir2019"]))
     if ready:
+        # Repair old malformed transcript spans on read as well as publication.
+        # This leaves persisted charts, revisions and personal edits untouched.
+        chart = repaired_entry(chart, CACHE_DIR) or chart
         chart = {**chart, "difficulty": difficulty(chart.get("chords") or [])}
     job = jobs.get(track_id)
     song = job["song"] if job else None
@@ -961,9 +964,10 @@ def get_track_analysis(track_id: str, isrc: str | None = None, user: str = Depen
     with library_lock(CACHE_DIR):
         cached = _track_cache_path(track_id)
         if cached.exists():
-            return corrections.apply(_read_analysis(cached), UserLibrary(CACHE_DIR, user).corrections(track_id))
+            chart = _read_analysis(cached)
+            return corrections.apply(repaired_entry(chart, CACHE_DIR) or chart, UserLibrary(CACHE_DIR, user).corrections(track_id))
         if hit := _cached_by_isrc(track_id, isrc, None, None):
-            return corrections.apply(hit, UserLibrary(CACHE_DIR, user).corrections(track_id))
+            return corrections.apply(repaired_entry(hit, CACHE_DIR) or hit, UserLibrary(CACHE_DIR, user).corrections(track_id))
         raise HTTPException(404, "no analysis for this track yet")
 
 

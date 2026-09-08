@@ -108,15 +108,15 @@ struct AnalysisTabsView: View {
     private func page(playhead: Double?, wordPlayhead: Double?) -> some View {
         let activeID = wordPlayhead.flatMap { SheetModel.activeRow(store.rows, at: $0)?.id }
         return VStack(spacing: 0) {
+            // The optional progression belongs to the viewport, not lyric scroll
+            // content: it remains available while auto-follow advances the page.
+            if showRail, store.canPractice {
+                ChordRailView(events: SheetModel.events(store.analysis), position: playhead ?? 0, transposeBy: store.shift,
+                              onTap: { selectedChord = SelectedChord(name: $0) })
+            }
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        if showRail, store.canPractice {
-                            ChordRailView(events: SheetModel.events(store.analysis), position: playhead ?? 0, transposeBy: store.shift,
-                                          onTap: { selectedChord = SelectedChord(name: $0) })
-                                .padding(.horizontal, -24)
-                                .transition(.move(edge: .top).combined(with: .opacity))
-                        }
                         if nowPlaying.isControlling || playbackError != nil || store.saveError != nil || nowPlaying.controlMessage != nil || needsPlaybackDevice {
                             playbackStatus
                         }

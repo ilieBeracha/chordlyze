@@ -12,6 +12,35 @@ import song_worker
 LINES = ['Come up to meet you', 'Tell you I need you', 'Nobody said it was easy', 'Nobody said it was easy']
 
 
+def test_stretched_intro_word_uses_catalog_and_consistent_neighbors():
+    catalog = {'synced': True, 'lines': [
+        {'time': 28.38, 'text': 'The opening phrase'},
+        *[{'time': t, 'text': f'Phrase {i}'} for i, t in enumerate([37, 46, 55, 64, 73])]]}
+    aligned = [{'time': 0, 'text': 'The opening phrase', 'words': [
+        {'time': 0, 'end': 3.98, 'text': 'The'},
+        {'time': 3.98, 'end': 29.6, 'text': 'opening'},
+        {'time': 29.82, 'end': 30.5, 'text': 'phrase'}]}]
+    for i, t in enumerate([37, 46, 55, 64, 73]):
+        offset = -3.4 if i == 0 else -.2
+        aligned.append({'time': t+offset, 'text': f'Phrase {i}', 'words': [
+            {'time': t+offset, 'end': t+offset+.3, 'text': 'Phrase'},
+            {'time': t+offset+.4, 'end': t+offset+.7, 'text': str(i)}]})
+    result, note = lyrics_align.complete_lyrics(catalog, aligned)
+    assert result[0] == {'time': 28.18, 'text': 'The opening phrase'}
+    assert result[1:] == aligned[1:] and note
+    assert aligned[0]['time'] == 0 and 'words' in aligned[0], 'input is never mutated'
+    assert lyrics_align.complete_lyrics(catalog, result)[0] == result, 'repair is stable'
+
+
+def test_word_timing_guard_keeps_long_rests_and_declines_broken_spans():
+    assert lyrics_align.reliable_word_times({'words': [{'time': 1, 'end': 1.3}, {'time': 30, 'end': 31}]})
+    for end in [0, float('nan'), 26]:
+        assert not lyrics_align.reliable_word_times({'words': [{'time': 0, 'end': end}]})
+    catalog = {'synced': False, 'lines': [{'time': 30, 'text': 'Keep text'}]}
+    result, note = lyrics_align.complete_lyrics(catalog, [{'time': 10, 'text': 'Keep text', 'words': [{'time': 10, 'end': 40, 'text': 'Keep text'}]}])
+    assert result == [{'time': 10, 'text': 'Keep text'}] and note, 'an untimed catalog cannot relocate vocals'
+
+
 def words(text: str, start: float, step: float = 0.5) -> list[dict]:
     return [{'start': round(start + i * step, 2), 'end': round(start + i * step + .3, 2), 'text': w}
             for i, w in enumerate(text.split())]
