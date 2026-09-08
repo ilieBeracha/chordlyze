@@ -98,9 +98,13 @@ struct SongSheetPreview: View {
             play: { _, at, _ in device = (.now, at, true) },
             devices: {
                 discoveryCalls += 1
-                if ProcessInfo.processInfo.arguments.contains("--spotify-device-recovery-preview"), discoveryCalls <= 3 {
+                let startupPreview = ProcessInfo.processInfo.arguments.contains("--spotify-startup-preview")
+                if (ProcessInfo.processInfo.arguments.contains("--spotify-device-recovery-preview") || startupPreview), discoveryCalls <= 3 {
                     return [decode(["id": "mac", "name": "Preview Mac", "type": "Computer", "is_active": true])]
                 }
+                // Model Spotify already playing as its cold-start handoff
+                // returns. The sheet must retain recovery across this change.
+                if startupPreview, discoveryCalls == 4 { device = (.now, 0, true) }
                 return [decode(["id": "sim", "name": "Simulator phone", "type": "Smartphone", "is_active": true])]
             }),
             sheetProvider: { _ in sheet })

@@ -3,11 +3,17 @@ options:
   bundleIdPrefix: com.ilieberacha
   deploymentTarget:
     iOS: "17.0"
+packages:
+  SpotifyiOS:
+    url: https://github.com/spotify/ios-sdk.git
+    exactVersion: 5.0.1
 targets:
   Chordlyze:
     type: application
     platform: iOS
     sources: [Chordlyze]
+    dependencies:
+      - package: SpotifyiOS
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ilieberacha.chordlyze
@@ -30,6 +36,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
+        LSApplicationQueriesSchemes: [spotify]
         CFBundleURLTypes:
           - CFBundleURLSchemes: [chordlyze]
         NSAppTransportSecurity:

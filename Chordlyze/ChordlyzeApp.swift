@@ -33,10 +33,16 @@ struct ChordlyzeApp: App {
             }
             .preferredColorScheme(.dark)
             .tint(.spotifyGreen)
+            .onOpenURL { url in
+                if auth.isAuthorized, !isPreview { SpotifyAppLauncher.shared.handle(url) }
+            }
             .onChange(of: auth.isAuthorized, initial: true) { _, authorized in
                 // Signed out: nothing should keep polling, and nothing from
                 // the old account should still be on screen after a re-login.
-                if !authorized { SpotifyNowPlaying.shared.reset() }
+                if !authorized {
+                    SpotifyNowPlaying.shared.reset()
+                    SpotifyAppLauncher.shared.reset()
+                }
                 // The backend identifies the account by its Spotify token.
                 BackendClient.tokenProvider = authorized ? { [auth] in try await auth.validToken() } : nil
             }

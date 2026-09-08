@@ -23,6 +23,7 @@ struct PracticeView: View {
     private enum Phase: Equatable { case intro, starting, countdown(Int), recording, uploading, saved, failed(String) }
     @State private var phase: Phase = .intro
     @State private var needsSpotifyDevice = false
+    @State private var automaticallyOpenSpotify = false
     @State private var recorder = TakeRecorder()
     @State private var metronome = Metronome()
     @ObservedObject private var takes = PracticeTakeStore.shared
@@ -120,8 +121,9 @@ struct PracticeView: View {
                     VStack(spacing: 18) {
                         Text(message).multilineTextAlignment(.center)
                         if needsSpotifyDevice {
-                            SpotifyDeviceRecoveryView(nowPlaying: nowPlaying, trackID: trackID, retryTitle: "Retry practice") {
-                                start(spotify: true)
+                            SpotifyDeviceRecoveryView(nowPlaying: nowPlaying, trackID: trackID, retryTitle: "Start practice",
+                                                      automaticallyOpen: automaticallyOpenSpotify) {
+                                start(spotify: true, allowWake: false)
                             }
                         }
                         Button("Back to setup") { phase = .intro }.frame(minHeight: 44)
@@ -436,9 +438,10 @@ struct PracticeView: View {
             }
     }
 
-    private func start(spotify: Bool) {
+    private func start(spotify: Bool, allowWake: Bool = true) {
         guard countIn == nil else { return }
         needsSpotifyDevice = false
+        automaticallyOpenSpotify = allowWake
         feedback = nil; feedbackTap?.cancel(); feedbackTap = nil
         activePlan = nil; activeTake = nil
         phase = .starting
@@ -540,7 +543,8 @@ struct PracticeView: View {
             _ = recorder.stop()
             audioChecked = false
             needsSpotifyDevice = (error as? SpotifyNowPlaying.PlayError)?.needsDeviceRecovery == true
-            phase = .failed("Could not start: \(error.localizedDescription)")
+            automaticallyOpenSpotify = automaticallyOpenSpotify && (error as? SpotifyNowPlaying.PlayError)?.canWakeApp == true
+            phase = .failed(automaticallyOpenSpotify ? "Connecting to Spotify" : "Could not start: \(error.localizedDescription)")
         }
     }
 

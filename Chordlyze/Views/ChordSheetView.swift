@@ -19,6 +19,9 @@ struct AnalysisTabsView: View {
     @State private var startingPlayback = false
     @State private var playbackError: String?
     @State private var needsPlaybackDevice = false
+    @State private var automaticallyOpenSpotify = false
+    @State private var requestedPlaybackPosition = 0.0
+    @State private var playbackTask: Task<Void, Never>?
     @Environment(\.openURL) private var openURL
     @AppStorage("chordLead") private var lead = 0.0
     @AppStorage("chordRail") private var showRail = false
@@ -52,24 +55,22 @@ struct AnalysisTabsView: View {
                 }
                 songMenu
             }
-            if songIsUp {
-                TimelineView(.periodic(from: .now, by: 0.1)) { _ in
-                    // Words at the calibrated time; chords a little ahead of it by the display lead.
-                    let wordPosition = clamp(nowPlaying.livePosition().map(store.timing.chartTime) ?? lastPosition)
-                    let position = clamp(wordPosition + lead)
-                    page(playhead: position, wordPlayhead: wordPosition)
-                        .onChange(of: wordPosition) { _, value in
-                            lastPosition = value
-                        }
-                }
-            } else {
-                page(playhead: nil, wordPlayhead: nil)
+            // Keep the page's identity when Spotify starts during an app switch.
+            // Replacing the idle subtree would dismiss its pending recovery.
+            TimelineView(.animation(minimumInterval: 0.1, paused: !songIsUp)) { _ in
+                let wordPosition = clamp(nowPlaying.livePosition().map(store.timing.chartTime) ?? lastPosition)
+                let position = clamp(wordPosition + lead)
+                page(playhead: songIsUp ? position : nil, wordPlayhead: songIsUp ? wordPosition : nil)
+                    .onChange(of: wordPosition) { _, value in
+                        if songIsUp { lastPosition = value }
+                    }
             }
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
         .chordDiagram($selectedChord)
+        .onDisappear { playbackTask?.cancel(); playbackTask = nil }
         .sheet(isPresented: $showSongMap) {
             if let grid = beatGrid {
                 SongMapSheet(grid: grid, position: lastPosition, onJump: { time in
@@ -144,7 +145,7 @@ struct AnalysisTabsView: View {
                 .onChange(of: activeID, initial: true) { _, id in
                     // The line being sung settles a third of the way down, so what
                     // comes next is already in view; the roll is slow enough to follow.
-                    guard let id else { return }
+                    guard !needsPlaybackDevice, let id else { return }
                     withAnimation(.easeInOut(duration: 0.4)) { proxy.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.32)) }
                 }
             }
@@ -201,29 +202,36 @@ struct AnalysisTabsView: View {
                     Text("Waiting for Spotify…").font(.footnote).foregroundStyle(Palette.secondary)
                 }.accessibilityIdentifier("spotify-control-pending")
             }
-            if let note = playbackError ?? store.saveError ?? nowPlaying.controlMessage {
+            if let note = playbackError ?? store.saveError ?? (needsPlaybackDevice ? nil : nowPlaying.controlMessage) {
                 Text(note).font(.footnote).foregroundStyle(Palette.warning)
             }
             if needsPlaybackDevice {
                 SpotifyDeviceRecoveryView(nowPlaying: nowPlaying, trackID: store.song.id, retryTitle: "Retry play along",
-                                          onRetry: startPlayingAlong)
+                                          automaticallyOpen: automaticallyOpenSpotify, continueWhenReady: true,
+                                          onRetry: { startPlayingAlong(retrying: true) })
             } else if playbackError != nil {
                 Button("Open song in Spotify", action: openSpotify).frame(minHeight: 44).tint(.spotifyGreen)
             }
         }
     }
 
-    private func startPlayingAlong() {
+    private func startPlayingAlong(retrying: Bool = false) {
         guard !startingPlayback, !nowPlaying.isControlling else { return }
         startingPlayback = true
         playbackError = nil
         needsPlaybackDevice = false
-        Task { @MainActor in
-            defer { startingPlayback = false }
-            do { try await nowPlaying.playAlong(trackID: store.song.id) }
+        if !retrying {
+            requestedPlaybackPosition = nowPlaying.playing?.track.id == store.song.id ? (nowPlaying.livePosition() ?? 0) : 0
+        }
+        playbackTask = Task { @MainActor in
+            defer { startingPlayback = false; playbackTask = nil }
+            do { try await nowPlaying.play(trackID: store.song.id, at: requestedPlaybackPosition) }
+            catch is CancellationError { }
             catch {
-                playbackError = error.localizedDescription
+                guard !Task.isCancelled else { return }
                 needsPlaybackDevice = (error as? SpotifyNowPlaying.PlayError)?.needsDeviceRecovery == true
+                automaticallyOpenSpotify = !retrying && (error as? SpotifyNowPlaying.PlayError)?.canWakeApp == true
+                playbackError = automaticallyOpenSpotify ? nil : error.localizedDescription
             }
         }
     }
