@@ -137,6 +137,32 @@ extension Color { static let spotifyGreen = Color(red: 30 / 255, green: 215 / 25
         try save(fallback, to: output.appendingPathComponent("line-timing-only.png"))
         check(glyphs(fallback, chords: true).count == 6 && glyphs(fallback, chords: false).count == 4,
               "Line-only fallback must keep all words and changes")
+        // Authored words with the verified no-catalog intro geometry. The old
+        // malformed onset put six instrumental changes above this lyric.
+        let introChart = try analysis(starts: [0, 0.74, 4.68, 8.58, 12.52, 16.44, 20.9, 24.32, 27.48],
+            labels: ["N", "D#:maj", "C#:maj", "F:min", "D#:maj", "A#:min7", "F:min", "D#:maj"])
+        let introWords = ["We", "could", "walk", "along", "this", "shore"]
+        let introTimes = [18.6, 20, 20.14, 20.98, 23.32, 23.86]
+        let introEnds = [20.0, 20.4, 20.98, 23.32, 23.86, 25.68]
+        let recoveredLine = LyricLine(time: 18.6, text: introWords.joined(separator: " "), words: introWords.indices.map {
+            WordStamp(time: introTimes[$0], text: introWords[$0], end: introEnds[$0]) })
+        let recoveredRows = SheetModel.build(analysis: introChart, lines: [recoveredLine], duration: 27.48)
+        let vocal = recoveredRows.first { !$0.text.isEmpty }!
+        check(vocal.start == 18.6 && vocal.chords.map(\.wordIndex) == [2, 5], "Recovered intro keeps only vocal changes over the lyric")
+        check(recoveredRows.filter { $0.text.isEmpty }.flatMap(\.chords).count == 6, "All six intro changes remain before the vocal")
+        check(recoveredRows.flatMap(\.chords).map(\.event) == SheetModel.events(introChart), "Recovered intro preserves the entire musical timeline")
+        for width in [280.0, 320, 390, 464] {
+            let image = try render(vocal, width: width)
+            let chords = glyphs(image, chords: true), words = glyphs(image, chords: false)
+            check(chords.count == 2 && words.count == 6, "Recovered phrase retains each word and vocal change")
+            for (chord, word) in [2, 5].enumerated() {
+                check(abs(chords[chord].minX - words[word].minX) <= 7, "Recovered onset preserves chord/word placement")
+                check(chords[chord].maxY < words[word].minY && words[word].minY - chords[chord].maxY < 42,
+                      "Recovered words and their chords wrap together")
+            }
+            try save(image, to: output.appendingPathComponent("recovered-intro-\(Int(width)).png"))
+            images += 1
+        }
         print("Chord row rendering: \(checks) checks passed; \(images + 2) PNGs in \(output.path)")
     }
 }

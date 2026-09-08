@@ -14,7 +14,7 @@ from .lyrics_align import complete_lyrics, mark_estimated_words
 
 def repaired_entry(entry: dict, cache: Path) -> dict | None:
     lyrics = entry.get('lyrics') or {}
-    if lyrics.get('matched') != 'aligned':
+    if lyrics.get('matched') not in ('aligned', 'transcribed'):
         return None
     lines = copy.deepcopy(lyrics.get('lines') or [])
     mark_estimated_words(lines)
@@ -26,7 +26,8 @@ def repaired_entry(entry: dict, cache: Path) -> dict | None:
         catalog = json.loads(path.read_text())
     except (OSError, ValueError):
         catalog = None
-    if isinstance(catalog, dict) and catalog.get('lines') and not catalog.get('instrumental'):
+    if (lyrics.get('matched') == 'aligned' and isinstance(catalog, dict)
+            and catalog.get('lines') and not catalog.get('instrumental')):
         lines, note = complete_lyrics(catalog, lines)
     if lines == lyrics.get('lines'):
         return None

@@ -1,9 +1,10 @@
 # Chord/word alignment correction — verification, 2026-09-09
 
 Status: the confirmed shared display and estimated-rest bugs are corrected on
-`codex/chord-word-alignment`. Production verification for The Push and a new
-TestFlight release remain pending. This is not a claim that every recording's
-acoustic chord or lyric timing is correct.
+`codex/chord-word-alignment`. Both approved production payloads have now been
+inspected, including the missing transcription-only case in The Push. A backend
+deployment and a new TestFlight release remain pending. This is not a claim
+that every recording's acoustic chord or lyric timing is correct.
 
 ## Change
 
@@ -18,6 +19,13 @@ recording alignments receive the same flags on read. The row builder requires
 measured evidence at both sides before inserting an instrumental rest, and
 requires a measured final word end before splitting a tail. No chord onset,
 duration, label, beat map, calibration, or scoring reference is changed.
+
+Malformed transcription prefixes now receive a bounded acoustic retry through
+the bundled local speech model, for either primary transcription provider.
+Exact phrase matching and agreement with healthy following anchors gate the
+repair. Healthy suffix stamps and every other phrase retain their prior values.
+The maintenance command verifies the decoded recording identity, defaults to
+dry run, backs up applied changes, and refuses concurrent chart replacement.
 
 ## Regression evidence
 
@@ -35,13 +43,19 @@ work. The review worktree is `/tmp/chordlyze-alignment-review`, based on
 | Genuine rests still work; estimates do not create rests | Measured/estimated timing matrix, onset-only compatibility, explicit blank lines, malformed timing and phrase-boundary cases. |
 | Old charts and old clients remain compatible | Worker/API field round-trip; both song-read paths; idempotent cache repair with no catalog; unchanged chart revision and cache bytes; client refresh accepts provenance-only updates without reanalysis. |
 | Neighboring features remain operational | Practice, Spotify, collection/search, drill and live recognition suites. |
+| No-catalog recordings receive the repair | Both provider paths exercise acoustic recovery; approved The Push data and verified audio reproduce and correct the missing case. |
+| Healthy timing is not reinterpreted | No crop for healthy data; exact healthy suffix preservation; conflicting text/anchors, invalid candidates and exhausted retries leave original data intact. |
+| Saved timing cannot be applied to the wrong recording | Decoded PCM identity check, dry-run/apply/backup tests, concurrent chart rejection and differing alias preservation. |
 
-`bash scripts/test_chord_layout.sh` passes **258 checks** and writes **25 PNGs**.
+`bash scripts/test_chord_layout.sh` passes **285 checks** and writes **29 PNGs**.
 The standard `test_song_sheet.sh` command now includes this rendered regression
 gate, so its usual invocation covers the views as well as the timing model.
 The same harness, compiled with the previous `ChordRowView` and
 `ChordLyricLine`, fails with the chord detached horizontally from its word.
 This negative control establishes that the test detects the former bug.
+Disabling acoustic recovery also makes both provider regression cases fail
+on their opening timestamp, establishing that those tests detect the missing
+no-catalog repair.
 
 `bash scripts/test_song_sheet.sh` passes **1,494 checks** on the isolated branch.
 The Spotify suite passes **18**; collection/search **28**; drill detector **362**;
@@ -58,8 +72,8 @@ PYTHONPATH=. \
 /Users/ilieberacha/Desktop/dev/chordlyze/backend/.venv/bin/python -m pytest tests/ -q
 ```
 
-Its final result is **411 passed, 17 expected failures**, recorded in
-`/tmp/chordlyze-alignment-isolated-backend.log`.
+Its final result is **436 passed, 17 expected failures**, recorded in
+`/tmp/chordlyze-alignment-final-backend.log`.
 The initial isolated run lacked the rhythm runtime path; its three failures
 were installation lookup errors. The main checkout's complete suite passed
 421 tests with 17 expected model/vocabulary failures, but includes unrelated
@@ -76,19 +90,33 @@ This fixture has authored words with the reported Shadows timing geometry.
   builder, retains every chord event. Its formerly split four-word phrase
   stays one model row, from 33.510 to 45.540 seconds. It may wrap naturally at
   the viewport width. The recovered opening remains at 28.225 seconds.
-- The Push's production timestamps have not been inspected. The requested
-  read was blocked by automatic approval review and the user permission
-  question remains unanswered. Its exact upstream fault is not yet proven.
+- The user approved the production read. The Push's saved data confirms a
+  transcription-only source, no matching cached catalog, and a 16.78-second
+  word span. The production response reproduces all eight changes on a lyric
+  row beginning at 0:00. Using the saved provider recording, decoded on the
+  deployed runtime, produced the exact PCM hash stored with the chart.
+- The new recovery places The Push's opening at 18.600 seconds. Only its first
+  two word stamps change. The other 36 lines, the healthy suffix, every lyric
+  word and all 65 chord events are unchanged. The real row builder places six
+  intro events before the vocal and associates the two vocal changes with word
+  indices 2 and 5. No event is omitted or duplicated in either reported song.
+- Actual SwiftUI rows were rendered from both repaired production payloads at
+  320 and 390 points and inspected. Saved lyrics and recordings remain outside
+  source control; checked-in fixtures use authored words.
+- A dry run using the deployed decoder and bundled speech model also recovered
+  The Push at 18.600 seconds, changed only the two damaged word stamps, and
+  preserved all healthy words and chord data. Its proposal was written under
+  `/tmp`; the shared production chart was not changed.
 - Local release configuration has two backend processes (`app` and `worker`);
   both need the new worker/API provenance code. The documented iOS release path
   is the Xcode Cloud workflow after merging into main. Live distribution state
   has not been verified.
 - No backend deployment, merge, TestFlight upload, or on-device comparison to
   the source recordings has been performed for this correction.
-- Complete acceptance still requires inspecting the two reported production
-  payloads, addressing any additional fault exposed by The Push, and verifying
-  the release path. Passing the covered checks does not prove zero possible
-  regressions or perfect musical alignment across every song.
+- Release acceptance still requires deployment, applying the verified saved
+  transcription correction, and a processed TestFlight build. Passing the
+  covered checks does not prove zero possible regressions or perfect musical
+  alignment across every song.
 
 Temporary visual evidence: `/tmp/chordlyze-alignment-review-renders`,
 `/tmp/chordlyze-alignment-simulator.png`. Saved song lyric payloads are kept

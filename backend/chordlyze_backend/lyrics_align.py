@@ -25,7 +25,7 @@ TRANSCRIBER = os.environ.get('CHORDLYZE_TRANSCRIBER', 'local')
 GROQ_MODEL = os.environ.get('CHORDLYZE_GROQ_MODEL', 'whisper-large-v3-turbo')
 GROQ_URL = os.environ.get('CHORDLYZE_GROQ_URL', 'https://api.groq.com/openai/v1/audio/transcriptions')
 ALIGNER = (f'groq-{GROQ_MODEL}+text-match-v1' if TRANSCRIBER == 'groq'
-           else f'faster-whisper-{WHISPER_MODEL}+text-match-v1')
+           else f'faster-whisper-{WHISPER_MODEL}+text-match-v1') + '+bounded-word-repair-v1'
 MIN_MATCHED_WORDS = 0.5   # share of lyric words found in the transcript
 MIN_PLACED_LINES = 0.6    # share of lyric lines that received a time
 MIN_TRANSCRIBED_WORDS = 12       # a transcript kept as the lyrics needs this many words
@@ -275,10 +275,16 @@ def transcribe_words(audio: Path, language: str | None) -> list[dict]:
     """Word-timed transcript: [{'start', 'text', 'p', 'segment'}, ...] from the
     configured transcriber."""
     if TRANSCRIBER == 'groq':
-        return transcribe_words_groq(audio, language)
-    if TRANSCRIBER != 'local':
+        words = transcribe_words_groq(audio, language)
+    elif TRANSCRIBER == 'local':
+        words = transcribe_words_local(audio, language)
+    else:
         raise AlignmentUnavailable(f'unknown transcriber {TRANSCRIBER!r}')
-    return transcribe_words_local(audio, language)
+    # The bundled local model retries only malformed spans. It does not make
+    # another paid provider request or hold the model in the song worker.
+    from .lyrics_timing import repair_word_spans
+    return repair_word_spans(audio, words,
+        lambda crop, hint: transcribe_words_local(crop, hint, timeout=120), language)
 
 
 def _compact_audio(audio: Path) -> Path:
@@ -343,7 +349,7 @@ def transcribe_words_groq(audio: Path, language: str | None, post=None, sleep=No
     return words
 
 
-def transcribe_words_local(audio: Path, language: str | None) -> list[dict]:
+def transcribe_words_local(audio: Path, language: str | None, *, timeout: float = 1800) -> list[dict]:
     """Word-timed transcript from a separate process, so the speech model's
     memory is released before the next song."""
     command = [sys.executable, '-m', 'chordlyze_backend.lyrics_align_worker', str(audio)]
@@ -352,7 +358,7 @@ def transcribe_words_local(audio: Path, language: str | None) -> list[dict]:
     env = {**os.environ, 'PYTHONPATH': os.pathsep.join(filter(None, [
         str(Path(__file__).resolve().parents[1]), os.environ.get('PYTHONPATH')]))}
     # Lowest priority: chord charts in progress must not wait for a transcript.
-    completed = subprocess.run(command, capture_output=True, text=True, timeout=1800, env=env,
+    completed = subprocess.run(command, capture_output=True, text=True, timeout=timeout, env=env,
                                preexec_fn=lambda: os.nice(15))
     if completed.returncode != 0:
         # The transcript process prints no lyrics or track metadata on failure.

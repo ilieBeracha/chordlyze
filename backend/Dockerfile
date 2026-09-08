@@ -31,6 +31,7 @@ RUN PYTHON=python3.11 bash scripts/setup_rhythm.sh "$CHORDLYZE_RHYTHM_DIR"
 COPY chordlyze_backend ./chordlyze_backend
 COPY song_worker.py ./song_worker.py
 COPY scripts/reset_song_library.py scripts/claim_library.py scripts/backfill_genres.py scripts/refresh_lyrics.py ./scripts/
+COPY scripts/repair_lyrics.py scripts/repair_lyrics_from_audio.py ./scripts/
 
 ARG APP_REVISION=unknown
 ENV CHORDLYZE_RELEASE=$APP_REVISION

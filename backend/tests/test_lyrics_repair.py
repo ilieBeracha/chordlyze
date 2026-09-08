@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import pytest
 
 from chordlyze_backend.lyrics_repair import repaired_entry
 
@@ -89,11 +90,13 @@ def test_unreadable_catalog_keeps_chart_available(tmp_path):
         assert repaired_entry(entry, tmp_path) is None
 
 
-def test_old_chart_estimates_repaired_on_both_reads_without_catalog(tmp_path, monkeypatch):
+@pytest.mark.parametrize('matched', ['aligned', 'transcribed'])
+def test_old_chart_estimates_repaired_on_both_reads_without_catalog(tmp_path, monkeypatch, matched):
     from chordlyze_backend import main
     from chordlyze_backend.analysis.provenance import model_metadata
     monkeypatch.setattr(main, 'CACHE_DIR', tmp_path)
     entry = fixture(tmp_path)
+    entry['lyrics']['matched'] = matched
     next(tmp_path.glob('lyrics5-*.json')).unlink()
     entry.update(model_metadata('ismir2019'))
     entry.update(source='youtube', audio_duration=245)
