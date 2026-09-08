@@ -168,6 +168,11 @@ struct WordStamp: Decodable, Equatable {
     let text: String
     /// When the word stops sounding; nil when the transcript did not hear it.
     var end: Double? = nil
+    /// Interpolated transcript words are useful for approximate highlighting,
+    /// but cannot establish a chord anchor or a vocal rest.
+    var estimated: Bool? = nil
+    var hasMeasuredOnset: Bool { estimated == false || (estimated == nil && end != nil) }
+    var measuredEnd: Double? { estimated == true ? nil : end }
 }
 
 struct LyricLine: Decodable, Identifiable, Equatable {

@@ -205,7 +205,7 @@ def test_worker_times_only_untimed_catalog_lyrics(tmp_path):
     repaired = client.posted[0][1]
     assert [line['text'] for line in repaired['lines']] == [line['text'] for line in plain['lines']]
     assert repaired['lines'][0]['time'] == 27.4 and 'words' not in repaired['lines'][0]
-    assert repaired['timing_note'] and repaired['aligner'].endswith('+complete-v2')
+    assert repaired['timing_note'] and repaired['aligner'].endswith('+complete-v3')
     # Catalog line times are not word times: synced lines are aligned too.
     synced = Client({'synced': True, 'lines': plain['lines']})
     assert song_worker.attach_lyrics(synced, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'aligned'
@@ -437,3 +437,43 @@ def test_complete_lyrics_retains_complete_alignment_unchanged():
                {'time': 5, 'text': 'Second', 'words': [{'time': 5, 'text': 'Second'}]}]
     result, note = lyrics_align.complete_lyrics(catalog, aligned)
     assert result == aligned and note is None
+
+
+def test_estimated_word_provenance_survives_worker_and_api():
+    from chordlyze_backend.main import AlignedLine
+    timed, _, _ = time_lines(['First missing last'], [
+        {'start': 2, 'end': 2.4, 'text': 'First'},
+        {'start': 8, 'text': 'last'}])
+    stamps = timed[0]['words']
+    assert stamps[1]['estimated'] is True and 'end' not in stamps[1]
+    assert stamps[2]['estimated'] is False, 'a heard onset without an end is not an interpolated word'
+    published = song_worker.publishable_lines(timed)
+    assert published == timed
+    assert AlignedLine.model_validate(published[0]).model_dump(exclude_none=True) == published[0]
+
+
+def test_legacy_estimates_get_provenance_without_changing_times_or_text():
+    import copy
+    aligned = [{'time': 33.51, 'text': 'We keep moving onward', 'words': [
+        {'time': 33.51, 'text': 'We'},
+        {'time': 37.2, 'end': 37.76, 'text': 'keep'},
+        {'time': 37.76, 'end': 38.34, 'text': 'moving'},
+        {'time': 41.65, 'text': 'onward'}]}]
+    original = copy.deepcopy(aligned)
+    catalog = {'synced': True, 'lines': [{'time': 36.92, 'text': aligned[0]['text']}]}
+    result, note = lyrics_align.complete_lyrics(catalog, aligned)
+    assert aligned == original, 'repair does not mutate its inputs'
+    assert [w.get('estimated') for w in result[0]['words']] == [True, None, None, True]
+    assert result[0]['time'] == original[0]['time']
+    assert [{k: v for k, v in w.items() if k != 'estimated'} for w in result[0]['words']] == original[0]['words']
+    assert note and lyrics_align.complete_lyrics(catalog, result) == (result, note)
+
+
+def test_provenance_does_not_reclassify_enhanced_lrc_or_explicit_heard_onsets():
+    onset_only = [{'time': 1, 'text': 'One two', 'words': [{'time': 1, 'text': 'One'}, {'time': 9, 'text': 'two'}]}]
+    lyrics_align.mark_estimated_words(onset_only)
+    assert all('estimated' not in w for w in onset_only[0]['words'])
+    onset_only[0]['words'][0]['end'] = 2
+    onset_only[0]['words'][1]['estimated'] = False
+    lyrics_align.mark_estimated_words(onset_only)
+    assert onset_only[0]['words'][1]['estimated'] is False

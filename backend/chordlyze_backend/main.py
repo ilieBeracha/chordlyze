@@ -423,6 +423,7 @@ class AlignedWord(BaseModel):
     text: str = Field(min_length=1, max_length=200)
     # When the word stops sounding; absent for words the transcript did not hear.
     end: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    estimated: bool | None = None
 
 
 class AlignedLine(BaseModel):

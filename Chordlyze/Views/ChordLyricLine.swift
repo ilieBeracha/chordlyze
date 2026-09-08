@@ -1,10 +1,12 @@
 import SwiftUI
 
 /// Chords above lyric tokens only where reliable word timestamps support it.
-/// Unanchored changes are rendered separately by ChordRowView.
+/// Changes between timed words occupy their own cells, preserving chronology
+/// without detaching valid anchors elsewhere in the phrase.
 struct ChordLyricLine: View {
     struct Token: Identifiable {
         let id: Int
+        let wordIndex: Int?
         let word: String
         let chords: [SheetModel.Placed]
     }
@@ -66,25 +68,55 @@ struct ChordLyricLine: View {
 
 
     var body: some View {
-        let tokens = Self.tokens(text: text, chords: chords, words: words)
+        let tokens = Self.tokens(text: text, chords: chords, words: words, wordTimes: wordTimes)
         let hasChords = !chords.isEmpty
-        FlowLayout(spacing: style == .sheet ? 8 : 10) {
+        ChordLyricFlow(spacing: style == .sheet ? 8 : 10) {
             ForEach(tokens) { token in
                 VStack(alignment: .leading, spacing: style == .sheet ? 3 : 1) {
                     if hasChords {
                         chordRow(token.chords)
                             .frame(minHeight: style == .sheet ? 24 : 30, alignment: .bottomLeading)
                     }
-                    Text(token.word)
+                    Text(token.word.isEmpty ? " " : token.word)
                         .font(style.wordFont(active: active))
-                        .foregroundStyle(wordColor(token.id))
-                        .shadow(color: .white.opacity(glow(token.id) * 0.45), radius: 10)
+                        .foregroundStyle(wordColor(token.wordIndex ?? -100))
+                        .opacity(token.word.isEmpty ? 0 : 1)
+                        .accessibilityHidden(token.word.isEmpty)
+                        .shadow(color: .white.opacity((token.wordIndex.map(glow) ?? 0) * 0.45), radius: 10)
                         .animation(.easeOut(duration: 0.14), value: currentWord)
                         .animation(.easeInOut(duration: 0.35), value: betweenWords)
                         .animation(.easeInOut(duration: 0.45), value: active)
-                        .onTapGesture { onLyricTap?() }
+                        .onTapGesture { if !token.word.isEmpty { onLyricTap?() } }
                 }
             }
+        }
+        .overlayPreferenceValue(ChangeAnchors.self) { anchors in
+            // Mixed rows previously had a timed cursor in their detached band.
+            // Keep that cursor, now following the actual in-line chord bounds.
+            if style == .live, chords.contains(where: { $0.wordIndex == nil }),
+               let playhead, let first = chords.first,
+               playhead >= first.event.start, playhead >= rowStart, playhead < rowEnd {
+                GeometryReader { geometry in
+                    let ordered = chords.sorted { $0.event.start < $1.event.start }
+                    let bounds = Dictionary(uniqueKeysWithValues: ordered.enumerated().compactMap { index, chord in
+                        anchors[chord.event.start].map { (index, geometry[$0]) }
+                    })
+                    let points = LyricPlayhead.waypoints(rowStart: rowStart, rowEnd: rowEnd, words: bounds,
+                        wordTimes: nil, chordStarts: ordered.enumerated().map { ($0.element.event.start, $0.offset) }, rtl: text.isRTLText)
+                    if let point = LyricPlayhead.position(at: playhead, along: points, rtl: text.isRTLText, eased: false) {
+                        RoundedRectangle(cornerRadius: 1).fill(Color.spotifyGreen.opacity(0.5))
+                            .frame(width: 2, height: point.height + 4)
+                            .position(x: point.x, y: point.y).allowsHitTesting(false)
+                    }
+                }
+            }
+        }
+    }
+
+    private struct ChangeAnchors: PreferenceKey {
+        static var defaultValue: [Double: Anchor<CGRect>] = [:]
+        static func reduce(value: inout [Double: Anchor<CGRect>], nextValue: () -> [Double: Anchor<CGRect>]) {
+            value.merge(nextValue(), uniquingKeysWith: { $1 })
         }
     }
 
@@ -93,28 +125,87 @@ struct ChordLyricLine: View {
         if placed.isEmpty {
             Text(" ").font(style.chordFont)  // keeps every word's baseline aligned
         } else {
-            HStack(spacing: 10) {
+            ChordLyricFlow(spacing: 10) {
                 ForEach(placed) { chord in
                     ChordChip(name: chord.event.display(transposedBy: transposeBy),
                               active: playhead.map(chord.event.contains) ?? false,
                               style: style, playing: playhead != nil, onTap: onChordTap, verdict: verdict?(chord.event.start))
+                        .anchorPreference(key: ChangeAnchors.self, value: .bounds) { [chord.event.start: $0] }
                 }
             }
         }
     }
 
     /// Split into words and attach each chord to the word it starts on.
-    static func tokens(text: String, chords: [SheetModel.Placed], words supplied: [String]? = nil) -> [Token] {
+    static func tokens(text: String, chords: [SheetModel.Placed], words supplied: [String]? = nil,
+                       wordTimes: [Double]? = nil) -> [Token] {
         let words = supplied ?? text.split(whereSeparator: \.isWhitespace).map(String.init)
         guard !words.isEmpty else { return [] }
         var byWord: [Int: [SheetModel.Placed]] = [:]
-        for chord in chords {
-            guard let wordIndex = chord.wordIndex else { continue }
-            let index = max(0, min(wordIndex, words.count - 1))
-            byWord[index, default: []].append(chord)
+        var beforeWord: [Int: [SheetModel.Placed]] = [:]
+        for chord in chords.sorted(by: { $0.event.start < $1.event.start }) {
+            if let index = chord.wordIndex, words.indices.contains(index) {
+                byWord[index, default: []].append(chord)
+            } else {
+                let next = wordTimes?.firstIndex(where: { $0 > chord.event.start }) ?? words.count
+                beforeWord[min(next, words.count), default: []].append(chord)
+            }
         }
-        return words.enumerated().map { index, word in
-            Token(id: index, word: word, chords: byWord[index] ?? [])
+        var result: [Token] = []
+        for index in 0...words.count {
+            for chord in beforeWord[index] ?? [] {
+                result.append(Token(id: result.count, wordIndex: nil, word: "", chords: [chord]))
+            }
+            if index < words.count {
+                result.append(Token(id: result.count, wordIndex: index, word: words[index], chords: byWord[index] ?? []))
+            }
         }
+        return result
+    }
+}
+
+/// Wrap whole word/chord cells together, constrain oversized cells to the
+/// viewport, and align lyric baselines after measuring the whole visual row.
+/// Only these song rows use it; other screens retain their existing layout.
+struct ChordLyricFlow: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(width: proposal.width, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = arrange(width: bounds.width, subviews: subviews)
+        for (index, frame) in result.frames.enumerated() {
+            // SwiftUI handles RTL mirroring for custom layouts.
+            subviews[index].place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                                  proposal: ProposedViewSize(width: frame.width, height: frame.height))
+        }
+    }
+
+    private func arrange(width: CGFloat?, subviews: Subviews) -> (size: CGSize, frames: [CGRect]) {
+        let limit = max(1, width ?? .infinity)
+        var frames: [CGRect] = []
+        var x: CGFloat = 0, y: CGFloat = 0, height: CGFloat = 0, usedWidth: CGFloat = 0
+        var rowStart = 0
+        func finishRow() {
+            for index in rowStart..<frames.count { frames[index].origin.y = y + height - frames[index].height }
+        }
+        for subview in subviews {
+            let natural = subview.sizeThatFits(.unspecified)
+            let measured = subview.sizeThatFits(ProposedViewSize(width: min(natural.width, limit), height: nil))
+            let size = CGSize(width: min(measured.width, limit), height: measured.height)
+            if x > 0, x + size.width > limit {
+                finishRow()
+                y += height + spacing
+                x = 0; height = 0; rowStart = frames.count
+            }
+            frames.append(CGRect(x: x, y: y, width: size.width, height: size.height))
+            x += size.width + spacing
+            height = max(height, size.height)
+            usedWidth = max(usedWidth, x - spacing)
+        }
+        finishRow()
+        return (CGSize(width: usedWidth, height: y + height), frames)
     }
 }

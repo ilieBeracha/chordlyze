@@ -113,6 +113,8 @@ def publishable_lines(lines: list[dict]) -> list[dict]:
             stamp = {'time': max(0.0, float(w['time'])), 'text': str(w.get('text') or '').strip()[:200]}
             if w.get('end') is not None and float(w['end']) > stamp['time']:
                 stamp['end'] = float(w['end'])
+            if isinstance(w.get('estimated'), bool):
+                stamp['estimated'] = w['estimated']
             words.append(stamp)
         words = [w for w in words if w['text']][:200]
         if words:
@@ -163,7 +165,7 @@ def attach_lyrics(client: WorkerClient, song: dict, audio: Path, generation: str
             ' '.join(f'{key}={value}' for key, value in stats.items())
     timed, timing_note = complete_lyrics(found, publishable_lines(timed))
     payload = {'track_id': song['track_id'], 'library_generation': generation,
-               'lines': publishable_lines(timed), 'aligner': ALIGNER + '+complete-v2'}
+               'lines': publishable_lines(timed), 'aligner': ALIGNER + '+complete-v3'}
     if timing_note:
         payload['timing_note'] = timing_note
     client.post('/internal/jobs/lyrics', payload)

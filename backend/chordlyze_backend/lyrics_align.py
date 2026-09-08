@@ -50,6 +50,21 @@ def reliable_word_times(line: dict) -> bool:
     return True
 
 
+def mark_estimated_words(lines: list[dict]) -> None:
+    """Backfill legacy recording alignments without changing their timestamps.
+
+    Older alignments retained ends only for heard words. Do not classify an
+    entirely onset-only source: enhanced LRC also legitimately has no ends.
+    Explicit provenance from newer workers always wins.
+    """
+    if not any(w.get('end') is not None for line in lines for w in line.get('words') or []):
+        return
+    for line in lines:
+        for word in line.get('words') or []:
+            if word.get('end') is None and 'estimated' not in word:
+                word['estimated'] = True
+
+
 class AlignmentUnavailable(RuntimeError):
     pass
 
@@ -167,6 +182,8 @@ def time_lines(lines: list[str], transcript: list[dict]) -> tuple[list[dict], in
             word = {'time': round(times[k], 2), 'text': lyric[k][1]}
             if ends[k] is not None and ends[k] > times[k]:
                 word['end'] = round(ends[k], 2)
+            else:
+                word['estimated'] = pairing[k] is None
             words.append(word)
         result.append({'time': round(times[positions[0]], 2), 'text': line, 'words': words})
         last = times[positions[0]]
@@ -219,6 +236,7 @@ def complete_lyrics(catalog: dict, aligned: list[dict]) -> tuple[list[dict], str
         return result, 'Approximate lyric timing: complete catalog text retained.'
     result = [copy.deepcopy(aligned[pairs[i]]) if i in pairs else copy.deepcopy(line)
               for i, line in enumerate(source)]
+    mark_estimated_words(result)
     anchors = sorted(pairs)
     for i, line in enumerate(result):
         if i in pairs:
@@ -248,7 +266,8 @@ def complete_lyrics(catalog: dict, aligned: list[dict]) -> tuple[list[dict], str
         for line in result:
             line.pop('words', None)
         return result, 'Approximate lyric timing: complete catalog text retained.'
-    approximate = len(pairs) != len(source) or any(not line.get('words') for line in result)
+    approximate = len(pairs) != len(source) or any(not line.get('words') or
+        any(w.get('estimated') for w in line['words']) for line in result)
     return result, 'Some lyric timing is approximate; all catalog lines are included.' if approximate else None
 
 

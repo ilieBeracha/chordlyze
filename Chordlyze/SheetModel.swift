@@ -41,9 +41,8 @@ enum SheetModel {
     }
     static let minInstrumental: Double = 2
     static let rowLength: Double = 8
-    static let lastWordLength: Double = 1
-    /// A silence this long inside a word-timed line, with chord changes in
-    /// it, splits the line around an instrumental row.
+    /// A measured silence this long inside a word-timed line, with chord
+    /// changes in it, splits the line around an instrumental row.
     static let pauseSplit: Double = 3
     /// Line-timed lyrics: a line is sung over roughly half a second a word,
     /// and never over less than this share of the gap to the next line.
@@ -165,7 +164,7 @@ enum SheetModel {
                 // Only a change just before the next word may anticipate that
                 // word. Earlier changes stay in the rest, even a single change.
                 var partStart = start
-                if let first = words.first, first.time - start > 0.35 {
+                if let first = words.first, first.hasMeasuredOnset, first.time - start > 0.35 {
                     let anticipation = events.last { $0.start >= start && $0.start <= first.time && first.time - $0.start <= 0.35 }
                     partStart = anticipation?.start ?? first.time
                     append(start: start, end: partStart)
@@ -174,8 +173,12 @@ enum SheetModel {
                 for (index, word) in words.enumerated() {
                     part.append(word)
                     guard index + 1 < words.count else { break }
-                    let nextOnset = words[index + 1].time
-                    let sungEnd = min(nextOnset, word.end ?? (word.time + lastWordLength))
+                    let following = words[index + 1]
+                    // Interpolation is not evidence of silence. Keep the phrase
+                    // intact unless both sides of the rest were actually heard.
+                    guard let measuredEnd = word.measuredEnd, following.hasMeasuredOnset else { continue }
+                    let nextOnset = following.time
+                    let sungEnd = min(nextOnset, measuredEnd)
                     let changes = events.filter { $0.start >= sungEnd && $0.start < nextOnset }.map(\.start)
                     if nextOnset - sungEnd >= pauseSplit, let lastChange = changes.last {
                         let resume = nextOnset - lastChange <= 0.35 ? lastChange : nextOnset
@@ -186,8 +189,7 @@ enum SheetModel {
                     }
                 }
                 let text = partStart == start ? line.text : part.map(\.text).joined(separator: " ")
-                if let last = part.last, next - (last.end ?? (last.time + lastWordLength)) >= minInstrumental {
-                    let sungEnd = last.end ?? (last.time + lastWordLength)
+                if let sungEnd = part.last?.measuredEnd, next - sungEnd >= minInstrumental {
                     append(start: partStart, end: sungEnd, text: text, words: part)
                     append(start: sungEnd, end: next)
                 } else {
@@ -226,10 +228,10 @@ enum SheetModel {
             let position = max(0, (event.start - start) / max(end - start, 0.001))
             let wordIndex: Int?
             if let words, !words.isEmpty {
-                if let sounding = words.lastIndex(where: { $0.time <= event.start }),
+                if let sounding = words.lastIndex(where: { $0.time <= event.start }), words[sounding].estimated != true,
                    event.start < (words[sounding].end ?? (words[sounding].time + 0.75)) {
                     wordIndex = sounding
-                } else if let upcoming = words.firstIndex(where: { $0.time > event.start && $0.time - event.start <= 0.35 }) {
+                } else if let upcoming = words.firstIndex(where: { $0.time > event.start && $0.time - event.start <= 0.35 }), words[upcoming].estimated != true {
                     wordIndex = upcoming
                 } else { wordIndex = nil }
             // A line timestamp says nothing about which word a change starts on.
