@@ -55,6 +55,7 @@ from .analysis.keyfinder import analyze
 from .auth import current_user
 from .song_jobs import SongJobs, generation, library_lock
 from .users import UserLibrary
+from .lyrics_repair import repaired_entry
 
 CACHE_DIR = Path(os.environ.get("CHORDLYZE_CACHE",
                                 str(Path(__file__).resolve().parent.parent / "analysis_cache")))
@@ -432,6 +433,7 @@ class AlignedLyrics(BaseModel):
     library_generation: str
     lines: list[AlignedLine] = Field(min_length=1, max_length=2000)
     aligner: str = Field(min_length=1, max_length=200)
+    timing_note: str | None = Field(default=None, max_length=300)
     # catalog_aligned: catalog text timed to the recording; transcribed: the transcript itself.
     source: str = Field(default="catalog_aligned", pattern=r"^(catalog_aligned|transcribed)$")
 
@@ -459,13 +461,16 @@ def attach_lyrics(body: AlignedLyrics, authorization: str | None = Header(defaul
         entry["lyrics"] = {"lines": lines, "synced": True,
                            "matched": "transcribed" if body.source == "transcribed" else "aligned",
                            "instrumental": False, "aligner": body.aligner}
+        if body.timing_note:
+            entry["lyrics"]["timing_note"] = body.timing_note
+        entry = repaired_entry(entry, CACHE_DIR) or entry
         _write_analysis(path, entry)
         isrc = entry.get("isrc")
         if isrc:
             alias = _isrc_cache_path(isrc)
             if alias.exists() and json.loads(alias.read_text()).get("audio_sha256") == entry.get("audio_sha256"):
                 _write_analysis(alias, entry)
-    return {"ok": True, "lines": len(lines)}
+    return {"ok": True, "lines": len(entry["lyrics"]["lines"])}
 
 
 # MARK: - Lyrics

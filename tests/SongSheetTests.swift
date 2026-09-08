@@ -39,6 +39,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
 
 @main struct SongSheetTests {
     @MainActor static func main() async throws {
+        lyricCompletenessTests()
         modelTests()
         barMapTests()
         runnerTests()
@@ -284,6 +285,49 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         // Right-to-left text runs the other way.
         let rtlPoints = LyricPlayhead.waypoints(rowStart: 8, rowEnd: 30, words: words, wordTimes: times, chordStarts: [], rtl: true)
         check(rtlPoints.first!.x == 290 && rtlPoints.last!.x == 0, "Right-to-left rows enter at the right edge and leave at the left")
+    }
+
+    @MainActor static func lyricCompletenessTests() {
+        let analysis: ChordAnalysis = decode(["source": "youtube", "audio_duration": 45, "chords": [
+            ["start": 0, "end": 30.16, "label": "E:maj"],
+            ["start": 30.16, "end": 31.82, "label": "B:min"],
+            ["start": 31.82, "end": 34.9, "label": "D:maj"],
+            ["start": 34.9, "end": 36.74, "label": "F#:min"],
+            ["start": 36.74, "end": 45, "label": "E:maj"]]])
+        // Authored text with Horse to Water's observed phrase boundary pattern.
+        let lines = [
+            LyricLine(time: 26.8, text: "First phrase ends", words: [
+                WordStamp(time: 26.8, text: "First", end: 28), WordStamp(time: 28, text: "phrase", end: 30),
+                WordStamp(time: 30.16, text: "ends", end: 30.62)]),
+            LyricLine(time: 31.88, text: "Next phrase starts", words: [
+                WordStamp(time: 31.88, text: "Next", end: 33), WordStamp(time: 34.64, text: "phrase", end: 35.82),
+                WordStamp(time: 36.13, text: "starts")]),
+            LyricLine(time: 36.9, text: "Another phrase", words: [WordStamp(time: 36.9, text: "Another", end: 38),
+                WordStamp(time: 39, text: "phrase", end: 40)])]
+        let rows = SheetModel.build(analysis: analysis, lines: lines, duration: 45)
+        let sung = rows.filter { !$0.text.isEmpty }
+        check(sung[1].start == 31.82 && sung[1].chords.first?.event.chord?.display == "D"
+              && sung[1].chords.first?.wordIndex == 0, "Anticipated D leads the next phrase instead of the previous last word")
+        check(sung[2].start == 36.74 && sung[2].chords.first?.event.chord?.display == "E", "Short anticipation also handles an inferred word end")
+        check(sung[0].chords.contains { $0.event.chord?.display == "Bm" }, "Change during the previous word stays with that word")
+        check(rows.flatMap(\.chords).map(\.event) == SheetModel.events(analysis), "Phrase association preserves all chord events and timestamps exactly")
+        var held = lines
+        held[0] = LyricLine(time: 26.8, text: "Still singing", words: [WordStamp(time: 26.8, text: "Still", end: 29), WordStamp(time: 30, text: "singing", end: 31.87)])
+        let heldRows = SheetModel.build(analysis: analysis, lines: held, duration: 45)
+        check(heldRows.first { $0.text == "Still singing" }!.chords.contains { $0.event.chord?.display == "D" }, "Do not move a chord while the previous word still sounds")
+        for words in [
+            [WordStamp(time: 1, text: "keep")],
+            [WordStamp(time: 1, text: "keep"), WordStamp(time: 9, text: "every"), WordStamp(time: 10, text: "word")],
+            [WordStamp(time: 2, text: "keep"), WordStamp(time: 1, text: "every"), WordStamp(time: 3, text: "word")]
+        ] {
+            let incomplete = SheetModel.build(analysis: chart(), lines: [LyricLine(time: 1, text: "keep every word", words: words), LyricLine(time: 8, text: "next line", words: nil)], duration: 20)
+            let first = incomplete.first { !$0.text.isEmpty }!
+            check(first.text == "keep every word" && first.words == nil, "Incomplete or invalid timing falls back to full text, without losing words")
+        }
+        let shortIntro = SheetModel.build(analysis: chart(), lines: [LyricLine(time: 0.2, text: "Early entrance", words: nil)], duration: 20)
+        check(shortIntro.flatMap(\.chords).map(\.event) == SheetModel.events(chart()), "A sub-second wordless gap cannot swallow its chord change")
+        let shared = SheetModel.build(analysis: chart(), lines: [LyricLine(time: 2, text: "first line", words: nil), LyricLine(time: 2, text: "second line", words: nil)], duration: 20)
+        check(shared.first { !$0.text.isEmpty }?.text == "first line second line", "Distinct lyrics sharing a timestamp both survive")
     }
 
     @MainActor static func modelTests() {

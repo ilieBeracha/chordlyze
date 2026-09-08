@@ -318,7 +318,11 @@ final class SongSheetStore: ObservableObject {
             lines = aligned.lines
             lyricsLoading = false
             lyricsFailed = false
-            lyricsNote = aligned.matched == "transcribed" ? "Transcribed from the recording" : "Lyrics timed from the recording"
+            let incompleteWords = aligned.lines.enumerated().contains { index, line in
+                !line.text.isEmpty && SheetModel.completeWords(line, before: index + 1 < aligned.lines.count ? aligned.lines[index + 1].time : .infinity) == nil
+            }
+            lyricsNote = aligned.timingNote ?? (incompleteWords ? "Some lyric timing is approximate." :
+                aligned.matched == "transcribed" ? "Transcribed from the recording" : "Lyrics timed from the recording")
         }
         state = status.job.state
         if let flag = status.saved { saved = flag }

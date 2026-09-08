@@ -103,9 +103,27 @@ enum SheetModel {
         let coverage = analysis?.isPreview == false ? analysis?.coverageEnd ?? 0 : 0
         var unique: [Double: LyricLine] = [:]
         for line in lines where line.time.isFinite && line.time >= 0 {
-            if unique[line.time] == nil || !line.text.isEmpty { unique[line.time] = line }
+            if let previous = unique[line.time], !previous.text.isEmpty, !line.text.isEmpty,
+               previous.text != line.text {
+                // Shared timestamps are not permission to discard another lyric.
+                unique[line.time] = LyricLine(time: line.time, text: previous.text + " " + line.text, words: nil)
+            } else if unique[line.time] == nil || !line.text.isEmpty { unique[line.time] = line }
         }
         let lyrics = unique.values.sorted { $0.time < $1.time }
+        var starts = lyrics.map(\.time)
+        // A chord can anticipate a phrase by a fraction of a second. Associate
+        // it visually with that phrase only after the preceding word has ended.
+        // Event timestamps themselves remain untouched for playback and scoring.
+        for index in lyrics.indices.dropFirst() {
+            let line = lyrics[index], previous = lyrics[index - 1]
+            guard !line.text.isEmpty, !previous.text.isEmpty,
+                  let priorWords = completeWords(previous, before: line.time), let last = priorWords.last,
+                  let event = events.last(where: { $0.chord != nil && $0.start < line.time && $0.end > line.time }),
+                  line.time - event.start <= 0.35,
+                  event.start > previous.time,
+                  event.start >= (last.end ?? (last.time + 0.5)) else { continue }
+            starts[index] = event.start
+        }
         let suppliedEnd = duration.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
         let end = suppliedEnd ?? max(coverage, lyrics.last.map { $0.time + rowLength } ?? 0)
         guard end > 0 else { return [] }
@@ -114,8 +132,9 @@ enum SheetModel {
         func append(start: Double, end: Double, text: String = "", words: [WordStamp]? = nil) {
             guard end > start else { return }
             // A wordless sliver shorter than half a second is rounding between
-            // neighbours, not a stretch anyone plays; it showed as "0:32–0:32".
-            if text.isEmpty, end - start < 0.5 { return }
+            // neighbours unless it carries a real chord change.
+            if text.isEmpty, end - start < 0.5,
+               !events.contains(where: { $0.start >= start && $0.start < end }) { return }
             let kind: Kind = start >= coverage ? .uncovered : (text.isEmpty ? .instrumental : .lyric)
             // A catalog duration a fraction longer than the analyzed audio is not a pending part.
             if kind == .uncovered, end - start < 1 { return }
@@ -135,11 +154,10 @@ enum SheetModel {
         }
         var cursor = 0.0
         for (index, line) in lyrics.enumerated() where line.time < end {
-            let start = max(cursor, line.time)
-            let next = min(end, index + 1 < lyrics.count ? lyrics[index + 1].time : end)
+            let start = max(cursor, starts[index])
+            let next = min(end, index + 1 < lyrics.count ? starts[index + 1] : end)
             if start > cursor { append(start: cursor, end: start) }
-            let words = line.words?.filter { $0.time.isFinite && $0.time >= start && $0.time < next }
-                .sorted { $0.time < $1.time }
+            let words = completeWords(line, before: next)
             if !line.text.isEmpty, let words, !words.isEmpty {
                 // A long pause inside a line that carries chord changes is sung as
                 // two parts with an instrumental between; drawn that way, the
@@ -177,6 +195,20 @@ enum SheetModel {
         }
         if cursor < end { append(start: cursor, end: end) }
         return rows
+    }
+
+    /// Only a complete word array may replace the authoritative lyric text.
+    /// A partial, out-of-range or reordered array falls back to line timing.
+    static func completeWords(_ line: LyricLine, before end: Double) -> [WordStamp]? {
+        guard let words = line.words, !words.isEmpty,
+              words.allSatisfy({ $0.time.isFinite && $0.time >= line.time && $0.time < end }),
+              zip(words, words.dropFirst()).allSatisfy({ $0.time <= $1.time }),
+              normalizedLyric(words.map(\.text).joined(separator: " ")) == normalizedLyric(line.text) else { return nil }
+        return words
+    }
+
+    private static func normalizedLyric(_ text: String) -> String {
+        text.split(whereSeparator: \.isWhitespace).joined(separator: " ").lowercased()
     }
 
     private static func place(_ events: [Event], start: Double, end: Double, kind: Kind,

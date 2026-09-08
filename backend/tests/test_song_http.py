@@ -98,15 +98,30 @@ def test_song_request_to_ready_and_reset_over_http(tmp_path):
             with pytest.raises(urllib.error.HTTPError) as unordered:
                 worker.post('/internal/jobs/lyrics', {**lyrics, 'lines': lyrics['lines'][::-1]})
             assert unordered.value.code == 422
+            lyrics['timing_note'] = 'Some lyric timing is approximate.'
             assert worker.post('/internal/jobs/lyrics', lyrics)['lines'] == 2
             timed = fetch('/song/synthetic')['lyrics']
             assert timed['synced'] and timed['matched'] == 'aligned'
+            assert timed['timing_note'] == lyrics['timing_note']
             assert timed['lines'][0]['words'][1]['text'] == 'there' and 'words' not in timed['lines'][1]
             assert worker.post('/internal/jobs/lyrics', {**lyrics, 'source': 'transcribed'})['lines'] == 2
             assert fetch('/song/synthetic')['lyrics']['matched'] == 'transcribed'
             with pytest.raises(urllib.error.HTTPError) as bad_source:
                 worker.post('/internal/jobs/lyrics', {**lyrics, 'source': 'guessed'})
             assert bad_source.value.code == 422
+            # An older worker may still publish a partial match. The API must
+            # reconcile it against the exact cached catalog before replacing lyrics.
+            import hashlib
+            cached_chart = json.loads((tmp_path / 'cache/track-synthetic.json').read_text())
+            key = f"{cached_chart.get('title', '')}|{cached_chart.get('artist', '')}|{cached_chart.get('album') or ''}|8"
+            digest = hashlib.sha256(key.lower().encode()).hexdigest()[:24]
+            (tmp_path / 'cache' / f'lyrics5-{digest}.json').write_text(json.dumps({
+                'synced': True, 'lines': [{'time': 0, 'text': 'Opening'}, {'time': 1, 'text': 'Hello there'}, {'time': 5, 'text': 'Goodbye'}]}))
+            before_chords = fetch('/song/synthetic')['analysis']['chords']
+            assert worker.post('/internal/jobs/lyrics', lyrics)['lines'] == 3
+            repaired = fetch('/song/synthetic')
+            assert [line['text'] for line in repaired['lyrics']['lines']] == ['Opening', 'Hello there', 'Goodbye']
+            assert repaired['lyrics']['timing_note'] and repaired['analysis']['chords'] == before_chords
             reset_library(tmp_path / 'cache', apply=True)
             with pytest.raises(urllib.error.HTTPError) as after_reset:
                 worker.post('/internal/jobs/lyrics', lyrics)

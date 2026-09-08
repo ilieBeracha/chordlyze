@@ -300,9 +300,15 @@ enum BackendClient {
         /// "exact" | "fuzzy" — how the song was matched on the lyrics source.
         let matched: String?
         let instrumental: Bool?
+        var timingNote: String? = nil
+        enum CodingKeys: String, CodingKey {
+            case lines, synced, matched, instrumental
+            case timingNote = "timing_note"
+        }
 
         /// Barely-visible disclosure for non-exact lyrics (beta).
         var betaNote: String? {
+            if let timingNote { return timingNote }
             if !synced { return "Lyrics timing is approximate." }
             if matched == "fuzzy" { return "Lyrics matched by song, artist and duration." }
             return nil
