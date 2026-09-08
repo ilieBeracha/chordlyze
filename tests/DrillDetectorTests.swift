@@ -127,6 +127,14 @@ struct DrillDetectorTests {
             check(feed(alternate, sequence, block: 333) == frames, "\(sr) arbitrary tap sizes give identical events")
             let quiet = try ChordDrillDetector(sampleRate: sr, chordA: "C", chordB: "Am")
             check(feed(quiet, tone([48,52,55], sr: sr, gain: 0.008)).last?.current == "C", "quiet clean chords recognized")
+            for (name, notes) in [("C", [48,52,55,60,64]), ("Am", [45,52,57,60,64])] {
+                for gain in [0.002, 0.001] {
+                    let soft = try ChordDrillDetector(sampleRate: sr, chordA: "C", chordB: "Am")
+                    let heard = feed(soft, tone(notes, sr: sr, gain: gain, strum: 0.02, decay: 2.0))
+                    check(heard.contains { $0.current == name }, "Soft decaying \(name) works in paired drills at gain \(gain)")
+                    check(heard.compactMap(\.current).allSatisfy { $0 == name }, "Soft chord cannot turn into its rival")
+                }
+            }
             let strummed = try ChordDrillDetector(sampleRate: sr, chordA: "C", chordB: "Am")
             check(feed(strummed, tone([48,52,55,60,64], sr: sr, strum: 0.018, decay: 0.7)).last?.current == "C", "guitar strum and decay recognized")
 

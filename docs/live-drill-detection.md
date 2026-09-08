@@ -2,6 +2,8 @@
 
 The live detector now compares both targets against a broader chord vocabulary, rejects uncertain input, and counts accepted alternations using microphone sample timestamps. The largest measured improvement is fewer false accepts. It still misses short, muted and incomplete strums; it is not a perfect recognizer.
 
+All microphone modes now share adaptive soft-input gating; song practice and standalone recognition require 250 ms confirmation, while paired drills retain 70 ms. See [the practice update](practice-improvements-2026-09-08/README.md) for current validation. The real-recording benchmark below predates that sensitivity update and has not been rerun.
+
 ## Evidence from real recordings
 
 The benchmark uses [GuitarSet's microphone audio and performed-chord annotations](https://guitarset.weebly.com/), downloaded from the [official Zenodo record](https://zenodo.org/records/3371780). Players 00/01 are the development split; players 04/05 are held out. All 120 comp takes from those players were considered. Eight lack two distinct supported pitch sets and are listed as excluded in the report. The resulting evaluation covers 112 takes and about 58 minutes of audio, including 53 held-out takes. No audio files are committed.

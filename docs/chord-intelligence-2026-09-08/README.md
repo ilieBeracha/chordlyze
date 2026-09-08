@@ -26,6 +26,8 @@ Verified on September 8, 2026: 395 backend tests passed, with 17 existing expect
 
 ## Live transition stability fix
 
+**Subsequent practice update:** song practice now shares this stable 250 ms policy and adaptive sensitivity. Paired drills retain 70 ms confirmation with the same improved soft-input gate. The historical milestone below describes the original standalone-only release. See [practice improvements](../practice-improvements-2026-09-08/README.md).
+
 Standalone microphone recognition now selects `ChordDrillDetector.Mode.liveRecognition`, requiring 250 ms of consecutive chord evidence before accepting a new label. The default and paired-drill modes retain their 70 ms timing, including practice feedback timestamps. Quiet input, uncertain evidence, changed candidates, resets and sample gaps break confirmation; elapsed time across a gap cannot promote an old guess. Recent chords receives confirmed labels only.
 
 During a transition the card retains the last confirmed chord in secondary text color with “Listening · last confirmed chord.” This is explicitly historical, not a fresh detection. Before any confirmation it shows “Confirming chord…” or uncertain status; quiet input and stopping clear the card. Brief provisional labels never replace the main chord or enter history.

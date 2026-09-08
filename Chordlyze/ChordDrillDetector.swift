@@ -15,6 +15,8 @@ struct DrillSnapshot: Equatable, Sendable {
     let changes: Int
     /// First acceptance in captured-audio time, retained across UI coalescing.
     var recognizedAt: Double? = nil
+    /// Estimated window + confirmation delay in captured-audio seconds.
+    var latency: Double = 0.35
 }
 
 enum DrillConfigurationError: LocalizedError {
@@ -353,7 +355,8 @@ final class ChordDrillDetector {
     enum Mode {
         case practiceFeedback
         case liveRecognition
-        var confirmationDuration: Double { self == .liveRecognition ? 0.25 : 0.07 }
+        case chordChanges
+        var confirmationDuration: Double { self == .chordChanges ? 0.07 : 0.25 }
     }
     let sampleRate: Double
     private let mode: Mode
@@ -372,22 +375,21 @@ final class ChordDrillDetector {
     private(set) var current: String?
     private var recognizedAt: Double?
     private(set) var changes = 0
-    private var noiseFloor: Float = 0.00015
+    private var noiseFloor: Float = 0.00002
     private var smoothedChroma: [Float]?
 
     convenience init(sampleRate: Double, chordA: String, chordB: String) throws {
-        try self.init(sampleRate: sampleRate, classifier: DrillChordClassifier(chordA: chordA, chordB: chordB))
+        try self.init(sampleRate: sampleRate, classifier: DrillChordClassifier(chordA: chordA, chordB: chordB), mode: .chordChanges)
     }
 
-    /// Practice keeps its short timing window. Standalone recognition waits for
-    /// sustained evidence to reject brief mixtures of outgoing/incoming notes.
+    /// Unrestricted recognition waits for sustained evidence in both song
+    /// practice and the standalone tool. Paired drills retain their fast dwell.
     convenience init(sampleRate: Double, mode: Mode = .practiceFeedback) throws {
         try self.init(sampleRate: sampleRate, classifier: DrillChordClassifier(targets: []), mode: mode)
     }
 
     private init(sampleRate: Double, classifier: DrillChordClassifier, mode: Mode = .practiceFeedback) throws {
         self.mode = mode
-        noiseFloor = mode == .liveRecognition ? 0.00002 : 0.00015
         self.sampleRate = sampleRate
         self.classifier = classifier
         analyzer = try DrillPitchAnalyzer(sampleRate: sampleRate)
@@ -398,7 +400,7 @@ final class ChordDrillDetector {
         expectedSampleTime = nil
         previousAccepted = nil
         changes = 0
-        noiseFloor = mode == .liveRecognition ? 0.00002 : 0.00015
+        noiseFloor = 0.00002
     }
 
     private func resetSignal() {
@@ -430,16 +432,16 @@ final class ChordDrillDetector {
             let time = Double(sampleTime + Int64(i) + 1) / sampleRate
             hopCount = 0
             recentPower = 0
-            // Live recognition learns noise from non-tonal input, rather than
+            // Every microphone mode learns noise from non-tonal input, rather than
             // assuming a soft instrument is background noise. Once a candidate
             // exists, its natural decay may continue at a lower level; a different
             // chord must still cross the entry threshold and confirm from scratch.
-            let entryLevel = max(mode == .liveRecognition ? 0.00012 : 0.0006, noiseFloor * 2.8)
-            let continuationLevel = mode == .liveRecognition && candidate != nil
+            let entryLevel = max(0.00012, noiseFloor * 2.8)
+            let continuationLevel = candidate != nil
                 ? max(0.00006, noiseFloor * 1.6) : entryLevel
             // A sharp mute is not a natural decay. Discard the old FFT window
             // before residual notes can confirm over the remaining room noise.
-            let abruptlyMuted = mode == .liveRecognition && candidate != nil
+            let abruptlyMuted = candidate != nil
                 && previousHopRMS.map { rms < $0 * 0.25 } == true
             previousHopRMS = rms
             let quiet = rms < continuationLevel || abruptlyMuted
@@ -447,7 +449,7 @@ final class ChordDrillDetector {
                 // A new strum must not inherit notes from before a rest.
                 filled = 0
                 smoothedChroma = nil
-                if mode == .practiceFeedback || rms < noiseFloor {
+                if rms < noiseFloor {
                     // Quiet tonal tails must not raise the gate for the next strum.
                     noiseFloor = min(0.002, noiseFloor * 0.96 + rms * 0.04)
                 }
@@ -469,11 +471,10 @@ final class ChordDrillDetector {
                 smoothedChroma = nil
             }
             if chroma == nil {
-                if mode == .liveRecognition { noiseFloor = min(0.002, noiseFloor * 0.9 + rms * 0.1) }
-                else { noiseFloor = min(0.002, noiseFloor * 0.98 + rms * 0.02) }
+                noiseFloor = min(0.002, noiseFloor * 0.9 + rms * 0.1)
             }
             var evidence = classifier.classify(chroma)
-            if mode == .liveRecognition, rms < entryLevel,
+            if rms < entryLevel,
                case .chord(let name) = evidence, name != candidate?.name {
                 evidence = .uncertain
             }
@@ -498,6 +499,7 @@ final class ChordDrillDetector {
             current = nil
             recognizedAt = nil
         }
-        return DrillSnapshot(time: time, evidence: evidence, current: current, changes: changes, recognizedAt: recognizedAt)
+        return DrillSnapshot(time: time, evidence: evidence, current: current, changes: changes, recognizedAt: recognizedAt,
+                             latency: 0.75 * Double(DrillPitchAnalyzer.frameSize) / sampleRate + mode.confirmationDuration)
     }
 }

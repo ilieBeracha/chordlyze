@@ -100,10 +100,12 @@ before it ends the take; a track change ends it at once.
 
 The take is captured through one `AVAudioEngine` tap. Each buffer is written to
 the .m4a and handed to `ChordDrillDetector` in its general form (any chord in
-the vocabulary, same 70 ms dwell), so the detector's sample time is the frame's
+the vocabulary, 250 ms of consecutive evidence), so the detector's sample time is the frame's
 position in the file: feedback and the backend score the same timeline.
 
-`PracticeFeedback` judges each chart chord from the first accepted chord timestamp in captured audio. The detector retains this timestamp across coalesced UI updates, so a busy main thread cannot move the reported strum later. Its 0.35-second analysis-delay correction remains an estimate, not a measured device calibration. It is applied in real seconds before chart-rate conversion. Live timing labels therefore say "estimated ... vs chart" or "near chart change" rather than asserting that the player was late. A chord already sounding when the take begins is held, not a missed earlier transition.
+`PracticeFeedback` judges each chart chord from the first accepted chord timestamp in captured audio. The detector retains this timestamp across coalesced UI updates, so a busy main thread cannot move the reported strum later. Each snapshot carries an estimated delay from the sample rate, analysis window and confirmation duration (about 0.53 seconds at 44.1 kHz). This is not a measured device calibration. It is applied in real seconds before chart-rate conversion. Live timing labels therefore say "estimated ... vs chart" or "near chart change" rather than asserting that the player was late. A chord already sounding when the take begins is held, not a missed earlier transition.
+
+Live targets use `SheetModel.events`, so beat-snapped chips and verdicts share the same boundaries. A sustained chord is credited only after it is heard inside the next target, never in advance. The live panel shows the target, confirmed heard chord, microphone level, provisional/quiet status, and the last check. With a capo, the target is labeled Sounding. Detection failures are reported while the recording continues.
 
 Matching uses pitch-class sets after transposition. Silence and uncertain detections remain unjudged in live feedback; confirmed wrong chords name what was heard. Matching chords can upgrade an earlier wrong verdict. Actual detector latency still depends on evidence quality and device input; no software constant establishes the player's acoustic timing.
 

@@ -14,7 +14,7 @@ struct PracticeFeedback: Equatable {
         case hit(offset: Double)
         /// A different chord was heard while this one should have sounded.
         case wrong(heard: String)
-        /// Same chord as the previous target, which was hit; nothing new to strum.
+        /// Matching chord heard sustained into this target, or already sounding at take start.
         case held
     }
     struct Target: Equatable {
@@ -24,7 +24,8 @@ struct PracticeFeedback: Equatable {
         let mask: UInt16
     }
 
-    /// Approximate analysis window plus dwell; not device/headphone calibration.
+    /// Legacy fallback for callers without a detector snapshot. Live practice
+    /// supplies the mode/sample-rate delay; neither is device calibration.
     static let detectorLatency = 0.35
     /// A strum this far before the chart change counts for the next chord.
     static let earlyWindow = 0.5
@@ -40,8 +41,19 @@ struct PracticeFeedback: Equatable {
 
     /// Sounding chords the take covers, transposed like the scoring reference.
     init(chords: [ChordSegment], start: Double, end: Double, transpose: Int = 0) {
+        self.init(events: chords.map { SheetModel.Event(start: $0.start, end: $0.end, chord: $0.chord) },
+                  start: start, end: end, transpose: transpose)
+    }
+
+    /// Use the same beat-aligned event boundaries as the visible sheet. Raw
+    /// segment timestamps cannot identify a chip that has snapped to a beat.
+    init(analysis: ChordAnalysis, start: Double, end: Double, transpose: Int = 0) {
+        self.init(events: SheetModel.events(analysis), start: start, end: end, transpose: transpose)
+    }
+
+    private init(events: [SheetModel.Event], start: Double, end: Double, transpose: Int) {
         takeStart = start
-        targets = chords.compactMap { segment in
+        targets = events.compactMap { segment in
             guard segment.end > start, segment.start < end,
                   let chord = segment.chord?.transposed(by: transpose),
                   let mask = Self.mask(chord) else { return nil }
@@ -59,14 +71,23 @@ struct PracticeFeedback: Equatable {
     /// Returns the index of the target whose verdict changed.
     @discardableResult
     mutating func observe(current: String?, chartTime: Double, chartRate: Double = 1,
-                          recognizedAt: Double? = nil) -> Int? {
+                          recognizedAt: Double? = nil, detectorLatency: Double = Self.detectorLatency) -> Int? {
         defer { lastHeard = current; lastRecognizedAt = recognizedAt }
-        guard chartRate.isFinite, chartRate > 0 else { return nil }
+        guard chartRate.isFinite, chartRate > 0, detectorLatency.isFinite, detectorLatency >= 0 else { return nil }
         self.chartRate = chartRate
-        guard let current, current != lastHeard || recognizedAt != lastRecognizedAt else { return nil }
+        guard let current else { return nil }
+        if current == lastHeard, recognizedAt == lastRecognizedAt {
+            // A held chord earns feedback only when it is actually heard in
+            // that interval. Never pre-award future repetitions of the chord.
+            let time = chartTime - detectorLatency * chartRate
+            guard let mask = Chord(display: current).flatMap(Self.mask),
+                  let index = targets.firstIndex(where: { $0.start <= time && time < $0.end }),
+                  targets[index].mask == mask, verdicts[index] == nil else { return nil }
+            return set(index, .held)
+        }
         // Subtract real detector seconds before mapping to the chart's pace.
         // UI delivery can be delayed; the first accepted audio frame cannot.
-        return heard(current, at: (recognizedAt ?? chartTime) - Self.detectorLatency * chartRate)
+        return heard(current, at: (recognizedAt ?? chartTime) - detectorLatency * chartRate)
     }
 
     /// A strum of `name` at chart second `time`.
@@ -95,13 +116,6 @@ struct PracticeFeedback: Equatable {
 
     private mutating func set(_ index: Int, _ verdict: Verdict) -> Int {
         verdicts[index] = verdict
-        if case .hit = verdict {
-            var k = index + 1
-            while k < targets.count, targets[k].mask == targets[index].mask, verdicts[k] == nil {
-                verdicts[k] = .held
-                k += 1
-            }
-        }
         return index
     }
 

@@ -9,7 +9,7 @@ struct MusicPreview: View {
     private let args = ProcessInfo.processInfo.arguments
     init() {
         let args = ProcessInfo.processInfo.arguments
-        _tab = State(initialValue: args.contains("--music-library") ? .library : args.contains("--music-search") ? .search : .home)
+        _tab = State(initialValue: args.contains("--music-practice") ? .practice : args.contains("--music-library") ? .library : args.contains("--music-search") ? .search : .home)
     }
     var body: some View {
         TabView(selection: $tab) {
@@ -19,9 +19,8 @@ struct MusicPreview: View {
             NavigationStack {
                 SearchView(isRoot: true, fetch: load, discovery: SongDiscovery(fetch: { _ in [] }))
             }.tabItem { Label("Search", systemImage: "magnifyingglass") }.tag(MainTabsView.Tab.search)
-            NavigationStack {
-                Text("Practice preview is available with --song-sheet-preview.").padding()
-            }.tabItem { Label("Practice", systemImage: "guitars") }.tag(MainTabsView.Tab.practice)
+            PracticeHubPreview(fetchSongs: load)
+                .tabItem { Label("Practice", systemImage: "guitars") }.tag(MainTabsView.Tab.practice)
             NavigationStack { LibraryView(isRoot: true, findSong: { tab = .search }, fetch: load) }
                 .tabItem { Label("Library", systemImage: "music.note.list") }.tag(MainTabsView.Tab.library)
         }
