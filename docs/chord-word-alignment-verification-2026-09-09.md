@@ -1,6 +1,7 @@
 # Chord/word alignment correction — verification, 2026-09-09
 
-Status: the confirmed shared display and estimated-rest bugs are corrected on
+Status: **the two reported cases are verified, but all-song acceptance is not
+met.** The confirmed shared display and estimated-rest bugs are corrected on
 `codex/chord-word-alignment`. Both approved production payloads have now been
 inspected, including the missing transcription-only case in The Push. A backend
 deployment and a new TestFlight release remain pending. This is not a claim
@@ -121,3 +122,34 @@ This fixture has authored words with the reported Shadows timing geometry.
 Temporary visual evidence: `/tmp/chordlyze-alignment-review-renders`,
 `/tmp/chordlyze-alignment-simulator.png`. Saved song lyric payloads are kept
 outside source control.
+
+## All-song acceptance remains open
+
+A read-only aggregate audit of the entire shared song cache found additional
+malformed and out-of-line word timestamps after the proposed on-read repair.
+The numeric production report is retained locally. These flags identify
+structural timing problems, not proof that every flagged song has the exact
+visible failure in the screenshots. They rule out treating the two reported
+examples as evidence that every saved song has been repaired.
+
+The acoustic retry is bounded and requires supporting anchors. The worker
+change does not retroactively transcribe every cached chart. Untimed lines
+remain explicitly separate from lines with verified word timestamps.
+
+The reproducible command is included in the backend image:
+
+```sh
+python scripts/audit_lyrics_timing.py --cache /data/analysis_cache --fail-on-invalid
+```
+
+This check returned a nonzero status on the audited cache, as intended. It
+fails for unresolved invalid timing, incomplete or out-of-range word arrays,
+an empty/unreadable cache, non-lyric mutations, or charts changed during the
+audit. Seven audit tests cover those contracts; the combined lyric suite
+passes 67 tests. This is a manual release check, not an installed CI requirement.
+Passing it establishes structural validity, not acoustic truth.
+
+The remaining cases require classification, recording-backed repair where
+possible, a repeat audit, and rendered/recording checks for each distinct
+failure pattern. Add those cases to the regression suite before claiming
+broader coverage. Do not merge this PR under an all-song completion claim.

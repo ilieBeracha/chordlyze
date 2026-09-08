@@ -45,3 +45,5 @@ On The Push's verified recording, the opening is recovered at 18.600 seconds. On
 - Mixed timing regression fixture: `--song-sheet-preview --mixed-word-timing-preview`. This uses the reported Shadows timing geometry with authored replacement words and estimate flags. It exercises the actual song page, including phrase spacing.
 
 On-device playback against the source recording remains the final check of perceived musical alignment. No new TestFlight build is implied by simulator verification.
+
+For existing charts, run `python scripts/audit_lyrics_timing.py --cache /data/analysis_cache --fail-on-invalid` before making an all-song acceptance claim. It returns aggregate before/after counts without lyrics or song identities and fails when structurally invalid timing remains. A clean audit still requires representative acoustic checks: valid timestamps alone cannot prove that words were recognized at the correct moment. The initial whole-cache audit still flags additional charts after read repair, so the current correction is not an all-song repair of saved timing data.
