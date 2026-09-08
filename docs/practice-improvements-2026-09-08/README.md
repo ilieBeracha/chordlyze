@@ -2,7 +2,7 @@
 
 ## What changed
 
-The main Practice tab now uses the app's shared music typography and a restrained green background that fades into black. Song practice has the primary action. Chord recognition and one-minute changes have distinct entries, larger chord selectors, and a same-chord guard. The selected pair persists between visits. Saved takes show their recording time, review state, and a purposeful empty state. Accessibility text sizes stack the chord controls and recording feedback instead of compressing them.
+The main Practice tab now uses the app's shared music typography and a restrained green background that fades into black. A single Practice heading and one supporting line lead directly into the song action; the redundant Play a song heading was removed after review. Chord recognition and one-minute changes have distinct entries, larger chord selectors, and a same-chord guard. The selected pair persists between visits. Saved takes show their recording time, review state, and a purposeful empty state. Accessibility text sizes stack the chord controls and recording feedback instead of compressing them.
 
 The review started with a fresh simulator capture, [before.png](before.png). It showed a flat hierarchy, a low-contrast white-on-green action, small chord selectors, and weak separation between tools and recordings. [after.png](after.png) records the new hierarchy; the preview uses an isolated sample recording and does not overwrite account takes.
 

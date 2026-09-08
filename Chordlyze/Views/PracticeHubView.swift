@@ -18,8 +18,10 @@ struct PracticeHubView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 28) {
-                MusicHeader(title: "Practice", subtitle: "Your space to play.")
-                songPractice
+                VStack(alignment: .leading, spacing: 20) {
+                    MusicHeader(title: "Practice", subtitle: "Follow the chords. Record your take.")
+                    songPractice
+                }
                 VStack(alignment: .leading, spacing: 14) {
                     SectionLabel("On your instrument")
                     recognition
@@ -36,24 +38,16 @@ struct PracticeHubView: View {
     }
 
     private var songPractice: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Play a song").font(MusicStyle.font(28, bold: true, relativeTo: .title))
-                    .accessibilityAddTraits(.isHeader)
-                Text("Follow the chords. Record your take.")
-                    .font(MusicStyle.font(15)).foregroundStyle(Palette.lyricDim)
-            }
-            NavigationLink { LibraryView(fetch: fetchSongs) } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "play.fill")
-                    Text("Choose a song").font(MusicStyle.font(16, bold: true))
-                    Spacer()
-                    Image(systemName: "arrow.right")
-                }.foregroundStyle(.black).padding(.horizontal, 20).padding(.vertical, 18)
-                    .frame(minHeight: 56)
-                    .background(Color.spotifyGreen, in: Capsule())
-            }.buttonStyle(MusicPressStyle()).accessibilityIdentifier("practice-choose-song")
-        }
+        NavigationLink { LibraryView(fetch: fetchSongs) } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "play.fill")
+                Text("Choose a song").font(MusicStyle.font(16, bold: true))
+                Spacer()
+                Image(systemName: "arrow.right")
+            }.foregroundStyle(.black).padding(.horizontal, 20).padding(.vertical, 18)
+                .frame(minHeight: 56)
+                .background(Color.spotifyGreen, in: Capsule())
+        }.buttonStyle(MusicPressStyle()).accessibilityIdentifier("practice-choose-song")
     }
 
     private var recognition: some View {
