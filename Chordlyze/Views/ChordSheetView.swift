@@ -6,6 +6,7 @@ import SwiftUI
 /// The header holds the chord-shape rail toggle and song map.
 struct AnalysisTabsView: View {
     @StateObject private var store: SongSheetStore
+    @ObservedObject private var takes: PracticeTakeStore
     @State private var selectedChord: SelectedChord?
     @State private var showSettings = false
     @State private var showSongMap = false
@@ -19,9 +20,11 @@ struct AnalysisTabsView: View {
     /// The Spotify poller behind seeks and calibration; the offline fixture passes its own.
     @ObservedObject var nowPlaying: SpotifyNowPlaying
 
-    @MainActor init(song: SongDescriptor, store: SongSheetStore? = nil, nowPlaying: SpotifyNowPlaying? = nil) {
+    @MainActor init(song: SongDescriptor, store: SongSheetStore? = nil, nowPlaying: SpotifyNowPlaying? = nil,
+                    takes: PracticeTakeStore? = nil) {
         _store = StateObject(wrappedValue: store ?? SongSheetStore.shared(for: song))
         _nowPlaying = ObservedObject(wrappedValue: nowPlaying ?? .shared)
+        self.takes = takes ?? .shared
     }
 
     /// Spotify has this song up, playing or paused, whoever started it.
@@ -83,6 +86,7 @@ struct AnalysisTabsView: View {
             }
         }
         .observes(store)
+        .onAppear { takes.reload() }
     }
 
     /// Rail, toolbar, status, the chart, and while playing the time line.
@@ -100,6 +104,7 @@ struct AnalysisTabsView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
                         if store.canPractice { toolbar(playhead: playhead) }
+                        songRecordings
                         SongSheetStatus(store: store)
                         ChordSheetView(store: store, playhead: playhead, style: .live,
                                        onChordTap: { selectedChord = SelectedChord(name: $0) },
@@ -147,8 +152,12 @@ struct AnalysisTabsView: View {
                     NavigationLink {
                         PracticeView(analysis: chart, title: store.song.title, artist: store.song.artist,
                                      album: store.song.album, trackID: store.song.id, songStore: store, nowPlaying: nowPlaying)
-                    } label: { tool("Practice") }
-                    .buttonStyle(.plain)
+                    } label: {
+                        Label("Practice", systemImage: "play.fill").font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.black).frame(maxWidth: .infinity, minHeight: 44)
+                            .background(Color.spotifyGreen, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain).accessibilityIdentifier("song-practice")
                 }
                 Button { showSettings = true } label: { tool("Key & capo") }.buttonStyle(.plain)
                 Button {
@@ -177,6 +186,16 @@ struct AnalysisTabsView: View {
         Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
             .frame(maxWidth: .infinity, minHeight: 42)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.card))
+    }
+
+    @ViewBuilder private var songRecordings: some View {
+        let recordings = takes.recordings(for: store.song.id)
+        if !recordings.isEmpty {
+            NavigationLink { RecordingsView(song: store.song, takes: takes) } label: {
+                Label("Recordings (\(recordings.count))", systemImage: "waveform")
+                    .font(.subheadline).foregroundStyle(Color.spotifyGreen).frame(minHeight: 44)
+            }.buttonStyle(MusicPressStyle()).accessibilityIdentifier("song-recordings")
+        }
     }
 
 }

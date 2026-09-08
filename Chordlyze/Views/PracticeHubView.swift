@@ -1,53 +1,20 @@
 import AVFoundation
 import SwiftUI
 
-struct PracticeHubView: View {
-    @ObservedObject private var takes: PracticeTakeStore
-    private let fetchSongs: () async throws -> [BackendClient.LibraryItem]
+struct InstrumentToolsView: View {
     @AppStorage("practice-first-chord") private var firstChord = "C"
     @AppStorage("practice-second-chord") private var secondChord = "G"
     @Environment(\.dynamicTypeSize) private var typeSize
     private let chords = ["C", "D", "Dm", "E", "Em", "F", "G", "A", "Am", "B7"]
 
-    init(takes: PracticeTakeStore? = nil,
-         fetchSongs: @escaping () async throws -> [BackendClient.LibraryItem] = { try await BackendClient.library() }) {
-        self.takes = takes ?? .shared
-        self.fetchSongs = fetchSongs
-    }
-
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 28) {
-                VStack(alignment: .leading, spacing: 20) {
-                    MusicHeader(title: "Practice", subtitle: "Follow the chords. Record your take.")
-                    songPractice
-                }
-                VStack(alignment: .leading, spacing: 14) {
-                    SectionLabel("On your instrument")
-                    recognition
-                    changes
-                }
-                recordings
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 20)
-            .padding(.bottom, 32)
-        }
-        .modifier(MusicSurface(ambient: Palette.heroBackground))
-        .onAppear { takes.reload() }
-    }
-
-    private var songPractice: some View {
-        NavigationLink { LibraryView(fetch: fetchSongs) } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "play.fill")
-                Text("Choose a song").font(MusicStyle.font(16, bold: true))
-                Spacer()
-                Image(systemName: "arrow.right")
-            }.foregroundStyle(.black).padding(.horizontal, 20).padding(.vertical, 18)
-                .frame(minHeight: 56)
-                .background(Color.spotifyGreen, in: Capsule())
-        }.buttonStyle(MusicPressStyle()).accessibilityIdentifier("practice-choose-song")
+            VStack(alignment: .leading, spacing: 24) {
+                MusicHeader(title: "Instrument tools", subtitle: "Check a chord or work on a change.", isRoot: false)
+                recognition
+                changes
+            }.padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 32)
+        }.modifier(MusicSurface())
     }
 
     private var recognition: some View {
@@ -113,29 +80,28 @@ struct PracticeHubView: View {
         }.buttonStyle(MusicPressStyle()).accessibilityLabel(title).accessibilityValue(selection.wrappedValue)
     }
 
-    private var recordings: some View {
+}
+
+struct RecordingsContent: View {
+    @ObservedObject var takes: PracticeTakeStore
+    var songID: String? = nil
+    @State private var query = ""
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private var recordings: [PracticeTake] { takes.recordings(for: songID, matching: query) }
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Your takes").font(MusicStyle.font(23, bold: true, relativeTo: .title2))
-                    .accessibilityAddTraits(.isHeader)
-                Spacer()
-                if !takes.takes.isEmpty {
-                    Text("\(takes.takes.count)").font(MusicStyle.font(13)).foregroundStyle(MusicStyle.secondary)
-                        .accessibilityLabel(takes.takes.count == 1 ? "1 saved recording" : "\(takes.takes.count) saved recordings")
-                }
-            }
+            MusicSearchField(prompt: "Search recordings", text: $query)
             if let error = takes.error { Text(error).font(.footnote).foregroundStyle(Palette.warning) }
-            if takes.takes.isEmpty {
-                HStack(alignment: .top, spacing: 14) {
-                    Image(systemName: "waveform.path").font(.title2).foregroundStyle(MusicStyle.secondary)
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Your next take starts here").font(MusicStyle.font(15, bold: true))
-                        Text("Record with a song, then listen back and review your chords.")
-                            .font(MusicStyle.font(14)).foregroundStyle(MusicStyle.secondary)
-                    }
-                }.padding(.vertical, 8)
+            if recordings.isEmpty {
+                MusicNotice(title: query.isEmpty ? "No recordings yet" : "No matching recordings",
+                            message: query.isEmpty ? "Open a song and tap Practice to record your playing. Your takes will stay here for listening and review."
+                                                   : "Try a different song title or artist.")
+            } else {
+                Text("\(recordings.count) \(recordings.count == 1 ? "recording" : "recordings")")
+                    .font(.subheadline).foregroundStyle(MusicStyle.secondary)
             }
-            ForEach(takes.takes) { take in
+            ForEach(recordings) { take in
                 NavigationLink { ScrollView { SavedTakeView(take: take, takes: takes) } } label: {
                     (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
                      : AnyLayout(HStackLayout(spacing: 14))) {
@@ -155,6 +121,49 @@ struct PracticeHubView: View {
                 }.buttonStyle(MusicPressStyle())
             }
         }
+        .onAppear { takes.reload() }
+    }
+}
+
+struct RecordingsView: View {
+    @ObservedObject private var takes: PracticeTakeStore
+    let song: SongDescriptor?
+    init(song: SongDescriptor? = nil, takes: PracticeTakeStore? = nil) {
+        self.song = song
+        self.takes = takes ?? .shared
+    }
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                MusicHeader(title: "Recordings", subtitle: song?.title ?? "Listen back to your playing.", isRoot: false)
+                RecordingsContent(takes: takes, songID: song?.id)
+            }.padding(24)
+        }.modifier(MusicSurface())
+    }
+}
+
+/// Loads only the selected song, then opens its setup. Never starts audio automatically.
+struct SongPracticeDestination: View {
+    @StateObject private var store: SongSheetStore
+    init(song: SongDescriptor, store: SongSheetStore? = nil) {
+        _store = StateObject(wrappedValue: store ?? SongSheetStore.shared(for: song))
+    }
+    var body: some View {
+        Group {
+            if store.canPractice, let chart = store.analysis {
+                PracticeView(analysis: chart, title: store.song.title, artist: store.song.artist,
+                             album: store.song.album, trackID: store.song.id, songStore: store)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        MusicHeader(title: "Practice", subtitle: store.song.title, isRoot: false)
+                        SongSheetStatus(store: store)
+                        NavigationLink("Open song sheet") { AnalysisTabsView(song: store.song, store: store) }
+                            .frame(minHeight: 44)
+                    }.padding(24)
+                }.modifier(MusicSurface())
+            }
+        }.observes(store).toolbar(.hidden, for: .tabBar)
     }
 }
 
@@ -201,7 +210,7 @@ struct SavedTakeView: View {
                 Label(error, systemImage: "exclamationmark.circle")
                     .font(.subheadline).foregroundStyle(Palette.warning).accessibilityIdentifier("take-error")
             }
-            NavigationLink { AnalysisTabsView(song: current.song) } label: {
+            NavigationLink { AnalysisTabsView(song: current.song, takes: takes) } label: {
                 HStack(spacing: 14) {
                     Image(systemName: "music.note.list").font(.title3).foregroundStyle(Color.spotifyGreen)
                         .frame(width: 44, height: 44).background(MusicStyle.surface, in: RoundedRectangle(cornerRadius: 12))
@@ -385,27 +394,24 @@ struct SavedTakeView: View {
 }
 
 struct MainTabsView: View {
-    enum Tab: Hashable { case home, search, practice, library }
+    enum Tab: Hashable { case home, search, library }
     @State private var selection: Tab = .home
     var body: some View {
         TabView(selection: $selection) {
-            HomeView(openSearch: { selection = .search }, openLibrary: { selection = .library },
-                     openPractice: { selection = .practice })
+            HomeView(openSearch: { selection = .search }, openLibrary: { selection = .library })
                 .tabItem { Label("Home", systemImage: "house") }.tag(Tab.home)
             NavigationStack { SearchView(isRoot: true) }
                 .tabItem { Label("Search", systemImage: "magnifyingglass") }.tag(Tab.search)
-            NavigationStack { PracticeHubView() }
-                .tabItem { Label("Practice", systemImage: "guitars") }.tag(Tab.practice)
             NavigationStack { LibraryView(isRoot: true, findSong: { selection = .search }) }
                 .tabItem { Label("Library", systemImage: "music.note.list") }.tag(Tab.library)
         }
-        .tint(selection == .practice ? .spotifyGreen : MusicStyle.accent)
+        .tint(MusicStyle.accent)
     }
 }
 
 #if DEBUG
 /// Isolated authored audio and injected scoring; never reads account takes.
-@MainActor private final class SavedTakePreviewModel: ObservableObject {
+@MainActor final class SavedTakePreviewModel: ObservableObject {
     let store: PracticeTakeStore
     let take: PracticeTake
     init() {
@@ -454,14 +460,4 @@ struct SavedTakePreview: View {
     }
 }
 
-struct PracticeHubPreview: View {
-    @StateObject private var model = SavedTakePreviewModel()
-    var fetchSongs: () async throws -> [BackendClient.LibraryItem]
-    var body: some View {
-        NavigationStack {
-            if ProcessInfo.processInfo.arguments.contains("--practice-feedback") { PracticeListeningPreview() }
-            else { PracticeHubView(takes: model.store, fetchSongs: fetchSongs) }
-        }
-    }
-}
 #endif

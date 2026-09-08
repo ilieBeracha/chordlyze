@@ -2,11 +2,23 @@
 
 ## Navigation
 
-Home, Search, Practice and Library are persistent tabs. Search, saved song sheets,
-recorded practice and drills are accessible without Spotify login. Connecting
-Spotify adds playlists and live following. Home offers a link back to the most
-recently practiced song. The Practice tab offers chord-change drills and saved
-recordings/results; Library labels analyzed charts as Saved songs.
+Home, Search and Library are the three persistent tabs. Practice starts from the
+green **Practice** action on a prepared song sheet, or from a selected passage.
+There is no separate Practice tab or song-selection landing page.
+
+Home's **Instrument tools** opens standalone chord recognition and chord-change
+drills. When a saved take exists, **Continue practicing → Practice again** opens
+setup for its song. It does not automatically start playback or the microphone,
+or restore the previous take's range and pace. An unavailable chart offers its
+existing loading, analysis and retry controls.
+
+Library separates **Songs** and **Recordings**. Recordings can be searched by
+song title or artist; each song sheet also links to its own recordings, even
+when its chart is unavailable. These are views of the same local take store,
+filtered by track ID rather than title. Existing files, playback, scoring retry
+and deletion are preserved without migration or duplication. The main account
+navigation retains its existing sign-in requirements; standalone chord
+recognition remains accessible from the login screen.
 
 ## Practicing a passage
 

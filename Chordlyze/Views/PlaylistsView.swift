@@ -4,7 +4,7 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject private var auth: SpotifyAuth
     @ObservedObject private var nowPlaying = SpotifyNowPlaying.shared
-    @ObservedObject private var takes = PracticeTakeStore.shared
+    @ObservedObject private var takes: PracticeTakeStore
     @ObservedObject private var artworkColors = ArtworkColor.shared
     @State private var fallbackArtwork: HomeArtwork?
     @StateObject private var collection: MusicCollection
@@ -15,13 +15,13 @@ struct HomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var openSearch: () -> Void
     var openLibrary: () -> Void
-    var openPractice: () -> Void
     private let preview: Bool
 
-    init(openSearch: @escaping () -> Void, openLibrary: @escaping () -> Void, openPractice: @escaping () -> Void,
+    init(openSearch: @escaping () -> Void, openLibrary: @escaping () -> Void,
          fetch: @escaping () async throws -> [BackendClient.LibraryItem] = { try await BackendClient.library() },
-         preview: Bool = false) {
-        self.openSearch = openSearch; self.openLibrary = openLibrary; self.openPractice = openPractice
+         preview: Bool = false, takes: PracticeTakeStore? = nil) {
+        self.openSearch = openSearch; self.openLibrary = openLibrary
+        self.takes = takes ?? .shared
         self.preview = preview
         _collection = StateObject(wrappedValue: MusicCollection(fetch: fetch))
     }
@@ -53,7 +53,7 @@ struct HomeView: View {
                         firstSong
                     }
                     quickActions
-                    if !preview, let take = takes.takes.first { latestTake(take) }
+                    if let take = takes.takes.first { latestTake(take) }
                     if let error = collection.error {
                         MusicNotice(title: "Couldn’t refresh your library", message: error,
                                     actionTitle: "Try again") { Task { await collection.load() } }
@@ -69,7 +69,7 @@ struct HomeView: View {
             .task(id: ambientArtwork?.id) {
                 if let artwork = ambientArtwork { await artworkColors.load(trackID: artwork.id, url: artwork.url) }
             }
-            .onAppear { if !preview { takes.reload() } }
+            .onAppear { takes.reload() }
             .onChange(of: collection.items.map(\.id)) { _, _ in chooseFallbackArtwork() }
         }
     }
@@ -143,7 +143,9 @@ struct HomeView: View {
         HStack(alignment: .top, spacing: 0) {
             Button(action: openSearch) { quickAction("Find a song", detail: "Search & discover", icon: "magnifyingglass") }
             Rectangle().fill(MusicStyle.rule).frame(width: 1)
-            Button(action: openPractice) { quickAction("Practice", detail: "Drills & recordings", icon: "guitars") }
+            NavigationLink { InstrumentToolsView() } label: {
+                quickAction("Instrument tools", detail: "Chords & changes", icon: "guitars")
+            }.accessibilityIdentifier("home-instrument-tools")
         }.fixedSize(horizontal: false, vertical: true).buttonStyle(MusicPressStyle())
             .padding(.vertical, 18)
             .overlay(alignment: .top) { MusicRule() }.overlay(alignment: .bottom) { MusicRule() }
@@ -159,11 +161,21 @@ struct HomeView: View {
 
     private func latestTake(_ take: PracticeTake) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            MusicSectionHeading(title: "Latest recording")
-            NavigationLink { ScrollView { SavedTakeView(take: take) } } label: {
+            MusicSectionHeading(title: "Continue practicing")
+            NavigationLink { SongPracticeDestination(song: take.song) } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(take.song.title).font(MusicStyle.font(19, bold: true))
+                        Text("Practice again").font(.subheadline).foregroundStyle(MusicStyle.accent)
+                    }
+                    Spacer()
+                    Image(systemName: "play.fill").foregroundStyle(MusicStyle.accent)
+                }.frame(minHeight: 60).contentShape(Rectangle())
+            }.buttonStyle(MusicPressStyle()).accessibilityIdentifier("home-continue-practice")
+            NavigationLink { ScrollView { SavedTakeView(take: take, takes: takes) } } label: {
                 MusicSongRow(title: take.song.title, artist: take.song.artist,
                              artwork: take.song.artwork.flatMap(URL.init),
-                             detail: "\(take.createdAt.formatted(date: .abbreviated, time: .omitted)) · \(Int(take.plan.rate * 100))% pace")
+                             detail: "Latest take · \(take.createdAt.formatted(date: .abbreviated, time: .omitted))")
             }.buttonStyle(MusicPressStyle())
             MusicRule()
         }

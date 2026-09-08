@@ -1,5 +1,9 @@
 # Practice: clearer entry points and trustworthy live feedback
 
+This records an earlier design milestone. Its Practice tab, screenshots and
+preview flags were superseded by [song-centered practice](../song-centered-practice-2026-09-08/README.md).
+The detection and feedback changes below remain in use.
+
 ## What changed
 
 The main Practice tab now uses the app's shared music typography and a restrained green background that fades into black. A single Practice heading and one supporting line lead directly into the song action; the redundant Play a song heading was removed after review. Chord recognition and one-minute changes have distinct entries, larger chord selectors, and a same-chord guard. The selected pair persists between visits. Saved takes show their recording time, review state, and a purposeful empty state. Accessibility text sizes stack the chord controls and recording feedback instead of compressing them.
