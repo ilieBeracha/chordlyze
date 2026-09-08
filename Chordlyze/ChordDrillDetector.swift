@@ -365,6 +365,7 @@ final class ChordDrillDetector {
     private var filled = 0
     private var hopCount = 0
     private var recentPower: Float = 0
+    private var previousHopRMS: Float?
     private var expectedSampleTime: Int64?
     private var candidate: (name: String, since: Double)?
     private var previousAccepted: String?
@@ -386,6 +387,7 @@ final class ChordDrillDetector {
 
     private init(sampleRate: Double, classifier: DrillChordClassifier, mode: Mode = .practiceFeedback) throws {
         self.mode = mode
+        noiseFloor = mode == .liveRecognition ? 0.00002 : 0.00015
         self.sampleRate = sampleRate
         self.classifier = classifier
         analyzer = try DrillPitchAnalyzer(sampleRate: sampleRate)
@@ -396,7 +398,7 @@ final class ChordDrillDetector {
         expectedSampleTime = nil
         previousAccepted = nil
         changes = 0
-        noiseFloor = 0.00015
+        noiseFloor = mode == .liveRecognition ? 0.00002 : 0.00015
     }
 
     private func resetSignal() {
@@ -404,6 +406,7 @@ final class ChordDrillDetector {
         hopCount = 0
         writeIndex = 0
         recentPower = 0
+        previousHopRMS = nil
         candidate = nil
         current = nil
         recognizedAt = nil
@@ -427,12 +430,27 @@ final class ChordDrillDetector {
             let time = Double(sampleTime + Int64(i) + 1) / sampleRate
             hopCount = 0
             recentPower = 0
-            let quiet = rms < max(0.0006, noiseFloor * 2.8)
+            // Live recognition learns noise from non-tonal input, rather than
+            // assuming a soft instrument is background noise. Once a candidate
+            // exists, its natural decay may continue at a lower level; a different
+            // chord must still cross the entry threshold and confirm from scratch.
+            let entryLevel = max(mode == .liveRecognition ? 0.00012 : 0.0006, noiseFloor * 2.8)
+            let continuationLevel = mode == .liveRecognition && candidate != nil
+                ? max(0.00006, noiseFloor * 1.6) : entryLevel
+            // A sharp mute is not a natural decay. Discard the old FFT window
+            // before residual notes can confirm over the remaining room noise.
+            let abruptlyMuted = mode == .liveRecognition && candidate != nil
+                && previousHopRMS.map { rms < $0 * 0.25 } == true
+            previousHopRMS = rms
+            let quiet = rms < continuationLevel || abruptlyMuted
             if quiet {
                 // A new strum must not inherit notes from before a rest.
                 filled = 0
                 smoothedChroma = nil
-                noiseFloor = min(0.002, noiseFloor * 0.96 + rms * 0.04)
+                if mode == .practiceFeedback || rms < noiseFloor {
+                    // Quiet tonal tails must not raise the gate for the next strum.
+                    noiseFloor = min(0.002, noiseFloor * 0.96 + rms * 0.04)
+                }
                 snapshots.append(accept(.quiet, at: time))
                 continue
             }
@@ -450,8 +468,16 @@ final class ChordDrillDetector {
             } else {
                 smoothedChroma = nil
             }
-            if chroma == nil { noiseFloor = min(0.002, noiseFloor * 0.98 + rms * 0.02) }
-            snapshots.append(accept(classifier.classify(chroma), at: time))
+            if chroma == nil {
+                if mode == .liveRecognition { noiseFloor = min(0.002, noiseFloor * 0.9 + rms * 0.1) }
+                else { noiseFloor = min(0.002, noiseFloor * 0.98 + rms * 0.02) }
+            }
+            var evidence = classifier.classify(chroma)
+            if mode == .liveRecognition, rms < entryLevel,
+               case .chord(let name) = evidence, name != candidate?.name {
+                evidence = .uncertain
+            }
+            snapshots.append(accept(evidence, at: time))
         }
         return snapshots
     }
