@@ -53,7 +53,8 @@ struct SongSheetPreview: View {
                             // `--song-sheet-preview-playing`: the fake device starts at once, so
                             // the sheet lighting up in place can be checked without a tap.
                             guard ProcessInfo.processInfo.arguments.contains("--song-sheet-preview-playing") else { return }
-                            try? await player.play(trackID: store.song.id, at: 0)
+                            let start = ProcessInfo.processInfo.arguments.contains("--independent-chords-vocal") ? 28.225 : 0
+                            try? await player.play(trackID: store.song.id, at: start)
                         }
                 }
             }.background(.black)
@@ -82,13 +83,14 @@ struct SongSheetPreview: View {
     @MainActor private static func makePlayer(sheet: SongSheetStore) -> SpotifyNowPlaying {
         var device: (anchor: ContinuousClock.Instant, offset: Double, playing: Bool)?
         var discoveryCalls = 0
+        let duration = sheet.song.duration ?? 40
         let item: [String: Any] = ["id": sheet.song.id, "name": sheet.song.title, "artists": [["name": sheet.song.artist]],
-                                   "album": ["name": "Preview"], "duration_ms": 40000]
+                                   "album": ["name": "Preview"], "duration_ms": Int(duration * 1000)]
         let player = SpotifyNowPlaying(service: .init(
             current: {
                 guard let device else { return nil }
                 let position = device.offset + (device.playing ? device.anchor.duration(to: .now).seconds : 0)
-                if position >= 40 { return nil }
+                if position >= duration { return nil }
                 return decode(["progress_ms": Int(position * 1000), "is_playing": device.playing, "item": item,
                                "device": ["id": "sim", "name": "Simulator", "type": "Smartphone", "is_active": true]])
             },
@@ -135,7 +137,28 @@ struct SongSheetPreview: View {
         return SongSheetStore(song: song, analysis: payload.analysis, service: .init(request: { _ in payload }, status: { _ in payload }, lyrics: { _ in nil }))
     }
 
+    /// The reported intro/rest geometry, with authored replacement words.
+    @MainActor private static func independentTimingStore() -> SongSheetStore {
+        let song = SongDescriptor(trackID: "timing-preview", title: "Independent timing", artist: "Offline sample", duration: 60)
+        let boundaries = [0.0, 3.808, 12.399, 21.037, 29.721, 31.927, 34.807, 41.285, 42.98, 47.067, 51.386, 53.545, 60]
+        let labels = ["N", "E:min", "E:min7", "D:min7", "E:min7", "A:maj/5", "E:min7", "A:maj/5", "E:min7", "B:min7", "A:7", "F#:min7"]
+        let segments: [[String: Any]] = labels.indices.map { ["start": boundaries[$0], "end": boundaries[$0+1], "label": labels[$0]] }
+        let payload: SongStatus = decode([
+            "job": ["state": "ready", "worker_online": true], "library_generation": "preview",
+            "analysis": ["source": "youtube", "audio_duration": 60, "song_duration": 60, "chords": segments],
+            "lyrics": ["synced": true, "matched": "aligned", "timing_note": "Some lyric timing is approximate.", "lines": [
+                ["time": 28.225, "text": "The opening phrase"],
+                ["time": 33.51, "text": "Another phrase follows", "words": [
+                    ["time": 33.51, "text": "Another", "end": 34.0],
+                    ["time": 37.2, "text": "phrase", "end": 37.76],
+                    ["time": 41.65, "text": "follows", "end": 42.1]]],
+                ["time": 45.54, "text": "We keep the rhythm moving"],
+                ["time": 54.8, "text": "A final phrase"]]]])
+        return SongSheetStore(song: song, analysis: payload.analysis, service: .init(request: { _ in payload }, status: { _ in payload }, lyrics: { _ in nil }))
+    }
+
     @MainActor private static func makeStore() -> SongSheetStore {
+        if ProcessInfo.processInfo.arguments.contains("--independent-chords-preview") { return independentTimingStore() }
         if ProcessInfo.processInfo.arguments.contains("--phrase-boundary-preview") { return phraseBoundaryStore() }
 
         let mapPreview = ProcessInfo.processInfo.arguments.contains("--song-map-preview")

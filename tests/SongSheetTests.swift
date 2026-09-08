@@ -40,6 +40,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
 @main struct SongSheetTests {
     @MainActor static func main() async throws {
         lyricCompletenessTests()
+        independentChordTimingTests()
         modelTests()
         barMapTests()
         runnerTests()
@@ -287,6 +288,58 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(rtlPoints.first!.x == 290 && rtlPoints.last!.x == 0, "Right-to-left rows enter at the right edge and leave at the left")
     }
 
+    @MainActor static func independentChordTimingTests() {
+        let axis = [LyricPlayhead.Waypoint(time: 0, x: 0, line: CGRect(x: 0, y: 0, width: 100, height: 30)),
+                    LyricPlayhead.Waypoint(time: 4, x: 100, line: CGRect(x: 0, y: 0, width: 100, height: 30))]
+        check(LyricPlayhead.position(at: 2, along: axis, rtl: false, eased: false)?.x == 50,
+              "The chord cursor moves steadily between timed changes instead of accelerating near the next lyric")
+        check(LyricPlayhead.position(at: 4, along: axis, rtl: false, eased: false)?.x == 100,
+              "The cursor reaches each chord exactly at its onset")
+        let analysis = chart([
+            ["start": 0, "end": 2, "label": "N"],
+            ["start": 2, "end": 4, "label": "E:min"],
+            ["start": 4, "end": 5.5, "label": "E:min7"],
+            ["start": 5.5, "end": 6.8, "label": "D:min7"],
+            ["start": 6.8, "end": 10, "label": "E:min7"],
+            ["start": 10, "end": 20, "label": "A:maj"]])
+        let words = [WordStamp(time: 4.2, text: "First", end: 4.8),
+                     WordStamp(time: 7, text: "sample", end: 7.4),
+                     WordStamp(time: 8, text: "phrase", end: 8.4)]
+        let rows = SheetModel.build(analysis: analysis,
+            lines: [LyricLine(time: 0, text: "First sample phrase", words: words)], duration: 20)
+        let sung = rows.first { !$0.text.isEmpty }!
+        check(sung.start == 4 && sung.chords.map(\.wordIndex) == [0, nil, 1],
+              "Intro remains independent; close anticipation attaches, but a mid-rest change does not")
+        check(rows.first?.chords.map(\.event.start) == [0, 2], "N.C. and the intro chord precede the words")
+        check(rows.flatMap(\.chords).map(\.event) == SheetModel.events(analysis),
+              "Separating intro, phrase and outro neither drops nor duplicates any event")
+        let future = SheetModel.changes(SheetModel.events(analysis), from: 1, count: 8).first!
+        check(future.start == 2 && !future.contains(1), "The first playable shape during N.C. is upcoming, not sounding")
+        let damaged = LyricLine(time: 0, text: "First sample phrase", words: [
+            WordStamp(time: 0, text: "First", end: 1), WordStamp(time: 1, text: "sample", end: 18),
+            WordStamp(time: 18, text: "phrase", end: 19)])
+        check(SheetModel.completeWords(damaged, before: 20) == nil,
+              "A word stretched across an intro cannot supply precise word positions")
+        let fallback = SheetModel.build(analysis: analysis, lines: [damaged], duration: 20)
+        check(fallback.first?.text == damaged.text && fallback.first?.chords.allSatisfy { $0.wordIndex == nil } == true,
+              "Declining damaged word timing preserves the full lyric and independent chord changes")
+        check(fallback.flatMap(\.chords).map(\.event) == SheetModel.events(analysis), "Fallback preserves the musical timeline")
+        let boundary = SheetModel.build(analysis: chart([
+            ["start": 0, "end": 2, "label": "C:maj"], ["start": 2, "end": 20, "label": "G:maj"]]),
+            lines: [LyricLine(time: 1, text: "Sample phrase", words: [
+                WordStamp(time: 1, text: "Sample", end: 2), WordStamp(time: 9, text: "phrase", end: 10)])], duration: 20)
+        check(boundary.first { $0.start == 2 }?.isInstrumental == true,
+              "A change exactly when the preceding word ends belongs to the rest")
+        for onset in stride(from: 0.0, through: 18, by: 0.25) {
+            let line = LyricLine(time: onset, text: "Sample phrase", words: [
+                WordStamp(time: onset, text: "Sample", end: onset + 0.2),
+                WordStamp(time: onset + 0.5, text: "phrase", end: onset + 1)])
+            let shifted = SheetModel.build(analysis: analysis, lines: [line], duration: 20)
+            check(shifted.flatMap(\.chords).map(\.event) == SheetModel.events(analysis),
+                  "Events survive arbitrary vocal boundaries, including exact chord and word endpoints")
+        }
+    }
+
     @MainActor static func lyricCompletenessTests() {
         let analysis: ChordAnalysis = decode(["source": "youtube", "audio_duration": 45, "chords": [
             ["start": 0, "end": 30.16, "label": "E:maj"],
@@ -382,13 +435,13 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
             lines: [LyricLine(time: 1, text: "When when did it", words: [WordStamp(time: 1, text: "When", end: 1.4), WordStamp(time: 9, text: "when"),
                                                                         WordStamp(time: 9.5, text: "did"), WordStamp(time: 10, text: "it")])], duration: 20)
         check(paused.map(\.text) == ["", "When", "", "when did it", "", ""], "The pause after the first word becomes its own row")
-        check(paused[2].chords.map { $0.event.chord?.display } == ["Am"] && paused[1].chords.map { $0.event.chord?.display } == ["G"],
-              "Chords changed during the pause sit in the pause row; a change while the word sounds stays above it")
-        check(paused[3].start == 8 && paused[3].chords.map { $0.event.chord?.display } == ["F"] && paused[3].chords.first?.wordIndex == 0,
-              "The chord sounding when the next word is sung heads that word's row, above the word")
+        check(paused[2].chords.map { $0.event.chord?.display } == ["G", "Am", "F"] && paused[1].chords.isEmpty,
+              "Every change after the word ends stays in the instrumental pause")
+        check(paused[3].start == 9 && paused[3].chords.isEmpty && paused[3].held?.chord?.display == "F",
+              "A held chord is not a new attack at the next word")
         let lone = SheetModel.build(analysis: chart([["start": 0, "end": 3, "label": "C:maj"], ["start": 3, "end": 20, "label": "F:maj"]]),
             lines: [LyricLine(time: 1, text: "When when", words: [WordStamp(time: 1, text: "When"), WordStamp(time: 9, text: "when")])], duration: 20)
-        check(lone.filter { !$0.text.isEmpty }.count == 1, "A pause whose only change is the chord under the next word does not split")
+        check(lone.filter { !$0.text.isEmpty }.count == 2 && lone.first { $0.isInstrumental && $0.start > 1 }?.chords.first?.event.start == 3, "Even a single change during a long rest belongs to the rest")
         let brief = SheetModel.build(analysis: chart([["start": 0, "end": 20, "label": "C:maj"]]),
             lines: [LyricLine(time: 1, text: "When when", words: [WordStamp(time: 1, text: "When"), WordStamp(time: 9, text: "when")])], duration: 20)
         check(brief.filter { !$0.text.isEmpty }.count == 1, "A pause with no chord change does not split the line")
@@ -406,13 +459,12 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         let clicks = grid.clicks(from: 1.5, to: 4)
         check(clicks.map(\.offset) == [0, 0.5, 1, 1.5, 2] && clicks.map(\.downbeat) == [true, false, false, false, true], "Clicks are offsets from the take start with beat 1 marked")
         check(BeatGrid(tempo: nil, chords: []) == nil && BeatGrid(tempo: decode(["bpm": 100, "beats": [0, 0.6, 1.2]], as: ChordAnalysis.Tempo.self), chords: []) == nil, "Too few beats give no grid")
-        // Line-timed lyrics: the words end before the next line starts, so a chord
-        // halfway through the singing sits over the middle word, not an early one.
+        // Line timing cannot establish which word a chord belongs above.
         let lineTimed = SheetModel.build(analysis: chart([["start": 0, "end": 2.4, "label": "C:maj"], ["start": 2.4, "end": 20, "label": "G:maj"]]),
                                      lines: [LyricLine(time: 0, text: "one two three four", words: nil), LyricLine(time: 8, text: "next", words: nil)], duration: 20)
         check(SheetModel.sungDuration(words: 4, interval: 8) == 4.8 && SheetModel.sungDuration(words: 12, interval: 4) == 4,
               "Singing is estimated at half a second a word, at least 60% of the gap, never past it")
-        check(lineTimed.first?.chords.map(\.wordIndex) == [0, 2], "A chord 2.4 s into an 8 s gap sits over the third word, not the second")
+        check(lineTimed.first?.chords.map(\.wordIndex) == [nil, nil], "Line-only timing never invents a word for a chord")
         check(status("ready", saved: true).saved == true && status("ready").saved == nil, "The saved flag is optional in the status")
         // Timing calibration: spotify = scale * chart + offset, fitted from listened anchors.
         let one = TimingMap.fit([.init(chart: 12, spotify: 12.4)], chartAudioSha256: "h", spotifyTrackID: "one")!

@@ -19,10 +19,11 @@ def repaired_entry(entry: dict, cache: Path) -> dict | None:
     duration = entry.get('song_duration') or entry.get('audio_duration')
     key = f"{entry.get('title', '')}|{entry.get('artist', '')}|{entry.get('album') or ''}|{round(duration) if duration else ''}"
     path = cache / ('lyrics5-' + hashlib.sha256(key.lower().encode()).hexdigest()[:24] + '.json')
-    if not path.exists():
+    try:
+        catalog = json.loads(path.read_text())
+    except (OSError, ValueError):
         return None
-    catalog = json.loads(path.read_text())
-    if not catalog.get('lines') or catalog.get('instrumental'):
+    if not isinstance(catalog, dict) or not catalog.get('lines') or catalog.get('instrumental'):
         return None
     lines, note = complete_lyrics(catalog, lyrics.get('lines') or [])
     if lines == lyrics.get('lines'):
