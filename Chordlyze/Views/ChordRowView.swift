@@ -3,8 +3,8 @@ import SwiftUI
 /// One timeline row — lyric line, instrumental stretch, or unanalyzed part —
 /// drawn the same way in the sheet and the live view. Chords sit above the
 /// word they start on when reliable timestamps support it; otherwise they
-/// remain independent changes in chronological order. A chord held over from the
-/// previous row is not drawn again.
+/// remain a single timestamped sequence. A reliable vocal entrance can identify
+/// a chord still ringing from the previous row without inventing another attack.
 struct ChordRowView: View {
     enum Style {
         case sheet
@@ -42,22 +42,36 @@ struct ChordRowView: View {
     var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
 
     private var rtl: Bool { row.text.isRTLText }
-    // A line-only timestamp cannot locate changes among words. A word-timed
-    // row, however, keeps its individual anchors even when other changes fall
-    // in a gap: ChordLyricLine inserts those changes between the word tokens.
-    private var independentChanges: Bool { !row.text.isEmpty && row.words == nil && !row.chords.isEmpty }
+    private var independentChanges: Bool { row.needsChordSequence }
 
     var body: some View {
         VStack(alignment: rtl ? .trailing : .leading, spacing: style == .sheet ? 4 : 6) {
+            if let held = row.vocalEntranceChord {
+                HStack(spacing: 8) {
+                    Text("At vocal start")
+                        .font(.caption).foregroundStyle(Palette.secondary)
+                    ChordChip(name: held.display(transposedBy: transposeBy),
+                              active: playhead.map(held.contains) ?? false, style: style,
+                              playing: playhead != nil, onTap: onChordTap)
+                    Text("already playing")
+                        .font(.caption).foregroundStyle(Palette.secondary)
+                }
+                .accessibilityIdentifier("vocal-entrance-chord")
+            }
             if !row.text.isEmpty {
-                if independentChanges { timedRow }
+                if independentChanges {
+                    Text("Chord changes")
+                        .font(.caption).foregroundStyle(Palette.secondary)
+                    timedRow
+                }
                 ChordLyricLine(text: row.text, chords: independentChanges ? [] : row.chords, words: row.words?.map(\.text), transposeBy: transposeBy,
                                playhead: playhead, style: style,
-                               onChordTap: onChordTap, onLyricTap: onLyricTap, verdict: verdict,
-                               wordTimes: row.words?.map(\.time))
+                               onChordTap: onChordTap, onLyricTap: onLyricTap, verdict: verdict)
                     .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
             } else {
-                // Instrumental changes use the same sounding-chord highlight.
+                // A wordless span does not prove an instrumental section.
+                Text("Chords · \(Self.span(row))")
+                    .font(.caption).foregroundStyle(Palette.secondary)
                 timedRow
             }
         }
@@ -68,9 +82,13 @@ struct ChordRowView: View {
     private var timedRow: some View {
         ChordLyricFlow(spacing: style == .sheet ? 14 : 22) {
             ForEach(row.chords) { placed in
-                ChordChip(name: placed.event.display(transposedBy: transposeBy),
-                          active: playhead.map(placed.event.contains) ?? false,
-                          style: style, playing: playhead != nil, onTap: onChordTap, verdict: verdict?(placed.event.start))
+                VStack(alignment: .leading, spacing: 2) {
+                    ChordChip(name: placed.event.display(transposedBy: transposeBy),
+                              active: playhead.map(placed.event.contains) ?? false,
+                              style: style, playing: playhead != nil, onTap: onChordTap, verdict: verdict?(placed.event.start))
+                    Text(Self.timestamp(placed.event.start))
+                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(Palette.secondary)
+                }
             }
         }
         .frame(maxWidth: .infinity, minHeight: style == .sheet ? 22 : 30, alignment: rtl ? .trailing : .leading)
@@ -79,6 +97,48 @@ struct ChordRowView: View {
 
     static func span(_ row: SheetModel.Row) -> String {
         "\(mmss(row.start))–\(mmss(row.end))"
+    }
+
+    static func timestamp(_ time: Double) -> String {
+        let hundredths = Int((max(0, time) * 100).rounded())
+        return String(format: "%d:%02d.%02d", hundredths / 6000, (hundredths / 100) % 60, hundredths % 100)
+    }
+}
+
+/// Chord guidance for untimed lyrics. This follows only measured chord events;
+/// it has no relationship to the estimated line positions or diagram toggle.
+struct IndependentChordSummary: View {
+    let events: [SheetModel.Event]
+    let position: Double?
+    var transposeBy = 0
+    var onChordTap: ((String) -> Void)? = nil
+
+    var body: some View {
+        let current = position.flatMap { SheetModel.activeEvent(events, at: $0) }
+        let next = position.map { SheetModel.nextEvent(events, after: $0) }
+            ?? events.first { $0.chord != nil }
+        HStack(spacing: 24) {
+            if let current {
+                item("Playing", event: current, active: true)
+            }
+            if let next {
+                item(position == nil ? "First chord" : "Next", event: next, active: false)
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityIdentifier("independent-chord-summary")
+    }
+
+    private func item(_ title: String, event: SheetModel.Event, active: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption).foregroundStyle(Palette.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                ChordChip(name: event.display(transposedBy: transposeBy), active: active,
+                          style: .live, playing: position != nil, onTap: onChordTap)
+                Text(ChordRowView.timestamp(event.start))
+                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(Palette.secondary)
+            }
+        }
     }
 }
 

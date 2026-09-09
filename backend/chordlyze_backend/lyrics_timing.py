@@ -88,7 +88,7 @@ def repair_word_spans(audio: Path, words: list[dict], transcribe, language: str 
         if len(matches) != 1 or not all(expected):
             continue
         found = candidate[matches[0]:matches[0] + len(group)]
-        if not all(_span(w) and w['end'] <= end - start + 0.05 for w in found):
+        if not all(_span(w) and w.get('estimated') is not True and w['end'] <= end - start + 0.05 for w in found):
             continue
         if any(a['start'] >= b['start'] for a, b in zip(found, found[1:])):
             continue
@@ -97,6 +97,8 @@ def repair_word_spans(audio: Path, words: list[dict], transcribe, language: str 
             continue
         confidence = [w['p'] for w in found if _number(w.get('p'))]
         if confidence and sum(confidence) / len(confidence) < 0.5:
+            continue
+        if any(not _number(w.get('p')) or w['p'] < .5 for w in found[:bad[-1] + 1]):
             continue
         agreeing = [i for i in anchors
                     if abs(start + found[i]['start'] - group[i]['start']) <= ANCHOR_TOLERANCE
@@ -128,7 +130,8 @@ def _boundary(lines: list[dict], index: int, duration: float) -> float:
 
 
 def accept_line_recovery(lines: list[dict], index: int, duration: float,
-                         candidate: list[dict], *, diagnostics: dict | None = None) -> list[dict] | None:
+                         candidate: list[dict], *, diagnostics: dict | None = None,
+                         suspect_indices: set[int] | None = None) -> list[dict] | None:
     """Accept recognized words in recording coordinates, never forced text.
 
     Require a unique phrase, or uniquely recognized damaged words bracketed
@@ -145,7 +148,7 @@ def accept_line_recovery(lines: list[dict], index: int, duration: float,
     expected = [_norm(w.get('text', '')) for w in words]
     if not words or expected != [_norm(w) for w in original.get('text', '').split()] or not all(expected):
         return decline('incomplete_source_text')
-    usable = set(usable_word_indices(original, _boundary(lines, index, duration)))
+    usable = set(usable_word_indices(original, _boundary(lines, index, duration))) - (suspect_indices or set())
     damaged = set(range(len(words))) - usable
     if not damaged:
         return decline('no_damaged_words')
@@ -164,6 +167,8 @@ def accept_line_recovery(lines: list[dict], index: int, duration: float,
         if neighbor == index:
             target_offset = len(context)
         valid = set(usable_word_indices(line, _boundary(lines, neighbor, duration)))
+        if neighbor == index:
+            valid -= suspect_indices or set()
         for position, word in enumerate(line.get('words') or []):
             if position in valid and word.get('estimated') is not True and word.get('end') is not None:
                 anchors.append((len(context), word))
@@ -172,7 +177,7 @@ def accept_line_recovery(lines: list[dict], index: int, duration: float,
     observed = [(position, word, candidate[pairing[position]]) for position, word in anchors
                 if pairing[position] is not None and context[position] == actual[pairing[position]]]
     agreeing = [(position, word, heard) for position, word, heard in observed if _span(heard)
-                and finite(heard.get('p')) and heard['p'] >= .5
+                and heard.get('estimated') is not True and finite(heard.get('p')) and heard['p'] >= .5
                 and abs(word['time'] - heard['start']) <= ANCHOR_TOLERANCE
                 and abs(word['end'] - heard['end']) <= ANCHOR_TOLERANCE]
     if len(agreeing) < max(2, math.ceil(len(observed) * .75)):
@@ -195,10 +200,13 @@ def accept_line_recovery(lines: list[dict], index: int, duration: float,
             if choices != [pairing[target_offset + position]]:
                 return decline('ambiguous_word_between_anchors')
     observed_target = [w for w in found if w is not None]
-    if (not all(_span(w) and w['end'] <= duration and finite(w.get('p')) and w['p'] >= .15 for w in observed_target)
+    if (not all(_span(w) and w.get('estimated') is not True and w['end'] <= duration
+                and finite(w.get('p')) and w['p'] >= .15 for w in observed_target)
             or sum(w['p'] for w in observed_target) / len(observed_target) < .5
             or any(a['start'] > b['start'] for a, b in zip(observed_target, observed_target[1:]))):
         return decline('unreliable_recognition')
+    if any(found[i] is None or found[i]['p'] < .5 for i in damaged):
+        return decline('damaged_word_not_confidently_recognized')
     # Every retained anchor in the target phrase must agree, including one
     # surrounded by damaged words. Agreement elsewhere cannot outvote it.
     if any(found[i] is not None and words[i].get('estimated') is not True and
@@ -227,6 +235,95 @@ def accept_line_recovery(lines: list[dict], index: int, duration: float,
             return decline('preceding_anchor_conflict')
     if diagnostics is not None:
         diagnostics.update(reason='accepted', repaired_words=len(damaged), agreeing_anchors=len(agreeing))
+    return result
+
+
+def catalog_onset_conflicts(catalog: dict, lines: list[dict]) -> dict[int, tuple[float, set[int]]]:
+    """Find local onset disagreements, never treating catalog times as heard words.
+
+    A consistent recording offset is allowed. At least three nearby measured
+    phrase entrances must corroborate that offset before one outlier is queried.
+    Text matching is ordered so repeated verses retain their own occurrence.
+    """
+    from difflib import SequenceMatcher
+    from statistics import median
+    if not catalog.get('synced'):
+        return {}
+    source = catalog.get('lines') or []
+    norm = lambda line: ' '.join(_norm(w) for w in line.get('text', '').split())
+    pairs = {}
+    for block in SequenceMatcher(None, list(map(norm, lines)), list(map(norm, source)), autojunk=False).get_matching_blocks():
+        pairs.update((block.a + k, block.b + k) for k in range(block.size))
+    offsets = {}
+    for i, j in pairs.items():
+        words = lines[i].get('words') or []
+        if (words and words[0].get('estimated') is not True
+                and _span({**words[0], 'start': words[0].get('time')})
+                and finite(lines[i].get('time')) and finite(source[j].get('time'))):
+            offsets[i] = lines[i]['time'] - source[j]['time']
+    conflicts = {}
+    for i, offset in offsets.items():
+        nearby = sorted((k for k in offsets if k != i), key=lambda k: abs(k - i))[:8]
+        if len(nearby) < 3:
+            continue
+        center = median(offsets[k] for k in nearby)
+        agreeing = [offsets[k] for k in nearby if abs(offsets[k] - center) <= 1]
+        if len(agreeing) < 3:
+            continue
+        center = median(agreeing)
+        if abs(offset - center) <= 3:
+            continue
+        expected = source[pairs[i]]['time'] + center
+        lower = lines[i - 1]['time'] if i else -1
+        upper = lines[i + 1]['time'] if i + 1 < len(lines) else math.inf
+        if not max(-1, lower) < expected < upper:
+            continue
+        words = lines[i]['words']
+        # An early prefix may absorb the instrumental gap. Later words remain
+        # anchors; their durations are not shortened to satisfy the catalog.
+        suspect = {k for k, w in enumerate(words) if finite(w.get('time')) and w['time'] < expected} or {0}
+        conflicts[i] = (round(max(0, expected), 3), suspect)
+    return conflicts
+
+
+def review_catalog_onsets(audio: Path, catalog: dict, lines: list[dict], duration: float,
+                          transcribe, *, stats: dict | None = None) -> list[dict]:
+    """Recheck conflicting entrances against audio; unresolved words stay uncertain."""
+    result = copy.deepcopy(lines)
+    attempted = recovered = unresolved = 0
+    for index, (expected, suspect) in catalog_onset_conflicts(catalog, lines).items():
+        candidate = []
+        start = max(0, min(expected, lines[index]['time']) - 2)
+        end = min(duration, _boundary(lines, index, duration) + 4, start + MAX_CROP_DURATION)
+        if audio.exists() and 0 < end - start and attempted < MAX_REPAIR_CROPS:
+            attempted += 1
+            try:
+                with tempfile.TemporaryDirectory(prefix='chordlyze-onset-review-') as temporary:
+                    crop = Path(temporary) / 'phrase.wav'
+                    _crop(audio, crop, start, end)
+                    heard = transcribe(crop, None)
+                candidate = [{**w, 'start': start + w['start'], 'end': start + w['end']}
+                             for w in heard if _span(w) and w['end'] <= end - start]
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+                pass
+        accepted = accept_line_recovery(result, index, duration, candidate, suspect_indices=suspect)
+        if accepted is not None:
+            result = accepted
+            recovered += 1
+            continue
+        # Keep source stamps for another acoustic review. A catalog hint never
+        # becomes a measured word onset and cannot certify a continuing chord.
+        line = result[index]
+        for position in suspect:
+            line['words'][position]['estimated'] = True
+        # Use the corroborated catalog entrance only as a coarse row boundary,
+        # and never move it past a retained measured word.
+        retained = [w['time'] for k, w in enumerate(line['words']) if k not in suspect]
+        if not retained or expected <= min(retained):
+            line['time'] = expected
+        unresolved += 1
+    if stats is not None:
+        stats.update(onset_review_crops=attempted, recovered_onsets=recovered, unresolved_onsets=unresolved)
     return result
 
 
@@ -322,7 +419,7 @@ def repair_line_timings(audio: Path, lines: list[dict], duration: float, transcr
 
 
 def finalize_line_timings(audio: Path, lines: list[dict], duration: float | None,
-                          transcribe=None) -> tuple[list[dict], dict | None]:
+                          transcribe=None, *, catalog: dict | None = None) -> tuple[list[dict], dict | None]:
     """Apply the same contract to both worker sources, before publication.
 
     The existing bundled model handles the optional bounded retry. Unresolved
@@ -330,6 +427,12 @@ def finalize_line_timings(audio: Path, lines: list[dict], duration: float | None
     first response to older clients. A missing local file cannot erase lyrics.
     """
     result = copy.deepcopy(lines)
+    if transcribe is None:
+        from .lyrics_align import transcribe_words_local
+        transcribe = lambda crop, hint: transcribe_words_local(crop, hint, timeout=120)
+    onset_stats = {}
+    if catalog and finite(duration) and duration > 0:
+        result = review_catalog_onsets(audio, catalog, result, duration, transcribe, stats=onset_stats)
     if audio.exists():
         try:
             import soundfile as sf
@@ -339,13 +442,14 @@ def finalize_line_timings(audio: Path, lines: list[dict], duration: float | None
         except (OSError, RuntimeError):
             pass
         if finite(duration) and duration > 0:
-            if transcribe is None:
-                from .lyrics_align import transcribe_words_local
-                transcribe = lambda crop, hint: transcribe_words_local(crop, hint, timeout=120)
             from .lyrics_align import language_hint
             result = repair_line_timings(audio, result, duration, transcribe,
-                language_hint([line.get('text', '') for line in result]))
-    return result, mark_unreliable_words(result, duration)
+                language_hint([line.get('text', '') for line in result]),
+                max_crops=max(0, MAX_REPAIR_CROPS - onset_stats.get('onset_review_crops', 0)))
+    review = mark_unreliable_words(result, duration)
+    if onset_stats.get('unresolved_onsets'):
+        review = {**(review or {}), 'onset_conflicts': onset_stats['unresolved_onsets']}
+    return result, review
 
 
 def repair_entry_from_audio(entry: dict, audio: Path, transcribe, *, stats: dict | None = None) -> dict | None:

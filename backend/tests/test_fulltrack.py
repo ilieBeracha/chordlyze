@@ -1,4 +1,5 @@
 from chordlyze_backend.fulltrack import pick_candidate
+import pytest
 
 
 def _e(duration, title, channel="Someone", id="x"):
@@ -49,3 +50,37 @@ def test_unicode_titles_are_not_erased_into_match_anything():
 
 def test_all_variant_words_must_match_requested_edition():
     assert pick_candidate([_e(200, 'Song (Acoustic Cover)', 'Band')], 'Song (Acoustic)', 'Band', 200) is None
+
+
+def test_equal_duration_stripped_recording_cannot_supply_album_track():
+    stripped = _e(244, 'Meltt - Love Again (Stripped) [Official Music Visualizer]', 'Meltt', 'stripped')
+    assert pick_candidate([stripped], 'Love Again', 'Meltt', 243.56) is None
+    # An upload preference cannot override a recording-edition mismatch.
+    preferred_stripped = {**stripped, 'channel': 'Meltt - Topic'}
+    regular = _e(244, 'Meltt - Love Again (Official Audio)', 'Meltt', 'regular')
+    assert pick_candidate([preferred_stripped, regular], 'Love Again', 'Meltt', 243.56)['id'] == 'regular'
+
+
+@pytest.mark.parametrize('edition', ['Stripped', 'Acoustic', 'Live', 'Remix'])
+def test_requested_variant_cannot_fall_back_to_regular_recording(edition):
+    regular = _e(200, 'Band - Song (Official Audio)', 'Band - Topic', 'regular')
+    requested = f'Song ({edition})'
+    assert pick_candidate([regular], requested, 'Band', 200) is None
+    matching = _e(200, f'Band - Song [{edition.upper()} Version]', 'Band', 'matching')
+    assert pick_candidate([regular, matching], requested, 'Band', 200)['id'] == 'matching'
+
+
+def test_every_requested_edition_marker_must_be_present():
+    stripped = _e(200, 'Band - Song (Stripped)', 'Band', 'stripped')
+    live_stripped = _e(200, 'Band - Song (Stripped Live)', 'Band', 'live-stripped')
+    assert pick_candidate([stripped], 'Song (Stripped Live)', 'Band', 200) is None
+    assert pick_candidate([live_stripped], 'Song (Stripped)', 'Band', 200) is None
+    assert pick_candidate([stripped, live_stripped], 'Song (Stripped Live)', 'Band', 200)['id'] == 'live-stripped'
+
+
+@pytest.mark.parametrize('title', ['Stripped', 'Live Forever', 'Cover Me'])
+def test_literal_song_titles_containing_variant_words_still_match(title):
+    entry = _e(200, f'Band - {title} (Official Audio)', 'Band - Topic', 'literal')
+    assert pick_candidate([entry], title, 'Band', 200)['id'] == 'literal'
+    unrelated = _e(200, 'Band - Unrelated Song', 'Band - Topic', 'unrelated')
+    assert pick_candidate([unrelated], title, 'Band', 200) is None

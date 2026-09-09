@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Chords above lyric tokens only where reliable word timestamps support it.
-/// Changes between timed words occupy their own cells, preserving chronology
-/// without detaching valid anchors elsewhere in the phrase.
+/// Rows with unanchored changes use ChordRowView's timestamped sequence instead
+/// of inserting chords beside guessed word positions.
 struct ChordLyricLine: View {
     struct Token: Identifiable {
         let id: Int
@@ -20,12 +20,8 @@ struct ChordLyricLine: View {
     var onChordTap: ((String) -> Void)? = nil
     var onLyricTap: (() -> Void)? = nil
     var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
-    /// Word onsets position independent chord changes between lyric tokens.
-    var wordTimes: [Double]? = nil
-
-
     var body: some View {
-        let tokens = Self.tokens(text: text, chords: chords, words: words, wordTimes: wordTimes)
+        let tokens = Self.tokens(text: text, chords: chords, words: words)
         let hasChords = !chords.isEmpty
         ChordLyricFlow(spacing: style == .sheet ? 8 : 10) {
             ForEach(tokens) { token in
@@ -61,8 +57,7 @@ struct ChordLyricLine: View {
     }
 
     /// Split into words and attach each chord to the word it starts on.
-    static func tokens(text: String, chords: [SheetModel.Placed], words supplied: [String]? = nil,
-                       wordTimes: [Double]? = nil) -> [Token] {
+    static func tokens(text: String, chords: [SheetModel.Placed], words supplied: [String]? = nil) -> [Token] {
         let words = supplied ?? text.split(whereSeparator: \.isWhitespace).map(String.init)
         guard !words.isEmpty else { return [] }
         var byWord: [Int: [SheetModel.Placed]] = [:]
@@ -71,8 +66,9 @@ struct ChordLyricLine: View {
             if let index = chord.wordIndex, words.indices.contains(index) {
                 byWord[index, default: []].append(chord)
             } else {
-                let next = wordTimes?.firstIndex(where: { $0 > chord.event.start }) ?? words.count
-                beforeWord[min(next, words.count), default: []].append(chord)
+                // Defensive fallback only: production rows route every
+                // unanchored change through the separate chord sequence.
+                beforeWord[words.count, default: []].append(chord)
             }
         }
         var result: [Token] = []

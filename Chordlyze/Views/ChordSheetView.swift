@@ -119,6 +119,11 @@ struct AnalysisTabsView: View {
                 ChordRailView(events: SheetModel.events(store.analysis), position: playhead ?? -1, transposeBy: store.shift,
                               onTap: { selectedChord = SelectedChord(name: $0) })
             }
+            if store.needsChordPlaybackSummary {
+                IndependentChordSummary(events: SheetModel.events(store.analysis), position: playhead,
+                                        transposeBy: store.shift, onChordTap: { selectedChord = SelectedChord(name: $0) })
+                    .padding(.horizontal, 24).padding(.bottom, 8)
+            }
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
@@ -141,7 +146,8 @@ struct AnalysisTabsView: View {
                     .padding(.bottom, playhead == nil ? 40 : 320)  // the last lines can roll up to the reading height too
                 }
                 .onChange(of: navigationTime) { _, time in
-                    guard let time, let row = SheetModel.activeRow(store.rows, at: time) else { return }
+                    guard !store.usesIndependentLyrics, let time,
+                          let row = SheetModel.activeRow(store.rows, at: time) else { return }
                     withAnimation { proxy.scrollTo(row.id, anchor: .top) }
                 }
                 .refreshable { store.refresh() }
@@ -438,19 +444,29 @@ struct ChordSheetView: View {
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: style == .live ? 22 : 20) {
+            if store.usesIndependentLyrics, !store.independentChordTimeline.chords.isEmpty {
+                DisclosureGroup("Chord timeline") {
+                    ChordRowView(row: store.independentChordTimeline, transposeBy: store.shift, playhead: playhead,
+                                 style: style, onChordTap: onChordTap, verdict: verdict)
+                        .padding(.top, 8)
+                }
+                .font(.subheadline).tint(Palette.secondary)
+                .accessibilityIdentifier("independent-chord-timeline")
+            }
             // A wordless row with no chord change of its own is the previous chord
             // still sounding: nothing to draw, so it takes no space.
-            ForEach(store.rows.filter(\.hasVisibleContent)) { row in
+            ForEach(store.usesIndependentLyrics ? store.untimedLyricRows : store.rows.filter(\.hasVisibleContent)) { row in
                 ChordRowView(row: row, transposeBy: store.shift, playhead: playhead,
-                             style: style, onChordTap: onChordTap, onLyricTap: { onRowTap?(row) }, verdict: verdict)
+                             style: style, onChordTap: onChordTap,
+                             onLyricTap: store.usesIndependentLyrics ? nil : { onRowTap?(row) }, verdict: verdict)
                     .padding(.vertical, 8)
                     .id(row.id)
                     .accessibilityIdentifier("song-row-\(row.start)")
                     .contextMenu {
-                        if store.analysis?.chartRevision != nil {
+                        if !store.usesIndependentLyrics, store.analysis?.chartRevision != nil {
                             Button("Correct chords in this passage", systemImage: "pencil") { editingRow = row }
                         }
-                        if let onPracticeRow, row.start < (store.analysis?.coverageEnd ?? 0) {
+                        if !store.usesIndependentLyrics, let onPracticeRow, row.start < (store.analysis?.coverageEnd ?? 0) {
                             Button("Practice this passage", systemImage: "mic.fill") { onPracticeRow(row) }
                         }
                     }

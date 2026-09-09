@@ -399,13 +399,19 @@ def claim_song(authorization: str | None = Header(default=None)) -> dict:
         job = jobs.claim()
         # Administrative jobs queued by older tools gain recording guards when
         # first claimed. Reclaimed jobs retain their original expectations.
-        if job and job.get('kind') == 'lyrics' and not job.get('expected_audio_sha256'):
+        if job and job.get('kind') == 'lyrics':
             path = _track_cache_path(job['song']['track_id'])
             if path.exists():
                 entry = _read_analysis(path)
-                if entry.get('audio_sha256'):
+                if not job.get('expected_audio_sha256') and entry.get('audio_sha256'):
                     job = jobs.begin_lyrics(job['song']['track_id'], job['id'], job['lease'], job['generation'],
                                             entry['audio_sha256'], lyrics_fingerprint(entry.get('lyrics')))
+                # Source provenance belongs to this chart, not durable job state.
+                # A chart replaced after queuing must not redirect the old job.
+                if (job and entry.get('audio_sha256')
+                        and entry['audio_sha256'] == job.get('expected_audio_sha256')
+                        and isinstance(entry.get('audio_source'), dict)):
+                    job = {**job, 'recording_source': entry['audio_source']}
         return {"job": job}
 
 

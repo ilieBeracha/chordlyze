@@ -72,6 +72,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         partialWordTimingTests()
         try sharedWordTimingContractTests()
         estimatedWordTimingTests()
+        lyricEntrancePresentationTests()
         try await savedAlignmentRefreshTests()
         try await lyricTimingRecoveryTests()
         modelTests()
@@ -642,6 +643,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
               "Estimated early lines never auto-follow the fourth phrase when vocals have not begun")
         check(!sheet.lyricTimingIsSynced && !sheet.hasTimedLyricWords && !sheet.hasCompleteLyricTiming && sheet.needsLyricTiming,
               "Unsynchronized catalog timing offers explicit recovery without claiming measured words")
+        check(sheet.needsChordPlaybackSummary, "Untimed lyrics keep independent current and next chord guidance available")
         check(sheet.lyricTimingActionTitle == "Sync lyrics", "A never-started lyric job offers Sync lyrics, not Retry")
         let original = sheet.analysis
         let originalEvents = SheetModel.events(sheet.analysis)
@@ -701,6 +703,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(sheet.lyricTimingIsSynced && sheet.hasTimedLyricWords && sheet.analysis == original
               && SheetModel.events(sheet.analysis) == originalEvents,
               "Measured lyric replacement preserves the recording, chart revision, and every chord event")
+        check(!sheet.needsChordPlaybackSummary, "Complete word timing does not need redundant chord guidance")
         check(sheet.followingRow(at: 19)?.text.isEmpty != false
               && sheet.followingRow(at: 19.2)?.text == "Opening words"
               && sheet.followingRow(at: 19.8) == nil,
@@ -717,6 +720,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(sheet.hasTimedLyricWords && !sheet.hasCompleteLyricTiming && sheet.needsLyricTiming
               && sheet.followingRow(at: 18.2) == nil && sheet.followingRow(at: 20.1)?.text == "Estimated measured",
               "Partial timing follows measured words while estimated prefixes remain inactive and recoverable")
+        check(sheet.needsChordPlaybackSummary, "A partial estimated entrance still exposes the sounding and next chords")
         requestMode = 1
         await sheet.requestLyricTiming()
         check(sheet.lyricTimingError != nil, "A new uncertain request reports its own failure")
@@ -807,6 +811,42 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(shortIntro.flatMap(\.chords).map(\.event) == SheetModel.events(chart()), "A sub-second wordless gap cannot swallow its chord change")
         let shared = SheetModel.build(analysis: chart(), lines: [LyricLine(time: 2, text: "first line", words: nil), LyricLine(time: 2, text: "second line", words: nil)], duration: 20)
         check(shared.first { !$0.text.isEmpty }?.text == "first line second line", "Distinct lyrics sharing a timestamp both survive")
+    }
+
+    @MainActor static func lyricEntrancePresentationTests() {
+        let analysis = chart([["start": 0, "end": 5, "label": "B:min"],
+                              ["start": 5, "end": 7, "label": "E:maj"],
+                              ["start": 7, "end": 12, "label": "F#:min"]])
+        let line = LyricLine(time: 3, text: "Alpha bravo charlie", words: [
+            WordStamp(time: 3, text: "Alpha", end: 3.5),
+            WordStamp(time: 5, text: "bravo", end: 5.5),
+            WordStamp(time: 7, text: "charlie", end: 8)])
+        let rows = SheetModel.build(analysis: analysis, lines: [line], duration: 12)
+        let vocal = rows.first { !$0.text.isEmpty }!
+        check(vocal.vocalEntranceChord == SheetModel.events(analysis).first,
+              "A reliable vocal entrance identifies the exact chord already ringing")
+        check(vocal.vocalEntranceChord?.start == 0 && vocal.chords.map(\.event.start) == [5, 7],
+              "The entrance cue cannot create an attack at the lyric onset")
+        check(rows.flatMap(\.chords).map(\.event) == SheetModel.events(analysis),
+              "An entrance cue keeps the complete scoring and playback sequence unchanged")
+        check(!vocal.needsChordSequence && vocal.chords.map(\.wordIndex) == [1, 2],
+              "Fully supported changes retain their word anchors")
+        var uncertain = line.words!
+        uncertain[0].estimated = true
+        let estimated = SheetModel.build(analysis: analysis,
+            lines: [LyricLine(time: 3, text: line.text, words: uncertain)], duration: 12).first { !$0.text.isEmpty }!
+        check(estimated.vocalEntranceChord == nil, "An estimated first word cannot claim the first vocal chord")
+        let lineOnly = SheetModel.build(analysis: analysis,
+            lines: [LyricLine(time: 3, text: line.text, words: nil)], duration: 12).first { !$0.text.isEmpty }!
+        check(lineOnly.vocalEntranceChord == nil && lineOnly.needsChordSequence,
+              "Line-only timing uses a chord sequence without claiming a measured vocal entrance")
+        uncertain[1].estimated = true
+        let partial = SheetModel.build(analysis: analysis,
+            lines: [LyricLine(time: 3, text: line.text, words: uncertain)], duration: 12).first { !$0.text.isEmpty }!
+        check(partial.needsChordSequence && partial.chords.map(\.wordIndex) == [nil, 2],
+              "Mixed timing presents one sequence while retaining reliable anchors in the model")
+        check(rows.filter { $0.text.isEmpty }.allSatisfy { $0.vocalEntranceChord == nil },
+              "Wordless rows cannot invent vocal entrances")
     }
 
     @MainActor static func modelTests() {
@@ -1019,6 +1059,14 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(plain.rows.first { $0.text == "Guessed one" }?.held?.chord?.display == "C", "Estimated lines sit on the chord timeline")
         check(plain.lyricsNote == "Estimated lyric timing", "Estimated timing is labeled")
         check(SheetModel.activeRow(plain.rows, at: 5)?.held?.chord?.display == "C", "Chords still follow the recording")
+        check(plain.usesIndependentLyrics && plain.untimedLyricRows.map(\.text) == ["Guessed one", "Guessed two"],
+              "Unsynchronized lyrics remain intact in an independent presentation")
+        check(plain.untimedLyricRows.allSatisfy { $0.chords.isEmpty && $0.held == nil && $0.words == nil },
+              "Unsynchronized lyric rows cannot visually inherit timed chords or vocal-entrance cues")
+        check(plain.independentChordTimeline.chords.map(\.event) == SheetModel.events(plain.analysis),
+              "The separate chord timeline retains every original measured event")
+        check([0.0, 1, 5, 18.6].allSatisfy { plain.followingRow(at: $0) == nil },
+              "Estimated lyric positions and generated wordless spans cannot trigger auto-follow")
         plainTask.cancel(); await plainTask.value
 
         var lookups = 0

@@ -97,6 +97,22 @@ final class SongSheetStore: ObservableObject {
     var canPractice: Bool { analysis?.isPreview == false && (state == "ready" || state == "connection") }
     var shift: Int { (capoMode ? -capo : 0) + manualShift }
     var lyricTimingIsSynced: Bool { lyricsResult?.synced == true }
+    var needsChordPlaybackSummary: Bool { canPractice && !hasCompleteLyricTiming }
+    /// Plain catalog lyrics have no relationship to the chart clock. Keep
+    /// their text visible while exposing chords on their own real timeline.
+    var usesIndependentLyrics: Bool { !lyricTimingIsSynced && !lines.isEmpty }
+    var untimedLyricRows: [SheetModel.Row] {
+        rows.filter { !$0.text.isEmpty }.map {
+            SheetModel.Row(start: $0.start, end: $0.end, kind: .lyric,
+                           text: $0.text, words: nil, chords: [], held: nil)
+        }
+    }
+    var independentChordTimeline: SheetModel.Row {
+        let events = SheetModel.events(analysis)
+        return SheetModel.Row(start: 0, end: analysis?.coverageEnd ?? 0,
+            kind: .instrumental, text: "", words: nil,
+            chords: events.map { SheetModel.Placed(event: $0, position: 0, wordIndex: nil) }, held: nil)
+    }
     var timingLyrics: Bool { requestingLyricTiming || ["queued", "processing"].contains(lyricsJob?.state ?? "") }
     var needsLyricTiming: Bool {
         canPractice && !lyricsLoading && !lyricsFailed && lyricsResult?.instrumental != true && !hasCompleteLyricTiming
@@ -120,6 +136,7 @@ final class SongSheetStore: ObservableObject {
     /// Auto-follow only a measured sung word or a real instrumental row.
     /// Guessed lyric positions must not advance the page as if vocals began.
     func followingRow(at time: Double) -> SheetModel.Row? {
+        guard !usesIndependentLyrics else { return nil }
         guard let row = SheetModel.activeRow(rows, at: time) else { return nil }
         if row.text.isEmpty { return row }
         guard lyricTimingIsSynced, let words = row.words,

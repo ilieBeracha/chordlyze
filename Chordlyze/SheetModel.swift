@@ -30,7 +30,8 @@ enum SheetModel {
         /// Chord changes inside this row, in time order.
         let chords: [Placed]
         /// The chord that started in an earlier row and is still sounding at
-        /// this row's start. Never drawn; it only tells the row it has chords.
+        /// this row's start. A lyric entrance may show it as a continuation,
+        /// without adding another change to the playback or practice timeline.
         let held: Event?
         var id: Double { start }
         func contains(_ time: Double) -> Bool { time >= start && time < end }
@@ -38,6 +39,22 @@ enum SheetModel {
         /// Timing gaps remain in the model for playback, but do not create blank
         /// rows on screen. SongSheetStatus explains missing analysis once.
         var hasVisibleContent: Bool { !text.isEmpty || !chords.isEmpty }
+
+        /// Keep one readable chord sequence when any change cannot be located
+        /// over a word. Estimated word times must not imply visual alignment.
+        var needsChordSequence: Bool {
+            !text.isEmpty && !chords.isEmpty && (words == nil || chords.contains { $0.wordIndex == nil })
+        }
+
+        /// A held chord is useful at a known vocal entrance, but an estimated
+        /// first word cannot establish which chord starts that lyric.
+        var vocalEntranceChord: Event? {
+            guard !text.isEmpty, let first = words?.first, first.hasMeasuredOnset,
+                  let finish = first.measuredEnd, finish.isFinite, finish > first.time,
+                  first.time >= start, first.time < end,
+                  let held, held.chord != nil, held.contains(first.time) else { return nil }
+            return held
+        }
     }
     static let minInstrumental: Double = 2
     static let rowLength: Double = 8

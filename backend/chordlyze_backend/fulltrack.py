@@ -2,13 +2,14 @@
 
 The iTunes preview is a 30 s slice at an unknown offset, so chords from it
 can't be placed on the song timeline. A reviewed artist stream or YouTube upload
-whose length matches the track gives the whole song from 0:00. A result must carry the song's
-title and last as long as the track (the album version is the same length
-everywhere); live/cover/remix variants are filtered out.
+whose length matches the track gives the whole song from 0:00. A result must carry
+the song's title and last as long as the track. Matching duration alone cannot
+distinguish alternate arrangements; declared recording variants must also match.
 """
 from __future__ import annotations
 
 import re
+import math
 import os
 import shutil
 import tempfile
@@ -16,7 +17,7 @@ import unicodedata
 from pathlib import Path
 
 _VARIANT = re.compile(
-    r"\b(live|session|cover|remix|karaoke|instrumental|acoustic|reaction|tutorial|"
+    r"\b(live|session|cover|remix|karaoke|instrumental|acoustic|stripped|reaction|tutorial|"
     r"lesson|slowed|sped up|nightcore|8d|extended|edit)\b", re.I)
 _DECORATION = re.compile(r"[\(\[][^\)\]]*[\)\]]|\s+-\s+.*$")
 
@@ -34,12 +35,14 @@ def _core(title: str) -> str:
 def pick_candidate(entries: list[dict], title: str, artist: str, duration: float) -> dict | None:
     """Best search result for `title` lasting `duration` seconds, or None.
     The result's title must contain the song's title; duration (±1%, bounded to 2–3 seconds)
-    narrows it to the same edition; variant words in a result
-    title disqualify it unless the requested title carries the same word."""
+    narrows the candidates. Recognized variant words must match in both
+    directions: a requested alternate edition cannot fall back to the regular
+    recording just because their durations match."""
     tol = max(2.0, min(3.0, duration * 0.01))
     wanted = _core(title)
     if not wanted:
         return None
+    requested_variants = {hit.group(0).casefold() for hit in _VARIANT.finditer(title)}
 
     def usable(e: dict) -> bool:
         d = e.get("duration")
@@ -52,8 +55,7 @@ def pick_candidate(entries: list[dict], title: str, artist: str, duration: float
             return False
         if f" {wanted} " not in f" {_core(name)} " and f" {wanted} " not in f" {_words(name)} ":
             return False
-        return all(re.search(rf"\b{re.escape(hit.group(0))}\b", title, re.I)
-                   for hit in _VARIANT.finditer(name))
+        return {hit.group(0).casefold() for hit in _VARIANT.finditer(name)} == requested_variants
 
     good = [e for e in entries if usable(e)]
     if not good:
@@ -92,20 +94,65 @@ def _search_youtube(title: str, artist: str, *, blocked_ok: bool = True) -> list
     return info.get("entries") or []
 
 
+def _recording_candidate(source: dict, title: str, artist: str, duration: float) -> dict | None:
+    """Validate saved provenance before using it to pin a lyric retry."""
+    name = source.get('title')
+    credit = source.get('artist') or source.get('channel') or source.get('uploader') or ''
+    length = source.get('duration')
+    if (not isinstance(name, str) or not isinstance(credit, str)
+            or isinstance(length, bool) or not isinstance(length, (int, float))
+            or not math.isfinite(length) or length <= 0):
+        return None
+    return pick_candidate([{'id': source.get('video_id'), 'title': name,
+                            'channel': credit, 'duration': length}], title, artist, duration)
+
+
 def fetch_full_track(title: str, artist: str, duration: float, *, source_info: dict | None = None,
                      checkpoint: dict | None = None, save_checkpoint=None,
-                     cancelled=lambda: False, isrc: str | None = None) -> Path | None:
+                     cancelled=lambda: False, isrc: str | None = None,
+                     recording_source: dict | None = None) -> Path | None:
     """Download the matching upload's audio to a temp file; None when no
     result matches. Provider failures raise a sanitized AudioProviderError in
-    cloud mode or yt_dlp.utils.DownloadError in local development."""
+    cloud mode or yt_dlp.utils.DownloadError in local development.
+
+    A supplied recording_source pins a lyric retry to the saved recording.
+    Invalid or missing provenance (an empty dict) never falls back to search.
+    The worker still verifies the decoded PCM hash before aligning lyrics.
+    """
     from .audio_apify import ApifyAudio, AudioProviderError, DownloadCancelled
 
     if cancelled():
         raise DownloadCancelled()
-    # Prefer an explicitly reviewed artist stream for an exact recording when
-    # the public video catalog only carries a shorter edit or live version.
-    from .artist_recordings import source_for, fetch_artist_recording
-    reviewed = source_for(isrc, title, artist, duration)
+    from .artist_recordings import source_for, fetch_artist_recording, valid_source_url
+    saved = None
+    if recording_source is not None:
+        if not isinstance(recording_source, dict):
+            return None
+        saved = _recording_candidate(recording_source, title, artist, duration)
+        if saved is None:
+            return None
+        if recording_source.get('provider') == 'bandcamp':
+            if not valid_source_url(recording_source.get('url')):
+                return None
+            audio = fetch_artist_recording(recording_source, title, artist, duration,
+                                           source_info=source_info, cancelled=cancelled)
+            if audio is not None and source_info is not None:
+                source_info['matching'] = 'saved_recording_title_artist_duration'
+            return audio
+        video = saved.get('id')
+        if (recording_source.get('provider') not in (None, 'youtube', 'yt_dlp', 'apify')
+                or not isinstance(video, str) or not re.fullmatch(r'[A-Za-z0-9_-]{11}', video)
+                or recording_source.get('url') not in (None, f'https://www.youtube.com/watch?v={video}')):
+            return None
+        previous = (checkpoint or {}).get('candidate')
+        identifiers = [(checkpoint or {}).get('video_id')]
+        if isinstance(previous, dict):
+            identifiers.append(previous.get('id'))
+        if any(value is not None and value != video for value in identifiers):
+            checkpoint = None
+    # New analyses prefer a reviewed artist stream; retries already have a
+    # recording identity and must not substitute another registry entry.
+    reviewed = source_for(isrc, title, artist, duration) if recording_source is None else None
     if reviewed:
         audio = fetch_artist_recording(reviewed, title, artist, duration,
                                        source_info=source_info, cancelled=cancelled)
@@ -115,8 +162,8 @@ def fetch_full_track(title: str, artist: str, duration: float, *, source_info: d
     if provider == 'apify':
         client = ApifyAudio()
         previous = (checkpoint or {}).get('candidate')
-        chosen = pick_candidate([previous], title, artist, duration) if isinstance(previous, dict) else None
-        search = 'checkpoint'
+        chosen = saved or (pick_candidate([previous], title, artist, duration) if isinstance(previous, dict) else None)
+        search = 'saved_recording' if saved else 'checkpoint'
         if chosen is None:
             # Datacenter IPs are refused downloads, not usually searches. The
             # paid cloud search is the fallback when refused or on a miss.
@@ -142,7 +189,7 @@ def fetch_full_track(title: str, artist: str, duration: float, *, source_info: d
 
     import yt_dlp
 
-    chosen = pick_candidate(_search_youtube(title, artist, blocked_ok=False), title, artist, duration)
+    chosen = saved or pick_candidate(_search_youtube(title, artist, blocked_ok=False), title, artist, duration)
     if chosen is None:
         return None
 

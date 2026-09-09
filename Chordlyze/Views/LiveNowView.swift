@@ -57,6 +57,11 @@ struct LiveNowView: View {
                                       onTap: { selectedChord = SelectedChord(name: $0) })
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
+                    if store.needsChordPlaybackSummary {
+                        IndependentChordSummary(events: SheetModel.events(store.analysis), position: position,
+                                                transposeBy: store.shift, onChordTap: { selectedChord = SelectedChord(name: $0) })
+                            .padding(.horizontal, 24).padding(.bottom, 8)
+                    }
                     ScrollView {
                         ChordSheetView(store: store, playhead: position, style: .live,
                                        onChordTap: { selectedChord = SelectedChord(name: $0) },
