@@ -412,7 +412,8 @@ struct PracticeView: View {
     }
 
     private var recordingView: some View {
-        LiveNowView(store: songStore, verdict: feedback.map { feedback in { feedback.verdict(startingAt: $0) } }) { position() }
+        LiveNowView(store: songStore, verdict: feedback.map { feedback in { feedback.verdict(startingAt: $0) } },
+                    allowsSimpleVersionChanges: false) { position() }
             .safeAreaInset(edge: .bottom) {
                 VStack(alignment: .leading, spacing: 10) {
                     if let feedback {

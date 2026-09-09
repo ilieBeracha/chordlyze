@@ -33,7 +33,7 @@ extension Color { static let spotifyGreen = Color(red: 30 / 255, green: 215 / 25
     @MainActor static func render(_ row: SheetModel.Row, width: Double, style: ChordRowView.Style = .live,
                                   transpose: Int = 0, playhead: Double? = nil) throws -> CGImage {
         let view = ChordRowView(row: row, transposeBy: transpose, playhead: playhead, style: style,
-                                onChordTap: { _ in }, wordPlayhead: playhead)
+                                onChordTap: { _ in })
             .padding(16).frame(width: width, alignment: .leading).background(.black)
             .environment(\.colorScheme, .dark)
         let renderer = ImageRenderer(content: view)
@@ -94,6 +94,108 @@ extension Color { static let spotifyGreen = Color(red: 30 / 255, green: 215 / 25
             check(c.maxY < w.minY && w.minY-c.maxY < 42,
                   "\(name): chord and its word must wrap together: \(c) / \(w)")
         }
+    }
+
+    /// Check full-bright ink in the actual glyph bounds; a dim chord or the
+    /// thin moving cursor must not count as a sounding chord or sung word.
+    static func brightGlyphs(_ image: CGImage, bounds: [CGRect], chords: Bool) -> [Int] {
+        let width = image.width, height = image.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        pixels.withUnsafeMutableBytes { bytes in
+            let context = CGContext(data: bytes.baseAddress, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        return bounds.indices.filter { index in
+            let rect = bounds[index]
+            var bright = 0
+            for y in max(0, Int(rect.minY))..<min(height, Int(rect.maxY)) {
+                for x in max(0, Int(rect.minX))..<min(width, Int(rect.maxX)) {
+                    let at = (y * width + x) * 4
+                    let r = Int(pixels[at]), g = Int(pixels[at+1]), b = Int(pixels[at+2])
+                    if chords ? g > 190 && g > r * 2 && g > b : r > 225 && abs(r-g) < 5 && abs(r-b) < 5 {
+                        bright += 1
+                    }
+                }
+            }
+            return bright > 4
+        }
+    }
+
+    static func neutralInk(_ image: CGImage, bounds: [CGRect]) -> [Int] {
+        let width = image.width, height = image.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        pixels.withUnsafeMutableBytes { bytes in
+            let context = CGContext(data: bytes.baseAddress, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        return bounds.map { rect in
+            var ink = 0
+            for y in max(0, Int(rect.minY))..<min(height, Int(rect.maxY)) {
+                for x in max(0, Int(rect.minX))..<min(width, Int(rect.maxX)) {
+                    let at = (y * width + x) * 4
+                    let r = Int(pixels[at]), g = Int(pixels[at+1]), b = Int(pixels[at+2])
+                    if abs(r-g) < 5 && abs(r-b) < 5 { ink += r }
+                }
+            }
+            return ink
+        }
+    }
+
+    @MainActor static func chordOnlyHighlightTests(output: URL) throws -> Int {
+        let words = [WordStamp(time: 19.2, text: "Alpha", end: 19.8),
+                     WordStamp(time: 20.5, text: "bravo", end: 22.5),
+                     WordStamp(time: 24, text: "charlie", end: 24.4)]
+        let chart = try analysis(starts: [18, 20, 21, 26], labels: ["C:maj", "G:maj", "F:maj"])
+        let events = SheetModel.events(chart)
+        let row = SheetModel.Row(start: 18, end: 26, kind: .lyric, text: "Alpha bravo charlie", words: words,
+            chords: events.map { .init(event: $0, position: 0, wordIndex: nil) }, held: nil)
+        let samples: [(Double, [Int])] = [(17.9, []), (19, [0]), (19.2, [0]), (19.8, [0]),
+            (20, [1]), (20.7, [1]), (21.2, [2]), (22.5, [2]), (24.1, [2]), (24.4, [2]), (26, [])]
+        var images = 0
+        for width in [320.0, 390] {
+            let reference = try render(row, width: width, playhead: 19)
+            let wordBounds = glyphs(reference, chords: false), chordBounds = glyphs(reference, chords: true)
+            let referenceInk = neutralInk(reference, bounds: wordBounds)
+            check(wordBounds.count == 3 && chordBounds.count == 3, "Highlight fixture preserves all words and chords")
+            check(referenceInk.allSatisfy { $0 > 1000 }, "Every lyric word stays readable")
+            for (time, green) in samples {
+                let image = try render(row, width: width, playhead: time)
+                check(neutralInk(image, bounds: wordBounds) == referenceInk,
+                      "Lyrics have identical brightness at \(time): no word glow, pulse, or active-line fade")
+                check(brightGlyphs(image, bounds: chordBounds, chords: true) == green,
+                      "Only the sounding chord is bright green at \(time), independently of vocals")
+                try save(image, to: output.appendingPathComponent("chords-only-\(Int(width))-\(time).png"))
+                images += 1
+            }
+            var partial = words; partial[1].estimated = true
+            let uncertain = SheetModel.Row(start: row.start, end: row.end, kind: row.kind, text: row.text,
+                words: partial, chords: row.chords, held: nil)
+            let image = try render(uncertain, width: width, playhead: 21.2)
+            check(neutralInk(image, bounds: wordBounds) == referenceInk,
+                  "Estimated lyric timing cannot alter text brightness")
+            check(brightGlyphs(image, bounds: chordBounds, chords: true) == [2],
+                  "Estimated words cannot change the sounding chord")
+            let lineOnly = SheetModel.Row(start: row.start, end: row.end, kind: row.kind, text: row.text,
+                words: nil, chords: row.chords, held: nil)
+            let before = try render(lineOnly, width: width, playhead: 19)
+            let after = try render(lineOnly, width: width, playhead: 21.2)
+            let lineBounds = glyphs(before, chords: false)
+            check(neutralInk(before, bounds: lineBounds) == neutralInk(after, bounds: lineBounds),
+                  "Line-only lyrics stay equally readable while chords change")
+        }
+        let opening = SheetModel.Row(start: 0, end: 2, kind: .instrumental, text: "", words: nil,
+            chords: [.init(event: .init(start: 0, end: 2, chord: Chord(display: "C")), position: 0, wordIndex: nil)], held: nil)
+        let atOnset = try render(opening, width: 320, playhead: 0)
+        let beforeOnset = try render(opening, width: 320, playhead: -0.5)
+        let bounds = glyphs(atOnset, chords: true)
+        check(brightGlyphs(beforeOnset, bounds: bounds, chords: true).isEmpty,
+              "Negative calibrated chart time must not light the opening chord early")
+        check(brightGlyphs(atOnset, bounds: bounds, chords: true) == [0], "The opening chord lights at its actual onset")
+        return images
     }
     @MainActor static func main() throws {
         _ = NSApplication.shared
@@ -185,6 +287,7 @@ extension Color { static let spotifyGreen = Color(red: 30 / 255, green: 215 / 25
             try save(image, to: output.appendingPathComponent("recovered-intro-\(Int(width)).png"))
             images += 1
         }
+        images += try chordOnlyHighlightTests(output: output)
         print("Chord row rendering: \(checks) checks passed; \(images + 2) PNGs in \(output.path)")
     }
 }

@@ -6,6 +6,7 @@ as uncertain; it must not invalidate usable anchors elsewhere in the phrase.
 from __future__ import annotations
 
 import math
+import unicodedata
 
 MAX_WORD_DURATION = 8.0
 
@@ -72,3 +73,35 @@ def mark_unreliable_words(lines: list[dict], duration: float | None) -> dict | N
             for position in invalid:
                 words[position]['estimated'] = True
     return {'lines': affected_lines, 'words': affected_words} if affected_lines else None
+
+
+def has_measured_words(lines: list[dict], duration: float | None) -> bool:
+    """At least one supported sung interval, not merely an estimated onset."""
+    for index, line in enumerate(lines):
+        boundary = lines[index + 1].get('time') if index + 1 < len(lines) else duration
+        if not finite(boundary):
+            continue
+        words = line.get('words') or []
+        for position in usable_word_indices(line, boundary):
+            word = words[position]
+            if (word.get('estimated') is not True and finite(word.get('end'))
+                    and word['time'] < word['end'] <= boundary):
+                return True
+    return False
+
+
+def preserves_lyric_text(previous: list[dict], candidate: list[dict]) -> bool:
+    """Keep every known word occurrence in order when retrying its timing.
+
+    Capitalization, punctuation and line wrapping may differ. A new transcript
+    may add words, but cannot silently omit an old verse or repeated chorus.
+    """
+    def words(lines):
+        for line in lines:
+            for token in unicodedata.normalize('NFKC', line.get('text') or '').casefold().split():
+                normalized = ''.join(character for character in token if character.isalnum())
+                if normalized:
+                    yield normalized
+
+    remaining = iter(words(candidate))
+    return all(any(found == known for found in remaining) for known in words(previous))

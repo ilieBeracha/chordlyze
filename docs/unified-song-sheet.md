@@ -6,6 +6,13 @@ When analysis is unavailable, lyric-only rows do not reserve an empty chord slot
 
 Live follows Spotify playback automatically. Search and Library show the static sheet; Practice uses the same rows with the take's clock. This does not turn Spotify Live into microphone-based song identification. On-device chord drills remain a separate instrument exercise.
 
+Song and Live pages expose **Diagrams** and **Simple version** immediately below
+the header. Diagrams are closed on a fresh page and open only by choice, including
+when lyric timing is incomplete. The same button closes them during playback.
+Simple version uses the existing suggested capo shapes, displays the required
+fret, and is the first toggle in Key & capo. Turning it off restores the displayed
+chords without changing manual transposition, timing calibration or scoring key.
+
 ## Accounts and libraries
 
 Every app request to the backend carries the account's Spotify access token as
@@ -39,22 +46,18 @@ Charts that predate accounts belong to nobody until
 Tests stand in for Spotify with `tests/fake_spotify.py` through
 `CHORDLYZE_SPOTIFY_ME_URL`.
 
-In Live and Practice a word-timed row shows no moving line: a soft white
-cloud of light sits on the voice, the sung word full white, its neighbours
-partly lit, fading out two words away; the sung line is lifted by colour and
-a small animated scale, never a font change that would reflow the words; chords light on their own time above
-their words, and
-several chords can change above one held word while the voice stays on it. A
-moving line there only made players chase it. The thin runner remains on rows
-without word timing, instrumental stretches and line-timed lyrics, where it
-moves chord to chord (`LyricPlayhead`, a plain file with tests). The words use the
-calibrated time exactly; only chords get the "show chords ahead" lead. The
-runner is measured on the word's own text bounds, not the chord column. On a
-line-timed row chord starts are the only fixed points and the runner moves
-steadily between them. Each heard word also carries an `end`; once a word has
-ended the cloud settles to half until the next word begins, so the pulse is
-the word's own length. Interpolated words have no end. Launch with `--open-live` in Debug
-to open Live follow directly for checking against a real song. Chart
+In the song sheet, Live and Practice, lyrics keep a constant readable brightness.
+Only the sounding chord lights bright green. There is no moving cursor, word
+glow or pulsing lyric line. Chord events retain their measured starts and ends;
+the beat grid is for navigation and the metronome, not retiming playback.
+Both display and scoring use the calibrated recording clock without a global
+"show chords ahead" offset. Negative chart time remains before the first chord.
+Automatic lyric scrolling requires measured vocal intervals; untimed lyrics
+remain readable without claiming that their guessed position is being sung.
+When word timing is incomplete, the current-chord strip stays visible during
+playback and **Sync lyrics** requests a recoverable recording alignment.
+Opening or refreshing a saved song does not automatically request new analysis.
+Launch with `--open-live` in Debug to open Live follow for checking a real song. Chart
 time comes from Spotify's position through the song's timing calibration
 (`TimingMap`, spotify = scale × chart + offset). The chart was measured on a
 different recording, so the two can start at different moments or run at
@@ -91,7 +94,7 @@ Opening a song posts its recording metadata to `/song/request`, then follows `/s
 
 Full song duration and album information travel from Spotify/iTunes through Search, Library and lyrics lookup. Both exact and search lyric matches are checked against title, artist and duration. A 30-second iTunes preview starts at an unknown offset and is never positioned against the whole song.
 
-Known lyrics and known chords can load at different times. Missing data is shown explicitly. Instrumentals keep their chords. Unavailable lyrics are not invented. Enhanced LRC supplies word timestamps; ordinary synchronized LRC supplies line timestamps, so placement within a line is approximate and labeled: the words are assumed to take about half a second each, and at least 60% of the gap to the next line, so the breath before the next line does not drag chords left. Capo mode and manual transpose live on the song document, so the sheet, Live and Practice name the same chords and show the same "Capo N / +N" note in the header. Lyrics without timestamps get estimated line times from the backend (spread over the song by line length) so chords still sit above the words, labeled "Estimated lyric timing". After a chart is published, the worker transcribes the recording with word timestamps (`CHORDLYZE_TRANSCRIBER`: `groq` sends a 16 kHz mono copy to Groq's hosted whisper-large-v3-turbo, seconds per song, needing the `GROQ_API_KEY` secret; `local` runs faster-whisper, `CHORDLYZE_WHISPER_MODEL`, minutes per song on shared CPUs), matches the catalog text to the transcript, and attaches the timed lines to the chart through `/internal/jobs/lyrics`; `/song/{track_id}` then returns them as `lyrics` and the app prefers them over the catalog lookup. Too few matched words leaves the estimated times in place. Matching source title, artist and duration reduces edition errors but does not prove sample-accurate alignment between services.
+Known lyrics and known chords can load at different times. Missing data is shown explicitly. Instrumentals keep their chords. Unavailable lyrics are not invented. Enhanced LRC supplies word timestamps; ordinary synchronized LRC supplies line timestamps, so placement within a line is approximate and labeled: the words are assumed to take about half a second each, and at least 60% of the gap to the next line, so the breath before the next line does not drag chords left. Capo mode and manual transpose live on the song document, so the sheet, Live and Practice name the same chords and show the same "Capo N / +N" note in the header. Lyrics without timestamps retain approximate layout positions from the backend, but those positions never drive vocal auto-follow or change text brightness. The page shows that the lyrics need synchronization. After a chart is published, the worker transcribes the recording with word timestamps (`CHORDLYZE_TRANSCRIBER`: `groq` sends a 16 kHz mono copy to Groq's hosted whisper-large-v3-turbo, seconds per song, needing the `GROQ_API_KEY` secret; `local` runs faster-whisper, `CHORDLYZE_WHISPER_MODEL`, minutes per song on shared CPUs), matches the catalog text to the transcript, and attaches the timed lines to the chart through `/internal/jobs/lyrics`; `/song/{track_id}` then returns them as `lyrics` and the app prefers them over the catalog lookup. Too few matched words leaves the source text intact and exposes an unavailable lyric job with an explicit retry. New analyses retain their durable job lease while timing lyrics, reusing the same recording; after a restart the worker retries only the lyric stage and verifies the recording hash before attachment. See [lyric alignment recovery](lyric-alignment-recovery.md). Matching source title, artist and duration reduces edition errors but does not prove sample-accurate alignment between services.
 
 Spotify polling starts immediately, runs separately from analysis, and honors rate-limit delays. A monotonic clock advances between polls, freezes on pause and resynchronizes on seeks or song changes. Connection failures retry automatically, and background/foreground transitions restart polling. Extrapolation stops after 15 seconds without a successful playback sample. A view-owned `TimelineView` redraws and scrolls Live; screens do not share a disconnectable timer.
 

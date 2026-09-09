@@ -39,6 +39,7 @@ struct SongStatus: Decodable {
     /// Word-timed lyrics aligned to the analyzed recording, when the worker made them.
     let lyrics: BackendClient.LyricsResult?
     let job: Job
+    var lyricsJob: Job? = nil
     let libraryGeneration: String
     /// Whether this song is in the signed-in account's library.
     let saved: Bool?
@@ -47,6 +48,7 @@ struct SongStatus: Decodable {
     var timingRevision: String? = nil
     enum CodingKeys: String, CodingKey {
         case timingRevision = "timing_revision"
+        case lyricsJob = "lyrics_job"
         case song, analysis, lyrics, job, saved, timing, libraryGeneration = "library_generation"
     }
 }
@@ -168,8 +170,8 @@ struct WordStamp: Decodable, Equatable {
     let text: String
     /// When the word stops sounding; nil when the transcript did not hear it.
     var end: Double? = nil
-    /// Interpolated transcript words are useful for approximate highlighting,
-    /// but cannot establish a chord anchor or a vocal rest.
+    /// Interpolated transcript words preserve layout, but cannot establish a
+    /// sung-word highlight, a chord anchor, or a vocal rest.
     var estimated: Bool? = nil
     var hasMeasuredOnset: Bool { estimated == false || (estimated == nil && end != nil) }
     var measuredEnd: Double? { estimated == true ? nil : end }
@@ -368,6 +370,18 @@ enum BackendClient {
                                  cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
         guard let result: SongStatus = try await fetch(request) else {
             throw BackendError(status: 404, detail: "Song request unavailable")
+        }
+        return result
+    }
+
+    static func requestLyricTiming(trackID: String) async throws -> SongStatus {
+        var request = URLRequest(url: Config.backendBaseURL.appendingPathComponent("song/\(trackID)/lyrics/request"),
+                                 cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["retry": true])
+        guard let result: SongStatus = try await fetch(request) else {
+            throw BackendError(status: 404, detail: "Lyric timing is not available on this service yet.")
         }
         return result
     }

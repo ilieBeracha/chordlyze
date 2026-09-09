@@ -78,10 +78,19 @@ private let latency = PracticeFeedback.detectorLatency
          "analyzed_end":4.08,"tempo":{"bpm":120,"beats":[0,0.5,1,1.5,2,2.5,3,3.5,4]}}
         """.utf8))
         let events = SheetModel.events(analysis)
-        check(events[1].start != analysis.chords[1].start, "Regression fixture actually snaps the displayed chord")
+        let grid = BeatGrid(tempo: analysis.tempo, chords: analysis.chords)!
+        check(grid.snap(2.08) == 2, "Regression fixture has a nearby beat that would move the measured chord early")
+        check(events.map(\.start) == [0.08, 2.08] && events.map(\.end) == [2.08, 4.08],
+              "Sounding chord boundaries preserve measured starts and ends even beside a beat")
+        check(SheetModel.activeEvent(events, at: 0) == nil && SheetModel.activeEvent(events, at: 0.08) == events[0],
+              "The first chord stays unlit until its actual measured onset")
+        check(SheetModel.activeEvent(events, at: 2) == events[0] && SheetModel.activeEvent(events, at: 2.08) == events[1],
+              "A beat before the transition cannot light the coming chord")
+        check(SheetModel.activeEvent(events, at: 4.04) == events[1] && SheetModel.activeEvent(events, at: 4.08) == nil,
+              "A chord stays sounding past a nearby beat and stops exactly at its measured end")
         var aligned = PracticeFeedback(analysis: analysis, start: 0, end: 4.08)
         aligned.heard("G", at: events[1].start)
-        check(aligned.verdict(startingAt: events[1].start) == .hit(offset: 0), "Visible beat-aligned chip finds its feedback")
+        check(aligned.verdict(startingAt: events[1].start) == .hit(offset: 0), "Visible measured-time chip finds its feedback")
         check(aligned.targets.map(\.start) == events.map(\.start), "Practice and chart share exact event identities")
         var stopped = PracticeFeedback(chords: segments([(0, 2, "C:maj"), (2, 4, "C:maj")]), start: 0, end: 4)
         stopped.observe(current: "C", chartTime: latency)

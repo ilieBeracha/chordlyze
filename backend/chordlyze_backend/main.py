@@ -56,6 +56,8 @@ from .auth import current_user
 from .song_jobs import SongJobs, generation, library_lock
 from .users import UserLibrary
 from .lyrics_repair import repaired_entry
+from .song_jobs import lyrics_fingerprint
+from .lyrics_validation import has_measured_words, preserves_lyric_text
 
 CACHE_DIR = Path(os.environ.get("CHORDLYZE_CACHE",
                                 str(Path(__file__).resolve().parent.parent / "analysis_cache")))
@@ -200,6 +202,7 @@ class SubmittedAnalysis(BaseModel):
     job_id: str | None = None
     lease: str | None = None
     library_generation: str | None = None
+    prepare_lyrics: bool = False
 
 
 @app.post("/analysis/submit")
@@ -222,6 +225,8 @@ def _submit_analysis(body: SubmittedAnalysis, require_lease: bool = False) -> di
         raise HTTPException(409, "This job cannot publish a full-song chart.")
     if body.model not in _MODEL_RANK:
         raise HTTPException(422, f"unknown model {body.model!r}")
+    if body.prepare_lyrics and not body.audio_sha256:
+        raise HTTPException(422, 'Lyric alignment requires the analyzed recording identity.')
     if body.analysis_version == ANALYSIS_VERSION and (
             body.model_revision != MODEL_REVISIONS[body.model]
             or body.audio_sha256 is None or body.audio_duration is None):
@@ -262,9 +267,15 @@ def _submit_analysis(body: SubmittedAnalysis, require_lease: bool = False) -> di
     if not _save_track(body.track_id, result, body.title, body.artist, body.isrc,
                        artwork=body.artwork):
         raise HTTPException(409, "a better analysis is already stored for this track")
+    entry = _read_analysis(_track_cache_path(body.track_id))
     if require_lease:
+        if body.prepare_lyrics:
+            lyric_job = jobs.begin_lyrics(body.track_id, body.job_id, body.lease, body.library_generation,
+                                         entry['audio_sha256'], lyrics_fingerprint(entry.get('lyrics')))
+            # Worker-only response: reuse the exact downloaded audio and lease.
+            return {**entry, 'lyrics_job': lyric_job}
         jobs.finish(body.track_id, body.job_id, body.lease, body.library_generation, "ready")
-    return _read_analysis(_track_cache_path(body.track_id))
+    return entry
 
 
 # MARK: - Complete song sheets and on-demand analysis
@@ -309,6 +320,8 @@ def _song_status(track_id: str, isrc: str | None = None, user: str | None = None
     return {"song": song, "analysis": chart if ready else None,
             "lyrics": chart.get("lyrics") if ready else None,
             "job": {"state": "ready", "worker_online": jobs.worker_online()} if ready else jobs.public(job),
+            "lyrics_job": (jobs.public(job) if job and job.get('kind') == 'lyrics' else
+                {"state": "ready" if chart.get('lyrics') else "missing", "worker_online": jobs.worker_online()}) if ready else None,
             "library_generation": generation(CACHE_DIR),
             "saved": mine.contains(track_id) if mine else False,
             "timing": mine.timing(track_id) if mine else None,
@@ -336,6 +349,40 @@ def song_status(track_id: str, user: str = Depends(current_user)) -> dict:
         return _song_status(track_id, user=user)
 
 
+class LyricsRequest(BaseModel):
+    retry: bool = False
+
+
+@app.post('/song/{track_id}/lyrics/request')
+def request_lyrics(track_id: str, body: LyricsRequest, user: str = Depends(current_user)) -> dict:
+    """Explicit, deduplicated alignment; status reads never start provider work."""
+    with library_lock(CACHE_DIR):
+        path = _track_cache_path(track_id)
+        if not path.exists():
+            raise HTTPException(404, 'No chart for this song.')
+        entry = _read_analysis(path)
+        if entry.get('source') == 'itunes_preview' or not is_current(entry, model='ismir2019'):
+            raise HTTPException(409, 'Update this song chart before timing its lyrics.')
+        if not entry.get('audio_sha256'):
+            raise HTTPException(409, 'The original recording identity is unavailable.')
+        jobs = SongJobs(CACHE_DIR)
+        previous = jobs.get(track_id)
+        if previous and (previous['state'] in ('queued', 'processing') or
+                (previous.get('kind') == 'lyrics' and not body.retry)):
+            return _song_status(track_id, user=user)
+        if entry.get('lyrics') and entry['lyrics'].get('synced') and not body.retry:
+            return _song_status(track_id, user=user)
+        song = {'track_id': track_id, 'title': entry.get('title'), 'artist': entry.get('artist') or '',
+                'album': entry.get('album'), 'duration': entry.get('song_duration') or entry.get('audio_duration'),
+                'isrc': entry.get('isrc'), 'artwork': entry.get('artwork')}
+        if not song['title'] or not song['duration']:
+            raise HTTPException(409, 'Recording metadata is incomplete.')
+        jobs.request(song, kind='lyrics', audio_sha256=entry['audio_sha256'],
+                     lyrics_sha256=lyrics_fingerprint(entry.get('lyrics')),
+                     download_checkpoint=previous.get('download_checkpoint') if previous else None)
+        return _song_status(track_id, user=user)
+
+
 def _worker_authorized(authorization: str | None) -> None:
     token = os.environ.get("CHORDLYZE_WORKER_TOKEN")
     if not token:
@@ -347,7 +394,19 @@ def _worker_authorized(authorization: str | None) -> None:
 @app.post("/internal/jobs/claim")
 def claim_song(authorization: str | None = Header(default=None)) -> dict:
     _worker_authorized(authorization)
-    return {"job": SongJobs(CACHE_DIR).claim()}
+    with library_lock(CACHE_DIR):
+        jobs = SongJobs(CACHE_DIR)
+        job = jobs.claim()
+        # Administrative jobs queued by older tools gain recording guards when
+        # first claimed. Reclaimed jobs retain their original expectations.
+        if job and job.get('kind') == 'lyrics' and not job.get('expected_audio_sha256'):
+            path = _track_cache_path(job['song']['track_id'])
+            if path.exists():
+                entry = _read_analysis(path)
+                if entry.get('audio_sha256'):
+                    job = jobs.begin_lyrics(job['song']['track_id'], job['id'], job['lease'], job['generation'],
+                                            entry['audio_sha256'], lyrics_fingerprint(entry.get('lyrics')))
+        return {"job": job}
 
 
 class DownloadCandidate(BaseModel):
@@ -403,6 +462,11 @@ def finish_song(body: WorkerUpdate, authorization: str | None = Header(default=N
                if body.state == "unavailable" else "Could not finish analyzing this song. Retry to try again.")
     if body.state == "ready":
         message = body.message or "Lyrics timed."
+    elif current and current.get('kind') == 'lyrics':
+        message = ('Could not verify the sung words in this recording.' if body.state == 'unavailable'
+                   else 'Lyric timing could not finish. Retry lyric timing.')
+        if body.message:
+            message = body.message
     if body.error_code in ('provider_authentication', 'provider_configuration'):
         message = 'The recording service needs attention. Please try again later.'
     elif body.error_code == 'provider_limit':
@@ -410,6 +474,8 @@ def finish_song(body: WorkerUpdate, authorization: str | None = Header(default=N
                    else 'The recording service has reached its usage limit. Please try again later.')
     elif body.error_code == 'passage_recording_mismatch':
         message = 'The recording differs from the one used for this chart. No chords were changed.'
+    elif body.error_code == 'lyrics_recording_mismatch':
+        message = 'The recording differs from the one used for this chart. Lyric timing was kept.'
     elif body.error_code == 'provider_timeout':
         message = 'The recording download took too long. Retry this song.'
     if not jobs.finish(body.track_id or "", body.job_id or "", body.lease or "",
@@ -440,6 +506,10 @@ class AlignedLyrics(BaseModel):
     timing_note: str | None = Field(default=None, max_length=300)
     # catalog_aligned: catalog text timed to the recording; transcribed: the transcript itself.
     source: str = Field(default="catalog_aligned", pattern=r"^(catalog_aligned|transcribed)$")
+    job_id: str | None = None
+    lease: str | None = None
+    expected_audio_sha256: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
+    expected_lyrics_sha256: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
 
 
 @app.post("/internal/jobs/lyrics")
@@ -462,18 +532,49 @@ def attach_lyrics(body: AlignedLyrics, authorization: str | None = Header(defaul
         entry = json.loads(path.read_text())
         if entry.get("source") == "itunes_preview" or not is_current(entry, model="ismir2019"):
             raise HTTPException(409, "lyrics can only be attached to a complete current chart")
+        jobs = SongJobs(CACHE_DIR)
+        job = jobs.get(body.track_id)
+        guarded = any((body.job_id, body.lease, body.expected_audio_sha256, body.expected_lyrics_sha256))
+        if guarded:
+            if not jobs.valid_lease(body.track_id, body.job_id or '', body.lease or '', body.library_generation):
+                raise HTTPException(409, 'Lyric timing job was reset, expired or replaced.')
+            if (job.get('kind') != 'lyrics' or body.expected_audio_sha256 != job.get('expected_audio_sha256')
+                    or body.expected_lyrics_sha256 != job.get('expected_lyrics_sha256')
+                    or body.expected_audio_sha256 != entry.get('audio_sha256')
+                    or body.expected_lyrics_sha256 != lyrics_fingerprint(entry.get('lyrics'))):
+                raise HTTPException(409, 'The recording or lyric timing changed during alignment.')
+            if not has_measured_words(lines, entry.get('audio_duration') or entry.get('song_duration')):
+                raise HTTPException(422, 'No measured sung-word intervals were verified.')
+        elif job and job.get('kind') == 'lyrics' and job.get('expected_audio_sha256'):
+            raise HTTPException(409, 'This lyric timing job requires its recording identity and lease.')
+        original_lyrics = lyrics_fingerprint(entry.get('lyrics'))
+        previous_lines = (entry.get('lyrics') or {}).get('lines') or []
         entry["lyrics"] = {"lines": lines, "synced": True,
                            "matched": "transcribed" if body.source == "transcribed" else "aligned",
                            "instrumental": False, "aligner": body.aligner}
         if body.timing_note:
             entry["lyrics"]["timing_note"] = body.timing_note
         entry = repaired_entry(entry, CACHE_DIR) or entry
+        if guarded:
+            final_lines = entry['lyrics']['lines']
+            if not has_measured_words(final_lines, entry.get('audio_duration') or entry.get('song_duration')):
+                raise HTTPException(422, 'Final lyric reconciliation has no measured sung-word intervals.')
+            if not preserves_lyric_text(previous_lines, final_lines):
+                raise HTTPException(422, 'Lyric timing could not preserve all existing lyric text.')
         _write_analysis(path, entry)
         isrc = entry.get("isrc")
         if isrc:
             alias = _isrc_cache_path(isrc)
-            if alias.exists() and json.loads(alias.read_text()).get("audio_sha256") == entry.get("audio_sha256"):
-                _write_analysis(alias, entry)
+            if alias.exists():
+                aliased = json.loads(alias.read_text())
+                if (aliased.get('audio_sha256') == entry.get('audio_sha256')
+                        and lyrics_fingerprint(aliased.get('lyrics')) == original_lyrics):
+                    _write_analysis(alias, {**aliased, 'lyrics': entry['lyrics']})
+        if guarded:
+            # Publication and completion are one transaction. A lost response
+            # cannot cause a second download/transcription after a worker restart.
+            jobs.finish(body.track_id, body.job_id, body.lease, body.library_generation,
+                        'ready', 'Lyrics timed from the recording.')
     return {"ok": True, "lines": len(entry["lyrics"]["lines"])}
 
 

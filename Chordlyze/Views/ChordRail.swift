@@ -5,7 +5,7 @@ import SwiftUI
 /// green card; the strip slides as the song moves so it stays at the left.
 struct ChordRailView: View {
     let events: [SheetModel.Event]
-    /// Chart second, chord lead included.
+    /// Exact calibrated chart second; negative during the recording lead-in.
     let position: Double
     var transposeBy = 0
     var onTap: ((String) -> Void)? = nil
@@ -77,7 +77,6 @@ struct ChordCard: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(role == .next ? Palette.greenTintBorder : .clear, lineWidth: 1)
         )
-        .animation(.easeInOut(duration: 0.25), value: now)
         .accessibilityLabel("\(name)\(now ? ", playing" : role == .next ? ", next" : "")")
     }
 }

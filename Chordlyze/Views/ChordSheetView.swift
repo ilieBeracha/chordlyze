@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The song page: one song document, the rows Live and Practice use, at
 /// Live's size. When Spotify has the song up the page follows it in place:
-/// sounding chord bright, sung words lit, and seeking by tapping a line.
+/// sounding chord bright, steady lyrics, and seeking by tapping a line.
 /// The header holds playback and a menu for secondary song actions.
 struct AnalysisTabsView: View {
     @StateObject private var store: SongSheetStore
@@ -23,8 +23,9 @@ struct AnalysisTabsView: View {
     @State private var requestedPlaybackPosition = 0.0
     @State private var playbackTask: Task<Void, Never>?
     @Environment(\.openURL) private var openURL
-    @AppStorage("chordLead") private var lead = 0.0
-    @AppStorage("chordRail") private var showRail = false
+    // A fresh song page starts with the diagrams closed. Timing quality must
+    // never override this explicit presentation choice.
+    @State private var showRail = false
 
     /// The Spotify poller behind seeks and calibration; the offline fixture passes its own.
     @ObservedObject var nowPlaying: SpotifyNowPlaying
@@ -55,11 +56,14 @@ struct AnalysisTabsView: View {
                 }
                 songMenu
             }
+            if store.canPractice {
+                SongPlayingControls(store: store, showRail: $showRail)
+            }
             // Keep the page's identity when Spotify starts during an app switch.
             // Replacing the idle subtree would dismiss its pending recovery.
             TimelineView(.animation(minimumInterval: 0.1, paused: !songIsUp)) { _ in
-                let wordPosition = clamp(nowPlaying.livePosition().map(store.timing.chartTime) ?? lastPosition)
-                let position = clamp(wordPosition + lead)
+                let wordPosition = nowPlaying.livePosition().map(store.timing.chartTime) ?? lastPosition
+                let position = wordPosition
                 page(playhead: songIsUp ? position : nil, wordPlayhead: songIsUp ? wordPosition : nil)
                     .onChange(of: wordPosition) { _, value in
                         if songIsUp { lastPosition = value }
@@ -104,15 +108,15 @@ struct AnalysisTabsView: View {
     }
 
     /// Optional diagrams, status, the chart, and while playing the time line.
-    /// `playhead` is the chart second Spotify is at plus the display lead;
-    /// `wordPlayhead` the same without the lead.
+    /// Words and chords use the same calibrated recording clock, with their
+    /// own measured intervals determining which element is sounding.
     private func page(playhead: Double?, wordPlayhead: Double?) -> some View {
-        let activeID = wordPlayhead.flatMap { SheetModel.activeRow(store.rows, at: $0)?.id }
+        let activeID = wordPlayhead.flatMap { store.followingRow(at: $0)?.id }
         return VStack(spacing: 0) {
             // The optional progression belongs to the viewport, not lyric scroll
             // content: it remains available while auto-follow advances the page.
             if showRail, store.canPractice {
-                ChordRailView(events: SheetModel.events(store.analysis), position: playhead ?? 0, transposeBy: store.shift,
+                ChordRailView(events: SheetModel.events(store.analysis), position: playhead ?? -1, transposeBy: store.shift,
                               onTap: { selectedChord = SelectedChord(name: $0) })
             }
             ScrollViewReader { proxy in
@@ -121,7 +125,7 @@ struct AnalysisTabsView: View {
                         if nowPlaying.isControlling || playbackError != nil || store.saveError != nil || nowPlaying.controlMessage != nil || needsPlaybackDevice {
                             playbackStatus
                         }
-                        if store.actionTitle != nil || !store.message.isEmpty || store.lyricsLoading || (store.lyricsFailed && store.lyricsNote != nil) {
+                        if store.actionTitle != nil || !store.message.isEmpty || store.lyricsLoading || store.lyricTimingMessage != nil || (store.lyricsFailed && store.lyricsNote != nil) {
                             SongSheetStatus(store: store)
                         }
                         ChordSheetView(store: store, playhead: playhead, style: .live,
@@ -131,8 +135,7 @@ struct AnalysisTabsView: View {
                                        } : nil,
                                        onPracticeRow: store.canPractice ? { row in
                                            practiceRange = row.start...min(row.end, store.analysis?.coverageEnd ?? row.end)
-                                       } : nil,
-                                       wordPlayhead: wordPlayhead)
+                                       } : nil)
                     }
                     .padding(.horizontal, 24).padding(.top, 16)
                     .padding(.bottom, playhead == nil ? 40 : 320)  // the last lines can roll up to the reading height too
@@ -154,9 +157,9 @@ struct AnalysisTabsView: View {
                     Button { openSpotify() } label: {
                         Image(systemName: "music.note").frame(width: 44, height: 44)
                     }.tint(.spotifyGreen).accessibilityLabel("Open playback controls in Spotify")
-                    Text(mmss(playhead)).font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    Text(mmss(clamp(playhead))).font(.system(size: 13, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white).accessibilityIdentifier("live-position")
-                    ProgressView(value: playhead, total: max(1, duration)).tint(.spotifyGreen)
+                    ProgressView(value: clamp(playhead), total: max(1, duration)).tint(.spotifyGreen)
                 }
                 .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 24)
             }
@@ -170,9 +173,6 @@ struct AnalysisTabsView: View {
                 Button("Practice", systemImage: "guitars") { showPractice = true }
                     .accessibilityIdentifier("song-practice")
                 Button("Key & capo", systemImage: "slider.horizontal.3") { showSettings = true }
-                Button(showRail ? "Hide chord diagrams" : "Show chord diagrams", systemImage: "rectangle.grid.1x2") {
-                    withAnimation(.easeInOut(duration: 0.25)) { showRail.toggle() }
-                }.accessibilityIdentifier("chord-rail-toggle")
                 if let grid = beatGrid, !grid.bars.isEmpty {
                     Button("Song map", systemImage: "map") { showSongMap = true }
                         .accessibilityIdentifier("song-map")
@@ -278,6 +278,60 @@ extension SongSheetHeader where Trailing == EmptyView {
     init(store: SongSheetStore) { self.init(store: store) { EmptyView() } }
 }
 
+/// Frequent playing choices stay within one tap, outside the scrolling sheet.
+/// Diagram visibility belongs to the page; Simple version belongs to the song.
+struct SongPlayingControls: View {
+    @ObservedObject var store: SongSheetStore
+    @Binding var showRail: Bool
+    var allowsSimpleVersionChanges = true
+
+    private var capoInstruction: String {
+        store.capo == 0 ? "No capo needed" : "Capo on fret \(store.capo)"
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            control("Diagrams", icon: showRail ? "xmark" : "rectangle.grid.1x2", on: showRail) {
+                withAnimation(.easeInOut(duration: 0.25)) { showRail.toggle() }
+            }
+            .accessibilityLabel(showRail ? "Hide chord diagrams" : "Show chord diagrams")
+            .accessibilityValue(showRail ? "Shown" : "Hidden")
+            .accessibilityIdentifier("chord-rail-toggle")
+
+            VStack(spacing: 5) {
+                control("Simple version", icon: store.capoMode ? "checkmark.circle.fill" : "circle", on: store.capoMode) {
+                    store.capoMode.toggle()
+                }
+                .accessibilityValue(store.capoMode ? "On, \(capoInstruction)" : "Off")
+                .disabled(!allowsSimpleVersionChanges)
+                .accessibilityHint(allowsSimpleVersionChanges
+                    ? "Uses easier chord shapes with a suggested capo position."
+                    : "Finish practice before changing chord shapes.")
+                .accessibilityIdentifier("simple-version-toggle")
+                if store.capoMode {
+                    Text(capoInstruction).font(.caption).foregroundStyle(Palette.secondary)
+                        .accessibilityIdentifier("simple-version-capo")
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 20).padding(.bottom, 8)
+    }
+
+    private func control(_ title: String, icon: String, on: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.subheadline.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.horizontal, 10)
+                .foregroundStyle(on ? Color.spotifyGreen : .white)
+                .background(on ? Palette.greenTintFill : Palette.elevated, in: RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 /// A round header control the size of the back circle; green when on.
 struct HeaderCircle: View {
     let icon: String
@@ -340,6 +394,15 @@ struct SongSheetStatus: View {
                 note("Loading lyrics…", icon: nil, spinning: true) { EmptyView() }
             } else if store.lyricsFailed, let text = store.lyricsNote {
                 note(text, icon: "clock") { Button("Retry") { store.refresh() } }
+            } else if let text = store.lyricTimingMessage {
+                note(text, icon: "waveform", spinning: store.timingLyrics) {
+                    if store.canPractice && !store.timingLyrics {
+                        Button(store.lyricTimingActionTitle) {
+                            Task { await store.requestLyricTiming() }
+                        }
+                        .accessibilityIdentifier("sync-lyrics")
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -372,8 +435,6 @@ struct ChordSheetView: View {
     var onRowTap: ((SheetModel.Row) -> Void)? = nil
     var onPracticeRow: ((SheetModel.Row) -> Void)? = nil
     var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
-    /// Song time for the words, without the chord display lead.
-    var wordPlayhead: Double? = nil
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: style == .live ? 22 : 20) {
@@ -381,8 +442,7 @@ struct ChordSheetView: View {
             // still sounding: nothing to draw, so it takes no space.
             ForEach(store.rows.filter(\.hasVisibleContent)) { row in
                 ChordRowView(row: row, transposeBy: store.shift, playhead: playhead,
-                             style: style, onChordTap: onChordTap, onLyricTap: { onRowTap?(row) }, verdict: verdict,
-                             wordPlayhead: wordPlayhead)
+                             style: style, onChordTap: onChordTap, onLyricTap: { onRowTap?(row) }, verdict: verdict)
                     .padding(.vertical, 8)
                     .id(row.id)
                     .accessibilityIdentifier("song-row-\(row.start)")
@@ -413,7 +473,6 @@ struct SongPlayingSettings: View {
     @ObservedObject var store: SongSheetStore
     var nowPlaying: SpotifyNowPlaying = .shared
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("chordLead") private var lead = 0.0
     private var soundingKey: String {
         guard let key = store.analysis?.key else { return "Not available" }
         let parts = key.split(separator: " ", maxSplits: 1)
@@ -423,6 +482,23 @@ struct SongPlayingSettings: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Toggle("Simple version", isOn: $store.capoMode)
+                        .accessibilityIdentifier("simple-version-settings")
+                    if store.capoMode {
+                        LabeledContent("Capo", value: store.capo == 0 ? "No capo needed" : "Fret \(store.capo)")
+                    }
+                } footer: {
+                    Text("Uses easier chord shapes. Place a capo at the shown fret to keep the same song key.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                Section("Sounding key") {
+                    LabeledContent("Play in", value: soundingKey)
+                    Stepper("Transpose: \(store.manualShift > 0 ? "+" : "")\(store.manualShift) semitones",
+                        value: $store.manualShift, in: -6...6)
+                    Text("Changes the displayed chords and the key used to score your playing. Spotify audio remains in its original key.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 Section("Chord corrections") {
                     NavigationLink {
                         ChordCorrectionsView(store: store)
@@ -433,26 +509,7 @@ struct SongPlayingSettings: View {
                     Text("Correct a chord once for this song's sheet, Live and practice.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-                Section("Sounding key") {
-                    LabeledContent("Play in", value: soundingKey)
-                    Stepper("Transpose: \(store.manualShift > 0 ? "+" : "")\(store.manualShift) semitones",
-                        value: $store.manualShift, in: -6...6)
-                    Text("Changes the displayed chords and the key used to score your playing. Spotify audio remains in its original key.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                Section("Guitar chord shapes") {
-                    Toggle("Use suggested capo shapes", isOn: $store.capoMode)
-                    if store.capoMode {
-                        LabeledContent("Place capo at", value: store.capo == 0 ? "No capo needed" : "Fret \(store.capo)")
-                    }
-                    Text("With the capo at this fret, the displayed shapes produce the sounding key above. Capo shapes do not change the scoring key.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
                 Section("Timing against Spotify") {
-                    Stepper(String(format: "Show chords ahead by %.1f s", lead), value: $lead, in: -1...2, step: 0.1)
-                        .accessibilityIdentifier("chord-lead")
-                    Text("Every song, Live and Practice. Off by default; raise it only if chords light after you hear them change.")
-                        .font(.footnote).foregroundStyle(.secondary)
                     NavigationLink {
                         AutomaticSyncView(store: store, nowPlaying: nowPlaying)
                     } label: {
@@ -479,7 +536,7 @@ struct SongPlayingSettings: View {
                         .font(.footnote).foregroundStyle(store.timingError == nil ? .secondary : Color(Palette.warning))
                 }
                 Button("Reset to original") {
-                    store.manualShift = 0; store.capoMode = false; lead = 0
+                    store.manualShift = 0; store.capoMode = false
                     Task { await store.setTiming(nil) }
                 }
             }

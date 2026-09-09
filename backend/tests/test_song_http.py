@@ -122,6 +122,25 @@ def test_song_request_to_ready_and_reset_over_http(tmp_path):
             repaired = fetch('/song/synthetic')
             assert [line['text'] for line in repaired['lyrics']['lines']] == ['Opening', 'Hello there', 'Goodbye']
             assert repaired['lyrics']['timing_note'] and repaired['analysis']['chords'] == before_chords
+            # Explicit recovery is authenticated and keeps the chart playable.
+            with pytest.raises(urllib.error.HTTPError) as unsigned_lyrics:
+                WorkerClient(url, '').post('/song/synthetic/lyrics/request', {'retry': True})
+            assert unsigned_lyrics.value.code == 401
+            pending_lyrics = public.post('/song/synthetic/lyrics/request', {'retry': True})
+            assert pending_lyrics['job']['state'] == 'ready'
+            assert pending_lyrics['lyrics_job']['state'] == 'queued'
+            lyric_job = worker.post('/internal/jobs/claim')['job']
+            verified = {**lyrics, 'job_id': lyric_job['id'], 'lease': lyric_job['lease'],
+                'expected_audio_sha256': lyric_job['expected_audio_sha256'],
+                'expected_lyrics_sha256': lyric_job['expected_lyrics_sha256'],
+                'lines': [{'time': 1, 'text': 'Hello there', 'words': [
+                    {'time': 1, 'end': 1.5, 'text': 'Hello'}, {'time': 1.6, 'end': 2, 'text': 'there'}]},
+                    {'time': 5, 'text': 'Goodbye'}]}
+            worker.post('/internal/jobs/lyrics', verified)
+            finished_lyrics = fetch('/song/synthetic')
+            assert finished_lyrics['lyrics_job']['state'] == 'ready'
+            assert finished_lyrics['analysis']['chords'] == before_chords
+            assert worker.post('/internal/jobs/claim')['job'] is None
             reset_library(tmp_path / 'cache', apply=True)
             with pytest.raises(urllib.error.HTTPError) as after_reset:
                 worker.post('/internal/jobs/lyrics', lyrics)

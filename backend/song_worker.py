@@ -20,12 +20,13 @@ import soundfile as sf
 from chordlyze_backend.genre import lookup_genre
 from chordlyze_backend.analysis.beats import track_beats
 from chordlyze_backend.analysis.rhythm import worker as rhythm_worker
-from chordlyze_backend.analysis.engine import recognize_audio
+from chordlyze_backend.analysis.engine import recognize_audio, audio_identity
 from chordlyze_backend.analysis.ismir import close, ismir_available, warm
 from chordlyze_backend.fulltrack import fetch_full_track
 from chordlyze_backend.audio_apify import ApifyAudio, AudioProviderError, DownloadCancelled
 from chordlyze_backend.lyrics_align import ALIGNER, align_lyrics, transcribe_lyrics, complete_lyrics
 from chordlyze_backend.lyrics_timing import finalize_line_timings
+from chordlyze_backend.lyrics_validation import has_measured_words
 
 
 class WorkerClient:
@@ -126,12 +127,15 @@ def publishable_lines(lines: list[dict]) -> list[dict]:
 
 def attach_lyrics(client: WorkerClient, song: dict, audio: Path, generation: str,
                   stopping: threading.Event | None = None, align=align_lyrics,
-                  transcribe=transcribe_lyrics, sleep=time.sleep) -> str:
+                  transcribe=transcribe_lyrics, sleep=time.sleep, job: dict | None = None) -> str:
     """After a chart is published: when the catalog has only untimed lyrics,
     time them from the recording; when it has none, keep the transcript as
     the lyrics, labeled as transcribed."""
     if stopping and stopping.is_set():
         return 'skipped'
+    protection = ({'job_id': job['id'], 'lease': job['lease'],
+                   'expected_audio_sha256': job['expected_audio_sha256'],
+                   'expected_lyrics_sha256': job['expected_lyrics_sha256']} if job else {})
     params = {'title': song['title'], 'artist': song.get('artist') or '',
               'duration': song.get('duration'), 'album': song.get('album')}
     found = None
@@ -145,10 +149,14 @@ def attach_lyrics(client: WorkerClient, song: dict, audio: Path, generation: str
                 if lines is None:
                     return 'none'
                 lines, review = finalize_line_timings(audio, publishable_lines(lines), song.get('duration'))
+                if job and not has_measured_words(lines, song.get('duration')):
+                    return 'unaligned no_measured_words'
                 payload = {'track_id': song['track_id'], 'library_generation': generation,
-                           'lines': lines, 'aligner': ALIGNER, 'source': 'transcribed'}
+                           'lines': lines, 'aligner': ALIGNER, 'source': 'transcribed', **protection}
                 if review:
                     payload['timing_note'] = 'Some lyric timing is approximate.'
+                if stopping and stopping.is_set():
+                    return 'skipped'
                 client.post('/internal/jobs/lyrics', payload)
                 return 'transcribed'
             # The catalog behind /lyrics answers 503 now and then; the recording is
@@ -158,8 +166,6 @@ def attach_lyrics(client: WorkerClient, song: dict, audio: Path, generation: str
             sleep(LYRICS_LOOKUP_PAUSE)
     if found.get('instrumental'):
         return 'instrumental'
-    if found.get('synced') and any(line.get('words') for line in found.get('lines', [])):
-        return 'synced'  # already word-timed
     # Catalog line times are not word times: align the words to the recording
     # either way, and keep the catalog's lines when the recording disagrees.
     stats: dict = {}
@@ -169,20 +175,22 @@ def attach_lyrics(client: WorkerClient, song: dict, audio: Path, generation: str
             ' '.join(f'{key}={value}' for key, value in stats.items())
     timed, timing_note = complete_lyrics(found, publishable_lines(timed))
     timed, review = finalize_line_timings(audio, timed, song.get('duration'))
+    if job and not has_measured_words(timed, song.get('duration')):
+        return 'unaligned no_measured_words'
     if review:
         timing_note = timing_note or 'Some lyric timing is approximate.'
     payload = {'track_id': song['track_id'], 'library_generation': generation,
-               'lines': publishable_lines(timed), 'aligner': ALIGNER + '+complete-v3'}
+               'lines': publishable_lines(timed), 'aligner': ALIGNER + '+complete-v3', **protection}
     if timing_note:
         payload['timing_note'] = timing_note
+    if stopping and stopping.is_set():
+        return 'skipped'
     client.post('/internal/jobs/lyrics', payload)
     return 'aligned'
 
 
 class LyricsAligner:
-    """Times plain lyrics on a background thread, so the worker keeps claiming
-    songs and heartbeating while a transcript runs. Audio stays on disk until
-    its alignment finishes; a full queue drops the alignment, not the chart."""
+    """Legacy adapter for older servers; managed workers use durable lyric jobs."""
 
     def __init__(self, client: WorkerClient, stopping: threading.Event | None = None, *,
                  align=align_lyrics, limit: int = 4):
@@ -252,7 +260,33 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
         phases[name] = round(time.monotonic() - mark)
         mark = time.monotonic()
 
+    def finish_lyrics(lyric_job: dict) -> str:
+        stage[0] = 'aligning'
+        client.post('/internal/jobs/heartbeat', {**identity, 'stage': stage[0]})
+        outcome = attach_lyrics(client, song, audio, job['generation'], stopping,
+                                align=align_lyrics, job=lyric_job)
+        phase('lyrics')
+        if cancelled() or outcome == 'skipped':
+            return 'abandoned'
+        if outcome in ('aligned', 'transcribed'):
+            # The API commits the lyrics and closes this lease together.
+            result = 'ready'
+        elif outcome in ('synced', 'instrumental'):
+            result = 'ready'
+            message = ('The catalog provides word timing.' if outcome == 'synced'
+                       else 'The catalog lists this recording as instrumental.')
+            client.post('/internal/jobs/finish', {**identity, 'state': result, 'message': message})
+        else:
+            result = 'unavailable'
+            client.post('/internal/jobs/finish', {**identity, 'state': result,
+                'message': 'Could not verify the sung words in this recording. Existing lyrics were kept.'})
+        print('Lyrics job ' + result + ' ' + ' '.join(f'{name}={seconds}s' for name, seconds in phases.items()), flush=True)
+        return result
+
     try:
+        if job.get('kind') == 'lyrics' and not all(job.get(key) for key in
+                ('expected_audio_sha256', 'expected_lyrics_sha256')):
+            raise ValueError('Lyric recovery requires the original recording and lyric identity')
         song = recording_metadata(song)
         if not song.get('duration'):
             client.post('/internal/jobs/finish', {**identity, 'state': 'unavailable'})
@@ -280,12 +314,14 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
             client.post('/internal/jobs/passage', {**identity, **result})
             return 'ready'
         if job.get('kind') == 'lyrics':
-            # The chart exists; only its lyrics need timing from the recording.
-            outcome = attach_lyrics(client, song, audio, job['generation'], stopping, align=align_lyrics)
-            phase('lyrics')
-            client.post('/internal/jobs/finish', {**identity, 'state': 'ready', 'message': 'Lyrics ' + outcome})
-            print('Lyrics job ' + outcome.split(' ')[0] + ' ' + ' '.join(f'{name}={seconds}s' for name, seconds in phases.items()), flush=True)
-            return 'ready'
+            # The chart exists. Confirm this exact decoded recording before any
+            # lyric recognition, without repeating chord inference.
+            _, digest = audio_identity(audio)
+            if digest != job['expected_audio_sha256']:
+                client.post('/internal/jobs/finish', {**identity, 'state': 'unavailable',
+                                                      'error_code': 'lyrics_recording_mismatch'})
+                return 'unavailable'
+            return finish_lyrics(job)
         recognition = recognize_audio(audio, model='ismir2019', max_duration=1200, review=True)
         phase('recognize')
         # Reject an incomplete download or a different edit before publishing.
@@ -301,7 +337,7 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
         except Exception as error:  # noqa: BLE001 - a missing genre must not lose the chart
             print(f'Genre lookup failed: {error}', flush=True)
             genre = None
-        client.post('/analysis/submit', {
+        published = client.post('/analysis/submit', {
             **identity, **recognition.metadata(), 'title': song['title'],
             'artist': song.get('artist'), 'album': song.get('album'),
             'artwork': song.get('artwork'), 'isrc': song.get('isrc'),
@@ -311,11 +347,16 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
             'segments': [segment.to_dict() for segment in recognition.segments],
             'chord_review': recognition.review,
             'tempo': tempo, 'genre': genre,
+            'prepare_lyrics': True,
         })
         # Timings only; never track metadata.
         print('Song phases ' + ' '.join(f'{name}={seconds}s' for name, seconds in phases.items()), flush=True)
-        # The chart is published. Lyrics timing is an addition to it and must
-        # not hold up the next song.
+        if published and published.get('lyrics_job'):
+            # Same audio, same heartbeat; another claim loop can process songs
+            # while this durable phase runs. Restart resumes lyrics only.
+            return finish_lyrics(published['lyrics_job'])
+        # Compatibility for a server which has not yet added durable phases.
+        # Deploy the API before upgrading managed workers.
         if aligner is not None and aligner.submit(song, audio, job['generation']):
             audio = None  # The aligner deletes it when done.
         return 'ready'
@@ -405,10 +446,9 @@ def main():
     stopping = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stopping.set())
     signal.signal(signal.SIGINT, lambda *_: stopping.set())
-    aligner = LyricsAligner(client, stopping)
     concurrency = 1 if args.once else int(os.environ.get('CHORDLYZE_WORKER_CONCURRENCY', '3'))
     try:
-        run_loops(client, stopping, aligner, concurrency=concurrency, once=args.once)
+        run_loops(client, stopping, None, concurrency=concurrency, once=args.once)
     finally:
         close()
         rhythm_worker.close()

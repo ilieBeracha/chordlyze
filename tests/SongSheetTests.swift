@@ -73,9 +73,11 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         try sharedWordTimingContractTests()
         estimatedWordTimingTests()
         try await savedAlignmentRefreshTests()
+        try await lyricTimingRecoveryTests()
         modelTests()
         barMapTests()
         runnerTests()
+        sungWordTests()
         try await documentTests()
         try await correctionTests()
         try await passageTests()
@@ -355,6 +357,86 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(rtlPoints.first!.x == 290 && rtlPoints.last!.x == 0, "Right-to-left rows enter at the right edge and leave at the left")
     }
 
+    @MainActor static func sungWordTests() {
+        let words = [WordStamp(time: 19.2, text: "Stay", end: 19.8),
+                     WordStamp(time: 20.1, text: "here", end: 23.3),
+                     WordStamp(time: 23.8, text: "with", end: 24.1),
+                     WordStamp(time: 24.2, text: "me", end: 25)]
+        func current(_ time: Double, _ source: [WordStamp] = words, start: Double = 0, end: Double = 28) -> Int? {
+            LyricPlayhead.currentWord(at: time, words: source, rowStart: start, rowEnd: end)
+        }
+        check(current(0) == nil && current(19) == nil && current(19.199) == nil,
+              "An instrumental opening never lights a word before its measured vocal onset")
+        check(current(19.2) == 0 && current(19.799) == 0 && current(19.8) == nil,
+              "A sung word turns on at its measured onset and off at its exact end")
+        check(current(20) == nil && current(23.5) == nil && current(24.15) == nil,
+              "Vocal rests remain unhighlighted even within the active lyric row")
+        check(current(24.2) == 3 && current(25) == nil && current(27.9) == nil,
+              "The last word stops lighting when singing ends, without an invented tail")
+
+        let changes: ChordAnalysis = decode(["source": "youtube", "audio_duration": 28,
+                             "chords": [["start": 19, "end": 20, "label": "C:maj"],
+                             ["start": 20, "end": 21.2, "label": "G:maj"],
+                             ["start": 21.2, "end": 22.4, "label": "A:min"],
+                             ["start": 22.4, "end": 24, "label": "F:maj"]]])
+        let events = SheetModel.events(changes)
+        for (time, chord) in [(20.2, "G"), (21.2, "Am"), (22.4, "F"), (23.2, "F")] {
+            check(current(time) == 1 && events.first(where: { $0.contains(time) })?.display(transposedBy: 0) == chord,
+                  "The held word remains sung while each independently timed chord changes")
+        }
+        check(current(20.1) == 1 && current(23.8) == 2 && current(19.2) == 0,
+              "Forward and backward seeks resolve the sung word directly from time")
+
+        var uncertain = words
+        uncertain[0].estimated = true
+        uncertain[2].estimated = true
+        check(current(19.4, uncertain) == nil && current(23.9, uncertain) == nil,
+              "Estimated prefixes and interpolated middle words never claim a precise sung highlight")
+        check(current(20.2, uncertain) == 1 && current(24.3, uncertain) == 3,
+              "An estimated neighbor does not suppress a healthy measured word")
+        uncertain[1].end = nil
+        uncertain[1].estimated = false
+        check(current(20.2, uncertain) == nil && current(23.5, uncertain) == nil,
+              "A measured onset without a vocal end cannot invent a held-word duration")
+        let onsets = words.map { WordStamp(time: $0.time, text: $0.text) }
+        check(current(19.4, onsets) == nil && current(27, onsets) == nil,
+              "Onset-only lyrics never remain white across unknown vocal rests")
+        var overlap = words
+        overlap[1].end = 24.5
+        overlap[2].estimated = true
+        check(current(23.9, overlap) == nil && current(24.15, overlap) == nil,
+              "An estimated following word blocks a stale overlapping earlier highlight")
+        overlap[2].estimated = false
+        check(current(23.9, overlap) == 2 && current(24.15, overlap) == nil,
+              "A later measured word takes over, and ending it never relights an earlier word")
+
+        for invalidEnd in [Double.nan, .infinity, 19.2, 19.1, 28] {
+            let invalid = [WordStamp(time: 19.2, text: "Invalid", end: invalidEnd)]
+            check(current(19.3, invalid) == nil, "Malformed or stretched durations do not light a word")
+        }
+        for invalidTime in [Double.nan, .infinity, -.infinity] {
+            check(current(invalidTime) == nil, "A nonfinite playhead cannot light a word")
+            check(current(19.3, [WordStamp(time: invalidTime, text: "Invalid", end: 20)]) == nil,
+                  "A nonfinite word onset cannot light a word")
+        }
+        let inverted = [WordStamp(time: 18, text: "Before", end: 18.5),
+                        WordStamp(time: 20, text: "Conflicting", end: 20.5),
+                        WordStamp(time: 19, text: "Positions", end: 19.5),
+                        WordStamp(time: 21, text: "After", end: 21.5)]
+        check(current(19.2, inverted) == nil && current(20.2, inverted) == nil,
+              "Neither side of a backwards word sequence receives a precise highlight")
+        check(current(18.2, inverted) == 0 && current(21.2, inverted) == 3,
+              "Healthy words outside a timestamp inversion retain their highlight")
+        check(current(19.3, start: 20) == nil && current(19.3, end: 19.3) == nil,
+              "A word cannot light outside its row's visible interval")
+        check(current(19.3, end: 19.5) == 0 && current(19.5, end: 19.5) == nil,
+              "A row boundary clips a measured word without discarding its earlier sounding portion")
+        check(current(19.3, [], start: 0, end: 28) == nil
+              && current(19.3, start: -1) == nil && current(19.3, start: .nan) == nil
+              && current(19.3, start: 28, end: 0) == nil && current(19.3, end: .infinity) == nil,
+              "Empty timing and invalid row bounds cannot manufacture a sung word")
+    }
+
     @MainActor static func independentChordTimingTests() {
         let axis = [LyricPlayhead.Waypoint(time: 0, x: 0, line: CGRect(x: 0, y: 0, width: 100, height: 30)),
                     LyricPlayhead.Waypoint(time: 4, x: 100, line: CGRect(x: 0, y: 0, width: 100, height: 30))]
@@ -511,6 +593,173 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         await observation.value
     }
 
+    @MainActor static func lyricTimingRecoveryTests() async throws {
+        let song = SongDescriptor(trackID: "vocal-timing", title: "Timing fixture", artist: "Test", duration: 32)
+        let catalog: BackendClient.LyricsResult = decode(["synced": false, "lines": [
+            ["time": 11.36, "text": "Opening words"], ["time": 13.41, "text": "Second phrase"],
+            ["time": 15.8, "text": "Third phrase"], ["time": 17.71, "text": "Fourth phrase"]]])
+        let measured: [[String: Any]] = [
+            ["time": 19.2, "text": "Opening words", "words": [
+                ["time": 19.2, "end": 19.7, "text": "Opening"], ["time": 20, "end": 20.4, "text": "words"]]],
+            ["time": 21.5, "text": "Second phrase", "words": [
+                ["time": 21.5, "end": 22, "text": "Second"], ["time": 22.1, "end": 22.8, "text": "phrase"]]],
+            ["time": 24.2, "text": "Third phrase", "words": [
+                ["time": 24.2, "end": 24.7, "text": "Third"], ["time": 24.8, "end": 25.4, "text": "phrase"]]],
+            ["time": 27, "text": "Fourth phrase", "words": [
+                ["time": 27, "end": 27.5, "text": "Fourth"], ["time": 27.6, "end": 28.2, "text": "phrase"]]]]
+        func response(job: String? = nil, lines: [[String: Any]]? = nil) -> SongStatus {
+            var payload: [String: Any] = ["job": ["state": "ready", "worker_online": true],
+                "library_generation": "timing-library", "analysis": [
+                    "source": "youtube", "audio_duration": 32, "audio_sha256": "same-audio", "chart_revision": "same-chords",
+                    "chords": [["start": 0, "end": 8, "label": "C:maj"], ["start": 8, "end": 16, "label": "G:maj"],
+                               ["start": 16, "end": 24, "label": "A:min"], ["start": 24, "end": 32, "label": "F:maj"]]]]
+            if let job { payload["lyrics_job"] = ["state": job, "worker_online": true] }
+            if let lines { payload["lyrics"] = ["synced": true, "matched": "aligned", "lines": lines] }
+            return decode(payload)
+        }
+        check(response().lyricsJob == nil && response(job: "queued").lyricsJob?.state == "queued",
+              "Lyrics jobs decode when supplied and remain optional for older servers")
+        var current = response(job: "missing")
+        var statusReads = 0, analysisRequests = 0, timingRequests = 0, lookupCount = 0, requestMode = 0
+        var pending: CheckedContinuation<SongStatus, Never>?
+        let sheet = SongSheetStore(song: song, service: .init(
+            request: { _ in analysisRequests += 1; return current },
+            status: { _ in statusReads += 1; return current },
+            requestLyricTiming: { trackID in
+                check(trackID == song.id, "Lyric timing requests target the open song")
+                timingRequests += 1
+                if requestMode == 0 { return await withCheckedContinuation { pending = $0 } }
+                if requestMode == 1 { throw URLError(.timedOut) }
+                current = response(job: "ready", lines: measured)
+                return current
+            }, lyrics: { _ in lookupCount += 1; return catalog },
+            sleep: { _ in try await Task.sleep(for: .milliseconds(25)) }))
+        let observation = Task { await sheet.observe() }
+        try await waitFor { sheet.canPractice && !sheet.lyricsLoading }
+        check(sheet.rows.filter { !$0.text.isEmpty }.map(\.text) == catalog.lines.map(\.text),
+              "Unsynchronized lyrics remain complete and readable")
+        check(SheetModel.activeRow(sheet.rows, at: 19)?.text == "Fourth phrase" && sheet.followingRow(at: 19) == nil,
+              "Estimated early lines never auto-follow the fourth phrase when vocals have not begun")
+        check(!sheet.lyricTimingIsSynced && !sheet.hasTimedLyricWords && !sheet.hasCompleteLyricTiming && sheet.needsLyricTiming,
+              "Unsynchronized catalog timing offers explicit recovery without claiming measured words")
+        check(sheet.lyricTimingActionTitle == "Sync lyrics", "A never-started lyric job offers Sync lyrics, not Retry")
+        let original = sheet.analysis
+        let originalEvents = SheetModel.events(sheet.analysis)
+        let readsBeforeRefresh = statusReads, lookupsBeforeRefresh = lookupCount
+        sheet.refresh()
+        try await waitFor { statusReads > readsBeforeRefresh && lookupCount > lookupsBeforeRefresh && !sheet.lyricsLoading }
+        check(timingRequests == 0 && analysisRequests == 0,
+              "Opening and refreshing a song start neither lyric timing nor chord analysis")
+
+        let requesting = Task { await sheet.requestLyricTiming() }
+        try await waitFor { pending != nil }
+        await sheet.requestLyricTiming()
+        check(timingRequests == 1 && sheet.requestingLyricTiming && sheet.canPractice,
+              "Repeated taps share one pending lyric request while chords remain playable")
+        current = response(job: "queued")
+        pending?.resume(returning: current); pending = nil
+        await requesting.value
+        try await waitFor { sheet.lyricsJob?.state == "queued" && !sheet.requestingLyricTiming }
+        await sheet.requestLyricTiming()
+        check(timingRequests == 1 && sheet.timingLyrics && sheet.analysis == original,
+              "An already queued lyric job cannot be submitted twice or replace the chart")
+        check(SheetModel.events(sheet.analysis) == originalEvents && sheet.followingRow(at: 19) == nil,
+              "Queued timing leaves chord events exact and guessed vocals inactive")
+        current = response(job: "failed")
+        sheet.refresh()
+        try await waitFor { sheet.lyricsJob?.state == "failed" && !sheet.lyricsLoading }
+        check(!sheet.timingLyrics && sheet.needsLyricTiming && sheet.canPractice && sheet.analysis == original,
+              "Failed lyric timing permits retry and retains the usable chord chart")
+        check(sheet.lyricTimingActionTitle == "Retry", "An unsuccessful lyric job offers Retry")
+        check(sheet.lyricTimingMessage?.contains("Your chords are still available") == true,
+              "A failed timing job explains that the existing chords remain available")
+        requestMode = 1
+        await sheet.requestLyricTiming()
+        check(timingRequests == 2 && sheet.lyricTimingError != nil && sheet.canPractice && sheet.analysis == original,
+              "A failed retry request reports its error without losing lyrics or chords")
+        for unconfirmedJob in [nil, "missing"] as [String?] {
+            current = response(job: unconfirmedJob)
+            let priorReads = statusReads
+            sheet.refresh()
+            try await waitFor { statusReads > priorReads && sheet.lyricsJob?.state == unconfirmedJob }
+            check(sheet.lyricTimingError != nil,
+                  "An older or missing-job status cannot erase an unconfirmed lyric request error")
+        }
+        current = response(job: "processing")
+        sheet.refresh()
+        try await waitFor { sheet.lyricsJob?.state == "processing" }
+        check(sheet.lyricTimingError == nil && sheet.timingLyrics && sheet.analysis == original,
+              "Polling clears a timed-out request error once the server confirms it accepted the lyric job")
+        current = response(job: "failed")
+        sheet.refresh()
+        try await waitFor { sheet.lyricsJob?.state == "failed" }
+        requestMode = 2
+        await sheet.requestLyricTiming()
+        try await waitFor { sheet.hasCompleteLyricTiming }
+        check(timingRequests == 3 && analysisRequests == 0 && sheet.lyricTimingError == nil && !sheet.needsLyricTiming,
+              "An explicit successful retry clears the error without reanalyzing chords")
+        check(sheet.lyricTimingIsSynced && sheet.hasTimedLyricWords && sheet.analysis == original
+              && SheetModel.events(sheet.analysis) == originalEvents,
+              "Measured lyric replacement preserves the recording, chart revision, and every chord event")
+        check(sheet.followingRow(at: 19)?.text.isEmpty != false
+              && sheet.followingRow(at: 19.2)?.text == "Opening words"
+              && sheet.followingRow(at: 19.8) == nil,
+              "Vocal follow starts at the measured 19.2-second onset and stops during the measured rest")
+        current = response(job: "failed", lines: measured)
+        sheet.refresh()
+        try await waitFor { sheet.lyricsJob?.state == "failed" }
+        check(sheet.lyricTimingMessage == nil, "Complete measured lyrics supersede an old unsuccessful job message")
+        current = response(job: "ready", lines: [["time": 18, "text": "Estimated measured", "words": [
+            ["time": 18, "end": 18.4, "text": "Estimated", "estimated": true],
+            ["time": 20, "end": 21, "text": "measured"]]]])
+        sheet.refresh()
+        try await waitFor { sheet.rows.contains { $0.text == "Estimated measured" } }
+        check(sheet.hasTimedLyricWords && !sheet.hasCompleteLyricTiming && sheet.needsLyricTiming
+              && sheet.followingRow(at: 18.2) == nil && sheet.followingRow(at: 20.1)?.text == "Estimated measured",
+              "Partial timing follows measured words while estimated prefixes remain inactive and recoverable")
+        requestMode = 1
+        await sheet.requestLyricTiming()
+        check(sheet.lyricTimingError != nil, "A new uncertain request reports its own failure")
+        current = response(lines: measured)
+        sheet.refresh()
+        try await waitFor { sheet.hasCompleteLyricTiming }
+        check(sheet.lyricTimingError == nil && sheet.lyricsJob == nil && sheet.analysis == original,
+              "Complete measured lyrics clear a stale request error even without the optional job status")
+        observation.cancel(); await observation.value
+
+        for cancelRequest in [false, true] {
+            var delayed: CheckedContinuation<SongStatus, Never>?
+            var requests = 0
+            let protected = SongSheetStore(song: song, service: .init(status: { _ in response() },
+                requestLyricTiming: { _ in
+                    requests += 1
+                    return await withCheckedContinuation { delayed = $0 }
+                }, lyrics: { _ in catalog }, sleep: { _ in try await Task.sleep(for: .milliseconds(25)) }))
+            var observing = Task { await protected.observe() }
+            try await waitFor { protected.canPractice && !protected.lyricsLoading }
+            let before = protected.analysis
+            var publishedJobs: [String] = []
+            let subscription = protected.$lyricsJob.sink { if let state = $0?.state { publishedJobs.append(state) } }
+            let request = Task { await protected.requestLyricTiming() }
+            try await waitFor { delayed != nil }
+            if cancelRequest {
+                request.cancel()
+            } else {
+                observing.cancel(); await observing.value
+                observing = Task { await protected.observe() }
+                await Task.yield()
+            }
+            delayed?.resume(returning: response(job: "queued", lines: measured)); delayed = nil
+            await request.value
+            check(requests == 1 && !publishedJobs.contains("queued") && protected.analysis == before
+                  && !protected.hasTimedLyricWords && protected.lyricTimingError == nil,
+                  cancelRequest ? "A cancelled timing request cannot publish its late response or erase the chart"
+                    : "Leaving and reopening the song rejects an older in-flight lyric timing response")
+            subscription.cancel()
+            observing.cancel(); await observing.value
+        }
+    }
+
     @MainActor static func lyricCompletenessTests() {
         let analysis: ChordAnalysis = decode(["source": "youtube", "audio_duration": 45, "chords": [
             ["start": 0, "end": 30.16, "label": "E:maj"],
@@ -630,7 +879,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         let grid = BeatGrid(tempo: gridChart.tempo, chords: gridChart.chords)!
         check(grid.period == 0.5 && grid.phase == 3, "Bar phase is the beat most chord changes land on")
         check(grid.snap(1.53) == 1.5 && grid.snap(3.48) == 3.5 && grid.snap(1.3) == 1.3, "Boundaries within a third of a beat snap to it; others stay")
-        check(SheetModel.events(gridChart).map(\.start) == [0, 1.5, 3.5, 5.5], "Sheet events change on the beat")
+        check(SheetModel.events(gridChart).map(\.start) == [0, 1.53, 3.48, 5.5], "Sheet events retain measured onsets instead of snapping to nearby beats")
         check(grid.beatInBar(at: 1.5) == 1 && grid.beatInBar(at: 2.9) == 3 && grid.beatInBar(at: 3.5) == 1, "Beat within the bar counts from the inferred downbeat")
         check(grid.downbeat(atOrBefore: 4.2) == 3.5 && grid.downbeat(atOrBefore: 0.2) == 1.5, "A take begins on the bar at or before its range, or the first bar")
         let clicks = grid.clicks(from: 1.5, to: 4)
@@ -644,6 +893,12 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(lineTimed.first?.chords.map(\.wordIndex) == [nil, nil], "Line-only timing never invents a word for a chord")
         check(status("ready", saved: true).saved == true && status("ready").saved == nil, "The saved flag is optional in the status")
         // Timing calibration: spotify = scale * chart + offset, fitted from listened anchors.
+        let delayedStart = TimingMap(offset: 1)
+        let firstEvent = SheetModel.events(chart()).first!
+        check(delayedStart.chartTime(0.5) == -0.5 && !firstEvent.contains(delayedStart.chartTime(0.5)),
+              "Negative calibrated chart time stays negative so the first chord does not light early")
+        check(delayedStart.chartTime(1) == 0 && firstEvent.contains(delayedStart.chartTime(1)),
+              "The first chord lights exactly when calibrated Spotify progress reaches its onset")
         let one = TimingMap.fit([.init(chart: 12, spotify: 12.4)], chartAudioSha256: "h", spotifyTrackID: "one")!
         check(abs(one.offset - 0.4) < 1e-9 && one.scale == 1 && abs(one.chartTime(30.4) - 30) < 1e-9 && abs(one.spotifyTime(30) - 30.4) < 1e-9,
               "One anchor gives an offset at scale 1")
