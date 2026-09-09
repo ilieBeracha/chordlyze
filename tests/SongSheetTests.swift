@@ -37,6 +37,34 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         "id": id, "name": "Song", "artists": [["name": "Band"]], "album": ["name": "Album"], "duration_ms": 200000]])
 }
 
+@MainActor private final class NativeSpotifyFixture: SpotifyNativeTransport {
+    var isConnected = false
+    var tokens: [String] = []
+    var connections: [(Result<Void, Error>) -> Void] = []
+    var disconnects = 0
+    var reads = 0
+    var plays: [String] = []
+    var seeks: [Double] = []
+    var sample: SpotifyAPI.CurrentlyPlaying? = playback(deviceID: SpotifyNativeSession.device.id!)
+    var read: (() async throws -> SpotifyAPI.CurrentlyPlaying?)?
+    func connect(token: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        tokens.append(token)
+        connections.append(completion)
+    }
+    func connected() {
+        isConnected = true
+        connections.last?(.success(()))
+    }
+    func disconnect() { isConnected = false; disconnects += 1 }
+    func current() async throws -> SpotifyAPI.CurrentlyPlaying? {
+        reads += 1
+        if let read { return try await read() }
+        return sample
+    }
+    func playURI(_ trackID: String) async throws { plays.append(trackID) }
+    func seek(_ seconds: Double) async throws { seeks.append(seconds) }
+}
+
 @main struct SongSheetTests {
     @MainActor static func main() async throws {
         lyricCompletenessTests()
@@ -59,6 +87,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         try await playbackReliabilityTests()
         try await spotifyDeviceRecoveryTests()
         try await spotifyStartupTests()
+        try await spotifyNativeSessionTests()
         recentPlaysTests()
         print("Song sheet and playback: \(checks)/\(checks) checks passed")
     }
@@ -941,6 +970,22 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         try await Task.sleep(for: .milliseconds(20))
         check(canceled.playing == nil, "A canceled network response cannot restore a signed-out song")
 
+        var nativeMetadata = false
+        let metadata = SpotifyNowPlaying(service: .init(current: {
+            if nativeMetadata { return playback(playing: false, deviceID: SpotifyNativeSession.device.id!) }
+            return decode(["progress_ms": 12000, "is_playing": true, "item": [
+                "id": "one", "name": "Song", "artists": [["name": "Band"]], "duration_ms": 200000,
+                "external_ids": ["isrc": "saved-isrc"],
+                "album": ["name": "Album", "images": [["url": "https://example.test/album.jpg"]]]]])
+        }, seek: { _ in }, sleep: { _ in try await Task.sleep(for: .milliseconds(10)) }), sheetProvider: provider)
+        metadata.resume()
+        try await waitFor { metadata.playing?.track.album.artworkURL != nil }
+        nativeMetadata = true
+        try await waitFor { metadata.playing?.isPlaying == false }
+        check(metadata.playing?.track.album.artworkURL?.absoluteString == "https://example.test/album.jpg" &&
+              metadata.playing?.track.isrc == "saved-isrc", "Native playback updates preserve existing album artwork and recording metadata")
+        metadata.reset()
+
         var delays: [Double] = []
         var calls = 0
         let limited = SpotifyNowPlaying(service: .init(current: {
@@ -1022,12 +1067,191 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(casualStarts.count == 2 && casualStarts[1].0 == "two" && casualStarts[1].1 == 0,
               "Selecting a different song starts it from the beginning")
         casual.reset()
+        var returnedPosition = 23.0
+        var returnedStarts = 0
+        let returned = SpotifyNowPlaying(service: .init(
+            current: { playback(milliseconds: Int(returnedPosition * 1000), deviceID: "phone") },
+            seek: { _ in fatalError("An already playing handoff must not seek") },
+            play: { _, at, _ in returnedStarts += 1; returnedPosition = at },
+            devices: { [phone] }, sleep: { _ in try await Task.sleep(for: .milliseconds(10)) }), sheetProvider: provider)
+        // The native handoff starts audio while Chordlyze's poller is stopped.
+        // Its cached `playing` value is nil until the first fresh read.
+        try await returned.playAlong(trackID: "one")
+        check(returnedStarts == 0 && returnedPosition == 23,
+              "Returning from Spotify must adopt the playing song without restarting its queue")
+        returned.reset()
+        try await returnedHandoffTests(phone: phone, provider: provider)
         let unconnected = SpotifyNowPlaying(sheetProvider: provider)
         do { try await unconnected.playAlong(trackID: "one"); fatalError("Signed out cannot start playback") }
         catch let error as SpotifyNowPlaying.PlayError { check(error == .notConnected, "Play without a Spotify session is an explicit error") }
 
         check(requested == 0, "Playing a song never requests its analysis")
         try await liveFlowTests()
+    }
+
+    @MainActor static func returnedHandoffTests(phone: SpotifyAPI.Device,
+                                               provider: @escaping (Track) -> SongSheetStore) async throws {
+        var position = 23.0, track = "one", deviceID = "phone"
+        var isPlaying = true, failRead = false
+        var starts: [(String, Double)] = [], seeks: [Double] = []
+        var pending: CheckedContinuation<SpotifyAPI.CurrentlyPlaying?, Never>?
+        var holdRead = false
+        let player = SpotifyNowPlaying(service: .init(current: {
+            if holdRead { return await withCheckedContinuation { pending = $0 } }
+            if failRead { throw URLError(.timedOut) }
+            return playback(id: track, milliseconds: Int(position * 1000), playing: isPlaying, deviceID: deviceID)
+        }, seek: { _ in fatalError("Seek must target the selected phone") }, play: { id, at, selected in
+            starts.append((id, at)); track = id; position = at; isPlaying = true; deviceID = selected!
+        }, devices: { [phone] }, seekOnDevice: { at, selected in
+            check(selected == phone.id, "A handoff resume seek stays on the selected phone")
+            seeks.append(at); position = at
+        }, sleep: { _ in try await Task.sleep(for: .seconds(60)) }), sheetProvider: provider)
+        try await player.playAlong(trackID: "one", resumingAt: 17)
+        check(starts.isEmpty && seeks.isEmpty && abs((player.livePosition() ?? 0) - 23) < 1,
+              "An old requested position never rewinds music already started in Spotify")
+        // The cached player still says playing while the fresh source is paused.
+        isPlaying = false; position = 27
+        try await player.playAlong(trackID: "one")
+        check(starts.count == 1 && starts[0].1 == 27,
+              "A stale playing cache cannot suppress resuming Spotify's actual paused position")
+        position = 4
+        try await player.playAlong(trackID: "one", resumingAt: 42)
+        check(starts.count == 1 && seeks == [42],
+              "A cold handoff restores a later resume point by seeking without recreating the queue")
+        deviceID = "mac"
+        try await player.playAlong(trackID: "one")
+        check(starts.count == 2 && starts[1].1 == 0 && deviceID == "phone",
+              "The same song on another device is not mistaken for the requested phone")
+        failRead = true
+        do { try await player.playAlong(trackID: "one"); fatalError("An unreadable handoff must fail") }
+        catch let error as SpotifyNowPlaying.PlayError {
+            check(error == .connectionLost && starts.count == 2,
+                  "An unavailable playback read never causes a speculative replay")
+        }
+        player.stop()
+        failRead = false; holdRead = true
+        let canceled = Task { try await player.playAlong(trackID: "two") }
+        try await waitFor { pending != nil }
+        canceled.cancel()
+        holdRead = false
+        pending?.resume(returning: playback())
+        do { try await canceled.value; fatalError("A canceled handoff must throw") } catch is CancellationError { }
+        check(starts.count == 2, "Canceling during a fresh handoff read cannot later start audio")
+        player.reset()
+    }
+
+    @MainActor static func spotifyNativeSessionTests() async throws {
+        let driver = NativeSpotifyFixture()
+        let session = SpotifyNativeSession(transport: driver, sleep: { seconds in
+            if seconds == 10 { try await Task.sleep(for: .seconds(60)) }
+            else { await Task.yield() }
+        })
+        var completions: [String?] = []
+        session.sceneChanged(active: false)
+        session.authorize(token: "fixture", completion: { completions.append($0) })
+        check(driver.tokens.isEmpty && completions.isEmpty,
+              "An authorization callback in background waits for an active native connection")
+        session.sceneChanged(active: true)
+        session.sceneChanged(active: true)
+        session.reconnect()
+        check(driver.tokens == ["fixture"] && !session.isConnected && completions.isEmpty,
+              "Authorization installs its token once and does not claim connection before the SDK delegate")
+        driver.connected()
+        check(session.isConnected && completions.count == 1 && completions[0] == nil,
+              "Only a connected SDK delegate completes the Spotify handoff")
+
+        var webReads = 0, webWrites = 0
+        let web = SpotifyNowPlaying.Service(current: { webReads += 1; return playback(id: "stale-web", deviceID: "mac") },
+            seek: { _ in webWrites += 1 }, play: { _, _, id in
+                check(id != SpotifyNativeSession.device.id, "The native identity never reaches a Spotify Web API write")
+                webWrites += 1
+            }, devices: { [] })
+        let service = session.service(fallback: web)
+        let current = try await service.current()
+        let devices = try await service.devices()
+        check(current?.item?.id == "one" && devices.map(\.id) == [SpotifyNativeSession.device.id] && webReads == 0,
+              "A connected handoff reads and targets this phone instead of a stale Spotify Connect device")
+        driver.sample = playback(playing: false, deviceID: SpotifyNativeSession.device.id!)
+        let paused = try await service.current()
+        check(paused?.isPlaying == false, "The phone's real pause state reaches the chart controller")
+        driver.sample = nil
+        let empty = try await service.current()
+        check(empty == nil && webReads == 0, "An empty native player cannot fall through to another device's song")
+        let webConfirmation = try await service.currentOnDevice!("mac")
+        check(webConfirmation?.item?.id == "stale-web" && webReads == 1,
+              "A Web API command keeps its confirmation source when native connection appears mid-command")
+
+        try await service.play("one", 0, SpotifyNativeSession.device.id)
+        check(driver.plays == ["one"] && webWrites == 0, "Native playback never sends a second command through the Web API")
+        var readNumber = 0
+        driver.read = {
+            readNumber += 1
+            return playback(id: readNumber < 3 ? "old-song" : "two", deviceID: SpotifyNativeSession.device.id!)
+        }
+        try await service.play("two", 31, SpotifyNativeSession.device.id)
+        check(readNumber == 3 && driver.seeks == [31], "Native play waits for the new track before seeking its resume point")
+        driver.read = { playback(id: "old-song", deviceID: SpotifyNativeSession.device.id!) }
+        let previousReads = driver.reads
+        do { try await service.play("missing", 9, SpotifyNativeSession.device.id); fatalError("A missing track change must fail") }
+        catch let error as SpotifyNowPlaying.PlayError {
+            check(error == .notConfirmed && driver.reads - previousReads == 12 && driver.seeks == [31],
+                  "An accepted play that never changes songs fails within bounded reads without seeking the old song")
+        }
+        var pending: CheckedContinuation<SpotifyAPI.CurrentlyPlaying?, Never>?
+        driver.read = { await withCheckedContinuation { pending = $0 } }
+        let canceled = Task { try await service.play("two", 45, SpotifyNativeSession.device.id) }
+        try await waitFor { pending != nil }
+        canceled.cancel()
+        pending?.resume(returning: playback(id: "two", deviceID: SpotifyNativeSession.device.id!))
+        do { try await canceled.value; fatalError("A canceled native play must throw") } catch is CancellationError { }
+        check(driver.seeks == [31], "Canceling native confirmation prevents a delayed seek")
+
+        let originalConnection = driver.connections[0]
+        session.sceneChanged(active: false)
+        check(!session.isConnected && !driver.isConnected, "Backgrounding disconnects the App Remote transport")
+        for control in [0, 1, 2] {
+            do {
+                if control == 0 { try await service.play("one", 0, SpotifyNativeSession.device.id) }
+                else if control == 1 { try await service.seekOnDevice!(10, SpotifyNativeSession.device.id) }
+                else { _ = try await service.currentOnDevice!(SpotifyNativeSession.device.id) }
+                fatalError("An unavailable selected native device must fail")
+            } catch let error as SpotifyNowPlaying.PlayError {
+                check(error == .connectionLost && webWrites == 0 && webReads == 1,
+                      "Disconnecting cannot redirect native controls or confirmation to an account device")
+            }
+        }
+        session.sceneChanged(active: true)
+        check(driver.tokens == ["fixture", "fixture"], "Foreground reconnect reuses the native token without new authorization")
+        originalConnection(.success(()))
+        check(!session.isConnected && completions.count == 1, "An old connection callback cannot revive a later attempt")
+        driver.connected()
+        check(session.isConnected && completions.count == 1, "Foreground reconnect does not repeat the original continuation")
+
+        session.authorize(token: "replacement", completion: { completions.append($0) })
+        let abandoned = driver.connections.last!
+        session.reset()
+        abandoned(.success(()))
+        session.sceneChanged(active: false)
+        session.sceneChanged(active: true)
+        check(!session.isConnected && driver.tokens.count == 3 && completions.count == 1,
+              "Logout or cancellation removes credentials and rejects late native connections")
+
+        let failingDriver = NativeSpotifyFixture()
+        let failing = SpotifyNativeSession(transport: failingDriver)
+        var failure: String?
+        failing.authorize(token: "fixture", completion: { failure = $0 })
+        failingDriver.connections.last?(.failure(URLError(.cannotConnectToHost)))
+        check(failure != nil && !failing.isConnected && !failingDriver.isConnected,
+              "A failed SDK connection never reports the phone ready")
+        failing.reset()
+
+        let slowDriver = NativeSpotifyFixture()
+        let slow = SpotifyNativeSession(transport: slowDriver, sleep: { _ in try await Task.sleep(for: .milliseconds(10)) })
+        var timedOut = false
+        slow.authorize(token: "fixture", completion: { timedOut = $0 != nil })
+        try await waitFor { timedOut }
+        check(!slow.isConnected && !slowDriver.isConnected, "An SDK connection with no delegate result has a finite failure path")
+        slow.reset()
     }
 
     @MainActor static func playbackReliabilityTests() async throws {

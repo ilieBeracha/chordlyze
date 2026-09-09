@@ -165,6 +165,13 @@ final class SpotifyAPI: ObservableObject {
         let item: Track?
         let device: Device?
 
+        init(progressMs: Int?, isPlaying: Bool, item: Track?, device: Device?) {
+            self.progressMs = progressMs
+            self.isPlaying = isPlaying
+            self.item = item
+            self.device = device
+        }
+
         enum CodingKeys: String, CodingKey {
             case progressMs = "progress_ms"
             case isPlaying = "is_playing"

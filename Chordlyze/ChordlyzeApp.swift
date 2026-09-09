@@ -47,6 +47,7 @@ struct ChordlyzeApp: App {
                 BackendClient.tokenProvider = authorized ? { [auth] in try await auth.validToken() } : nil
             }
             .onChange(of: scenePhase) { _, phase in
+                if auth.isAuthorized, !isPreview { SpotifyAppLauncher.shared.sceneChanged(active: phase == .active) }
                 if phase == .background { SpotifyNowPlaying.shared.stop() }
                 if phase == .active, auth.isAuthorized, !isPreview { SpotifyNowPlaying.shared.start(api: SpotifyAPI(auth: auth)) }
             }
