@@ -4,7 +4,7 @@ import Foundation
 /// One observable song document shared by search, library, live and practice.
 /// Lyrics load independently of analysis; complete charts replace pending rows.
 /// Opening a song only reads its status: analysis is requested by the
-/// Analyze button alone, never by a screen appearing or a song playing.
+/// Analyze and Reanalyze buttons alone, never by a screen appearing or a song playing.
 @MainActor
 final class SongSheetStore: ObservableObject {
     struct Service {
@@ -24,6 +24,9 @@ final class SongSheetStore: ObservableObject {
         var applyPassage: (String, PassageJob) async throws -> SongStatus = { try await BackendClient.applyPassage(trackID: $0, job: $1) }
         var correctChord: (String, ChordSegment, String?, String) async throws -> SongStatus = {
             try await BackendClient.correctChord(trackID: $0, segment: $1, name: $2, revision: $3)
+        }
+        var reanalyze: (String, String) async throws -> SongStatus = {
+            try await BackendClient.reanalyzeSong(trackID: $0, expectedRevision: $1)
         }
     }
     private static var documents: [String: SongSheetStore] = [:]
@@ -50,6 +53,10 @@ final class SongSheetStore: ObservableObject {
     @Published private(set) var lyricsJob: SongStatus.Job?
     @Published private(set) var requestingLyricTiming = false
     @Published private(set) var lyricTimingError: String?
+    @Published private(set) var analysisInfo: SongAnalysisInfo?
+    @Published private(set) var analysisJob: SongStatus.Job?
+    @Published private(set) var requestingReanalysis = false
+    @Published private(set) var reanalysisError: String?
     @Published private(set) var hasTimedLyricWords = false
     @Published private(set) var hasCompleteLyricTiming = false
     /// In the account's library. Requesting analysis saves; the sheet's
@@ -95,6 +102,42 @@ final class SongSheetStore: ObservableObject {
     /// A status outage does not invalidate the full chart already in memory.
     /// Explicit missing/unavailable responses still disable its actions.
     var canPractice: Bool { analysis?.isPreview == false && (state == "ready" || state == "connection") }
+    var reanalysisPending: Bool {
+        requestingReanalysis || ["queued", "processing"].contains(analysisJob?.state ?? "") || timingLyrics
+    }
+    private var reanalysisRevision: String? { analysisInfo?.chartRevision ?? analysis?.chartRevision }
+    var canReanalyze: Bool {
+        analysisInfo != nil && reanalysisRevision != nil && !reanalysisPending && !savingCorrection
+            && state != "loading" && state != "connection"
+    }
+    var analysisProgressLabel: String {
+        if requestingReanalysis { return "Requesting reanalysis…" }
+        let job = analysisJob ?? (timingLyrics ? lyricsJob : nil)
+        switch job?.state {
+        case "queued": return job?.workerOnline == false ? "Waiting for service" : "Queued"
+        case "processing":
+            if job?.workerOnline == false { return "Waiting for service" }
+            switch job?.stage {
+            case "downloading": return "Finding and downloading recording"
+            case "aligning": return "Timing lyrics"
+            default: return "Analyzing chords and rhythm"
+            }
+        case "failed", "unavailable": return "Reanalysis failed"
+        default: return timingLyrics ? "Timing lyrics" : (reanalysisRevision == nil ? "Not analyzed" : "Ready")
+        }
+    }
+    var analysisProgressMessage: String? {
+        if let reanalysisError { return reanalysisError }
+        if state == "connection" { return "Could not check the latest status. Showing the last information received." }
+        if let job = analysisJob, ["failed", "unavailable"].contains(job.state) {
+            return job.message ?? "The new analysis could not finish. Your existing chart is still available."
+        }
+        if reanalysisPending {
+            if let ahead = analysisJob?.ahead, ahead > 0 { return "\(ahead) \(ahead == 1 ? "song" : "songs") ahead in the queue." }
+            return "Your existing chart stays available while this runs."
+        }
+        return nil
+    }
     var shift: Int { (capoMode ? -capo : 0) + manualShift }
     var lyricTimingIsSynced: Bool { lyricsResult?.synced == true }
     var needsChordPlaybackSummary: Bool { canPractice && !hasCompleteLyricTiming }
@@ -146,7 +189,7 @@ final class SongSheetStore: ObservableObject {
 
     /// Explicit recovery uses the existing chart; it never re-analyzes chords.
     func requestLyricTiming() async {
-        guard canPractice, !timingLyrics, !savingCorrection else { return }
+        guard canPractice, !reanalysisPending, !savingCorrection else { return }
         requestingLyricTiming = true
         lyricTimingError = nil
         revision += 1
@@ -177,7 +220,7 @@ final class SongSheetStore: ObservableObject {
         return abs(gap) > 1 ? gap : nil
     }
     var editionNote: String? {
-        editionGap.map { String(format: "Chart made from a recording %.0f s %@ than the Spotify track. Chords may sit early or late; adjust timing in Key & capo.", abs($0), $0 > 0 ? "longer" : "shorter") }
+        editionGap.map { String(format: "Chart made from a recording %.0f s %@ than the Spotify track. Chords may sit early or late; adjust timing in Song settings.", abs($0), $0 > 0 ? "longer" : "shorter") }
     }
     /// Label of the one action that requests analysis; nil while nothing can be requested.
     var actionTitle: String? {
@@ -209,6 +252,35 @@ final class SongSheetStore: ObservableObject {
     func retry() {
         start(request: state != "connection")
         loadLyrics(force: true)
+    }
+
+    /// A separate explicit action bypasses the normal current-chart cache hit.
+    /// Polling is suspended while enqueueing so an older read cannot undo it.
+    func reanalyze() async {
+        guard canReanalyze, let expectedRevision = reanalysisRevision else { return }
+        requestingReanalysis = true
+        reanalysisError = nil
+        revision += 1
+        let token = revision
+        task?.cancel(); task = nil
+        defer {
+            requestingReanalysis = false
+            if observers > 0 { start() }
+        }
+        do {
+            let result = try await service.reanalyze(song.id, expectedRevision)
+            guard !Task.isCancelled, token == revision else { return }
+            apply(result)
+        } catch {
+            guard !Task.isCancelled, token == revision else { return }
+            if let error = error as? BackendError, error.status == 409 {
+                reanalysisError = "The chart changed. Refresh its status before trying again."
+            } else if let error = error as? BackendError, error.status == 404 {
+                reanalysisError = "Reanalysis is not available on this service yet."
+            } else {
+                reanalysisError = "Could not confirm the request. Refresh the status before trying again."
+            }
+        }
     }
 
     /// A calibration stops applying when the chart it was made on is gone.
@@ -308,7 +380,7 @@ final class SongSheetStore: ObservableObject {
     }
 
     private func commitChange(_ action: () async throws -> SongStatus) async throws {
-        guard !savingCorrection else { throw BackendError(status: 409, detail: "Another change is still saving.") }
+        guard !savingCorrection, !requestingReanalysis else { throw BackendError(status: 409, detail: "Another change is still saving.") }
         savingCorrection = true
         revision += 1
         task?.cancel(); task = nil
@@ -324,7 +396,7 @@ final class SongSheetStore: ObservableObject {
     }
 
     private func start(request: Bool = false) {
-        guard !savingCorrection else { return }
+        guard !savingCorrection, !request || !requestingReanalysis else { return }
         revision += 1
         let token = revision
         task?.cancel()
@@ -354,7 +426,7 @@ final class SongSheetStore: ObservableObject {
                     state = "connection"
                     message = canPractice ? "Reconnecting… Your loaded chart is still available." : "Reconnecting…"
                 }
-                do { try await service.sleep(failures > 0 ? min(30, Double(failures * 3)) : (timingLyrics ? 3 : (state == "ready" || state == "missing" ? 15 : 3))) }
+                do { try await service.sleep(failures > 0 ? min(30, Double(failures * 3)) : (reanalysisPending ? 3 : (state == "ready" || state == "missing" ? 15 : 3))) }
                 catch { return }
             }
         }
@@ -401,6 +473,12 @@ final class SongSheetStore: ObservableObject {
                 aligned.matched == "transcribed" ? "Transcribed from the recording" : "Lyrics timed from the recording")
         }
         state = status.job.state
+        if ["queued", "processing"].contains(status.analysisJob?.state ?? "")
+            || (status.analysisInfo?.analyzedAt != nil && status.analysisInfo?.analyzedAt != analysisInfo?.analyzedAt) {
+            reanalysisError = nil
+        }
+        analysisInfo = status.analysisInfo
+        analysisJob = status.analysisJob
         lyricsJob = status.lyricsJob
         if ["queued", "processing", "ready"].contains(status.lyricsJob?.state ?? "") {
             lyricTimingError = nil

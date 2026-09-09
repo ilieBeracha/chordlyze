@@ -40,6 +40,8 @@ struct SongStatus: Decodable {
     let lyrics: BackendClient.LyricsResult?
     let job: Job
     var lyricsJob: Job? = nil
+    var analysisInfo: SongAnalysisInfo? = nil
+    var analysisJob: Job? = nil
     let libraryGeneration: String
     /// Whether this song is in the signed-in account's library.
     let saved: Bool?
@@ -49,7 +51,56 @@ struct SongStatus: Decodable {
     enum CodingKeys: String, CodingKey {
         case timingRevision = "timing_revision"
         case lyricsJob = "lyrics_job"
+        case analysisInfo = "analysis_info", analysisJob = "analysis_job"
         case song, analysis, lyrics, job, saved, timing, libraryGeneration = "library_generation"
+    }
+}
+
+/// The server's analysis generation, independent of the installed app version.
+/// Missing legacy dates and versions remain unknown instead of being inferred.
+struct SongAnalysisInfo: Decodable, Equatable {
+    let analyzedAt: Double?
+    let analysisVersion: Int?
+    let currentAnalysisVersion: Int
+    let versionsBehind: Int?
+    let isCurrent: Bool
+    let model: String?
+    let modelRevision: String?
+    let currentModelRevision: String?
+    let sourceTitle: String?
+    let sourceProvider: String?
+    let currentVersionReleasedAt: Double?
+    let chartRevision: String?
+
+    enum CodingKeys: String, CodingKey {
+        case analyzedAt = "analyzed_at", analysisVersion = "analysis_version"
+        case currentAnalysisVersion = "current_analysis_version", versionsBehind = "versions_behind"
+        case isCurrent = "is_current", model, modelRevision = "model_revision"
+        case currentModelRevision = "current_model_revision", sourceTitle = "source_title"
+        case sourceProvider = "source_provider", currentVersionReleasedAt = "current_version_released_at"
+        case chartRevision = "chart_revision"
+    }
+
+    private func date(_ seconds: Double?) -> Date? {
+        guard let seconds, seconds.isFinite, seconds > 0 else { return nil }
+        return Date(timeIntervalSince1970: seconds)
+    }
+    var analyzedDate: Date? { date(analyzedAt) }
+    var latestVersionDate: Date? { date(currentVersionReleasedAt) }
+    var statusLabel: String {
+        if isCurrent { return "Up to date" }
+        guard let version = analysisVersion, version > 0 else { return "Version unknown" }
+        if version > currentAnalysisVersion { return "Newer than this service" }
+        if let behind = versionsBehind, behind > 0 {
+            return "\(behind) \(behind == 1 ? "version" : "versions") behind"
+        }
+        return "Update available"
+    }
+    var versionLabel: String {
+        guard let version = analysisVersion, version > 0 else {
+            return "Unknown · latest v\(currentAnalysisVersion)"
+        }
+        return "v\(version) · latest v\(currentAnalysisVersion)"
     }
 }
 
@@ -370,6 +421,19 @@ enum BackendClient {
                                  cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
         guard let result: SongStatus = try await fetch(request) else {
             throw BackendError(status: 404, detail: "Song request unavailable")
+        }
+        return result
+    }
+
+    /// Explicitly replaces a saved analysis after a complete successful rerun.
+    static func reanalyzeSong(trackID: String, expectedRevision: String) async throws -> SongStatus {
+        var request = URLRequest(url: Config.backendBaseURL.appendingPathComponent("song/\(trackID)/reanalyze"),
+                                 cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["expected_chart_revision": expectedRevision])
+        guard let result: SongStatus = try await fetch(request) else {
+            throw BackendError(status: 404, detail: "Reanalysis is not available on this service yet.")
         }
         return result
     }

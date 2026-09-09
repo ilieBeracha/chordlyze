@@ -277,7 +277,8 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
             result = 'ready'
             message = ('The catalog provides word timing.' if outcome == 'synced'
                        else 'The catalog lists this recording as instrumental.')
-            client.post('/internal/jobs/finish', {**identity, 'state': result, 'message': message})
+            client.post('/internal/jobs/finish', {**identity, 'state': result, 'message': message,
+                                                'instrumental': outcome == 'instrumental'})
         else:
             result = 'unavailable'
             client.post('/internal/jobs/finish', {**identity, 'state': result,
@@ -298,7 +299,9 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
                                  source_info=source_info, checkpoint=checkpoint,
                                  save_checkpoint=save_checkpoint, cancelled=cancelled, isrc=song.get('isrc'),
                                  recording_source=(job.get('recording_source') or {})
-                                     if job.get('kind') == 'lyrics' else None)
+                                     if job.get('kind') == 'lyrics' else None,
+                                 **({'preferred_source': job['preferred_recording_source']}
+                                    if job.get('preferred_recording_source') else {}))
         phase('download')
         if cancelled():
             return 'abandoned'

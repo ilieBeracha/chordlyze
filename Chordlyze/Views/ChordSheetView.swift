@@ -178,12 +178,13 @@ struct AnalysisTabsView: View {
             if store.canPractice {
                 Button("Practice", systemImage: "guitars") { showPractice = true }
                     .accessibilityIdentifier("song-practice")
-                Button("Key & capo", systemImage: "slider.horizontal.3") { showSettings = true }
                 if let grid = beatGrid, !grid.bars.isEmpty {
                     Button("Song map", systemImage: "map") { showSongMap = true }
                         .accessibilityIdentifier("song-map")
                 }
             }
+            Button("Song settings", systemImage: "slider.horizontal.3") { showSettings = true }
+                .accessibilityIdentifier("song-settings")
             Button(store.saved ? "Remove from saved songs" : "Save song", systemImage: store.saved ? "bookmark.fill" : "bookmark") {
                 Task { await store.setSaved(!store.saved) }
             }.accessibilityIdentifier("save-toggle")
@@ -555,10 +556,114 @@ struct SongPlayingSettings: View {
                     store.manualShift = 0; store.capoMode = false
                     Task { await store.setTiming(nil) }
                 }
+                Section {
+                    NavigationLink {
+                        SongDeveloperToolsView(store: store)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label("Developer tools", systemImage: "wrench.and.screwdriver")
+                            Text(store.reanalysisPending ? store.analysisProgressLabel
+                                 : store.analysisInfo?.statusLabel ?? "Analysis details and reanalysis")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("song-developer-tools")
+                }
             }
-            .navigationTitle("Key & capo").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Song settings").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
+    }
+}
+
+struct SongDeveloperToolsView: View {
+    @ObservedObject var store: SongSheetStore
+
+    var body: some View {
+        Form {
+            Section {
+                Text(store.song.title).font(.headline)
+                Text(store.song.artist).foregroundStyle(.secondary)
+            }
+            Section {
+                if let info = store.analysisInfo {
+                    LabeledContent("Status", value: info.statusLabel)
+                        .accessibilityIdentifier("analysis-freshness")
+                    LabeledContent("Version", value: info.versionLabel)
+                        .accessibilityIdentifier("analysis-version")
+                    LabeledContent("Last analyzed") {
+                        if let date = info.analyzedDate {
+                            Text(date.formatted(date: .abbreviated, time: .shortened))
+                                .multilineTextAlignment(.trailing)
+                        } else {
+                            Text("Date unknown").foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("analysis-date")
+                    if let date = info.latestVersionDate {
+                        LabeledContent("Latest version released") {
+                            Text(date.formatted(date: .abbreviated, time: .shortened))
+                                .multilineTextAlignment(.trailing)
+                        }
+                    }
+                } else {
+                    Text("Analysis details aren't available from the service yet.")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Saved analysis")
+            } footer: {
+                Text("Versions count updates to the song analyzer. Earlier analyses may not have a recorded date. Up to date describes the analyzer version; it does not guarantee that every chord or lyric is correct.")
+            }
+            if let info = store.analysisInfo, info.sourceProvider != nil || info.sourceTitle != nil {
+                Section("Analyzed recording") {
+                    if let title = info.sourceTitle, !title.isEmpty {
+                        Text(title).textSelection(.enabled)
+                            .accessibilityIdentifier("analysis-recording-title")
+                    }
+                    if let provider = info.sourceProvider, !provider.isEmpty {
+                        LabeledContent("Source", value: provider.capitalized)
+                    }
+                }
+            }
+            Section {
+                HStack {
+                    if store.reanalysisPending { ProgressView().padding(.trailing, 4) }
+                    Text(store.analysisProgressLabel)
+                        .accessibilityIdentifier("analysis-progress")
+                }
+                if let message = store.analysisProgressMessage {
+                    Text(message).font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("analysis-message")
+                }
+                Button {
+                    Task { await store.reanalyze() }
+                } label: {
+                    Label(store.requestingReanalysis ? "Requesting…" : "Reanalyze song", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .disabled(!store.canReanalyze)
+                .accessibilityIdentifier("reanalyze-song")
+                Button("Refresh status", systemImage: "arrow.triangle.2.circlepath") { store.refresh() }
+                    .accessibilityIdentifier("refresh-analysis-status")
+            } header: {
+                Text("Reanalysis")
+            } footer: {
+                Text("Matches the recording again and rebuilds chords, rhythm and lyric timing. Your current chart stays available until the replacement is ready. Your edits remain saved; corrections or calibration may need review if the recording changes.")
+            }
+            if let info = store.analysisInfo, let model = info.model {
+                Section("Analyzer") {
+                    LabeledContent("Model", value: model)
+                    if let revision = info.modelRevision {
+                        Text(revision).font(.caption.monospaced()).foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Developer tools")
+        .navigationBarTitleDisplayMode(.inline)
+        .observes(store)
     }
 }
 

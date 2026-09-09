@@ -92,7 +92,7 @@ class SongJobs:
 
     def request(self, song: dict, *, retry: bool = False, kind: str = 'analysis',
                 audio_sha256: str | None = None, lyrics_sha256: str | None = None,
-                download_checkpoint: dict | None = None) -> dict:
+                download_checkpoint: dict | None = None, reanalysis: dict | None = None) -> dict:
         """kind 'analysis' makes a chart; 'lyrics' re-fetches the recording of
         an existing chart only to time its lyrics. A lyrics job replaces a
         finished record for the track, never one still queued or running."""
@@ -109,7 +109,25 @@ class SongJobs:
                 job.update(expected_audio_sha256=audio_sha256, expected_lyrics_sha256=lyrics_sha256)
                 if download_checkpoint:
                     job['download_checkpoint'] = download_checkpoint
+            if reanalysis:
+                job['reanalysis'] = reanalysis
             write_json(self.path(song['track_id']), job)
+            return job
+
+    def stage_reanalysis(self, track_id: str, job_id: str, lease: str, epoch: str,
+                         candidate: dict) -> dict | None:
+        """Durably retain the old chart while the replacement's lyrics are timed."""
+        with library_lock(self.directory):
+            if not self.valid_lease(track_id, job_id, lease, epoch):
+                return None
+            job = self.get(track_id)
+            if job.get('kind') != 'analysis' or not job.get('reanalysis'):
+                return None
+            job.update(kind='lyrics', stage='aligning', attempts=1, pending_chart=candidate,
+                       expected_audio_sha256=candidate['audio_sha256'],
+                       expected_lyrics_sha256=lyrics_fingerprint(candidate.get('lyrics')),
+                       message='Timing lyrics before replacing the existing chart.')
+            write_json(self.path(track_id), job)
             return job
 
     def begin_lyrics(self, track_id: str, job_id: str, lease: str, epoch: str,
@@ -164,7 +182,10 @@ class SongJobs:
                 expired = job['state'] == 'processing' and job.get('lease_until', 0) < time.time()
                 if job['state'] != 'queued' and not expired:
                     continue
-                if job['attempts'] >= 3:
+                # A final-publication journal needs no recognition/provider work.
+                # Recover it even when the interrupted recognition retry budget
+                # was exhausted, so a completed chart cannot look falsely failed.
+                if job['attempts'] >= 3 and not job.get('publication'):
                     job.update(state='failed', message=('Lyric timing was interrupted. Retry lyric timing.'
                         if job.get('kind') == 'lyrics' else 'Analysis was interrupted. Retry this song.'))
                     write_json(self.path(job['song']['track_id']), job)

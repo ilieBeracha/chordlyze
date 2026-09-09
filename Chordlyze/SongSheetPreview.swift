@@ -29,7 +29,14 @@ struct SongSheetPreview: View {
                     Text("Practice").tag("Practice")
                 }.pickerStyle(.segmented).padding(12)
                 }
-                if ProcessInfo.processInfo.arguments.contains("--spotify-device-recovery-preview"), mode != "Practice" {
+                if ProcessInfo.processInfo.arguments.contains("--song-developer-preview") {
+                    SongDeveloperToolsView(store: store)
+                        .task {
+                            guard ProcessInfo.processInfo.arguments.contains("--song-developer-run") else { return }
+                            try? await Task.sleep(for: .milliseconds(300))
+                            await store.reanalyze()
+                        }
+                } else if ProcessInfo.processInfo.arguments.contains("--spotify-device-recovery-preview"), mode != "Practice" {
                     ScrollView {
                         SpotifyDeviceRecoveryView(nowPlaying: player, trackID: store.song.id, retryTitle: "Retry practice") {
                             mode = "Practice"
@@ -189,7 +196,46 @@ struct SongSheetPreview: View {
         return SongSheetStore(song: song, analysis: payload.analysis, service: .init(request: { _ in payload }, status: { _ in payload }, lyrics: { _ in nil }))
     }
 
+    /// Interactive, entirely offline reanalysis fixture for real settings UI checks.
+    @MainActor private static func developerToolsStore() -> SongSheetStore {
+        let args = ProcessInfo.processInfo.arguments
+        let song = SongDescriptor(trackID: "developer-preview", title: "Evening light", artist: "Offline sample", duration: 40)
+        var requestedAt: ContinuousClock.Instant?
+        var completedAt: Double?
+        func payload() -> SongStatus {
+            let elapsed = requestedAt.map { $0.duration(to: .now).seconds } ?? -1
+            let complete = elapsed >= 9 || args.contains("--song-developer-current")
+            if complete && completedAt == nil { completedAt = Date().timeIntervalSince1970 }
+            let jobState = args.contains("--song-developer-failed") ? "failed" :
+                (elapsed < 0 || complete ? "ready" : elapsed < 3 ? "queued" : "processing")
+            let version = complete ? 4 : 3
+            let revision = complete ? "preview-new" : "preview-original"
+            var info: [String: Any] = ["analysis_version": version, "current_analysis_version": 4,
+                "versions_behind": 4 - version, "is_current": complete, "chart_revision": revision,
+                "analyzed_at": completedAt ?? 1788714000, "model": "ismir2019",
+                "model_revision": "preview-model-v1", "current_model_revision": "preview-model-v1",
+                "source_title": "Evening light — official recording", "source_provider": "bandcamp"]
+            if args.contains("--song-developer-unknown") && !complete {
+                info.removeValue(forKey: "analyzed_at")
+                info.removeValue(forKey: "analysis_version")
+                info.removeValue(forKey: "versions_behind")
+            }
+            return decode(["job": ["state": "ready", "worker_online": true], "library_generation": "preview",
+                "analysis_info": info,
+                "analysis_job": ["state": jobState, "stage": elapsed < 6 ? "downloading" : "aligning", "worker_online": true,
+                    "message": "The recording could not be downloaded. Your previous chart is still available."],
+                "analysis": ["source": "bandcamp", "audio_duration": 40, "song_duration": 40,
+                    "audio_sha256": complete ? "new-preview-recording" : "old-preview-recording", "chart_revision": revision,
+                    "chords": [["start": 0, "end": 40, "label": complete ? "D:min" : "C:maj"]]]])
+        }
+        let initial = payload()
+        return SongSheetStore(song: song, analysis: initial.analysis, service: .init(
+            request: { _ in payload() }, status: { _ in payload() }, lyrics: { _ in nil },
+            reanalyze: { _, _ in requestedAt = .now; return payload() }))
+    }
+
     @MainActor private static func makeStore() -> SongSheetStore {
+        if ProcessInfo.processInfo.arguments.contains("--song-developer-preview") { return developerToolsStore() }
         if ProcessInfo.processInfo.arguments.contains("--mixed-word-timing-preview") { return mixedWordTimingStore() }
         if ProcessInfo.processInfo.arguments.contains("--independent-chords-preview") { return independentTimingStore() }
         if ProcessInfo.processInfo.arguments.contains("--phrase-boundary-preview") { return phraseBoundaryStore() }

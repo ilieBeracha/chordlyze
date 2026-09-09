@@ -110,7 +110,8 @@ def _recording_candidate(source: dict, title: str, artist: str, duration: float)
 def fetch_full_track(title: str, artist: str, duration: float, *, source_info: dict | None = None,
                      checkpoint: dict | None = None, save_checkpoint=None,
                      cancelled=lambda: False, isrc: str | None = None,
-                     recording_source: dict | None = None) -> Path | None:
+                     recording_source: dict | None = None,
+                     preferred_source: dict | None = None) -> Path | None:
     """Download the matching upload's audio to a temp file; None when no
     result matches. Provider failures raise a sanitized AudioProviderError in
     cloud mode or yt_dlp.utils.DownloadError in local development.
@@ -153,10 +154,18 @@ def fetch_full_track(title: str, artist: str, duration: float, *, source_info: d
     # New analyses prefer a reviewed artist stream; retries already have a
     # recording identity and must not substitute another registry entry.
     reviewed = source_for(isrc, title, artist, duration) if recording_source is None else None
+    if (recording_source is None and isinstance(preferred_source, dict)
+            and preferred_source.get('provider') == 'bandcamp'
+            and str(preferred_source.get('matching') or '').startswith('reviewed_')
+            and valid_source_url(preferred_source.get('url'))
+            and _recording_candidate(preferred_source, title, artist, duration)):
+        reviewed = preferred_source
     if reviewed:
         audio = fetch_artist_recording(reviewed, title, artist, duration,
                                        source_info=source_info, cancelled=cancelled)
         if audio is not None:
+            if reviewed is preferred_source and source_info is not None:
+                source_info['matching'] = 'reviewed_artist_title_duration'
             return audio
     provider = os.environ.get('CHORDLYZE_AUDIO_PROVIDER', 'yt_dlp')
     if provider == 'apify':

@@ -59,6 +59,25 @@ def snapshot(paths):
     return {p: p.read_bytes() for p in paths}
 
 
+def test_replacement_never_inherits_an_unrelated_analysis_date(world):
+    _, proposal, paths = world
+    before = json.loads(paths[0].read_bytes())
+    before['analyzed_at'] = 1700000000
+    candidate = proposal['replacement']
+    assert 'analyzed_at' not in repair.replacement_chart(before, candidate, 'authored')
+    candidate['analyzed_at'] = 1788912000
+    assert repair.replacement_chart(before, candidate, 'authored')['analyzed_at'] == 1788912000
+
+
+@pytest.mark.parametrize('date', [0, -1, True, 'yesterday', float('inf')])
+def test_replacement_rejects_an_invalid_completion_date(world, date):
+    _, proposal, paths = world
+    before = json.loads(paths[0].read_bytes())
+    proposal['replacement']['analyzed_at'] = date
+    with pytest.raises(ValueError, match='completion date'):
+        repair.replacement_chart(before, proposal['replacement'], 'authored')
+
+
 def apply(world):
     cache, proposal, _ = world
     plan = repair.replace_chart(cache, proposal)

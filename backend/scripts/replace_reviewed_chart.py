@@ -160,6 +160,13 @@ def replacement_chart(before: dict, candidate: dict, track: str) -> dict:
         raise ValueError('The replacement would lose existing lyric text.')
     after = copy.deepcopy(before)
     after.update(analyze(segments))
+    # A different analysis cannot inherit the previous analysis's completion date.
+    # The reviewer may supply a known timestamp; absent evidence stays unknown.
+    after.pop('analyzed_at', None)
+    if candidate.get('analyzed_at') is not None:
+        if not finite(candidate['analyzed_at']) or candidate['analyzed_at'] <= 0:
+            raise ValueError('Invalid analysis completion date.')
+        after['analyzed_at'] = candidate['analyzed_at']
     for key in ('model', 'model_revision', 'analysis_version', 'audio_sha256', 'audio_duration', 'source'):
         after[key] = candidate[key]
     after.update(audio_source=copy.deepcopy(source), lyrics=lyrics,
