@@ -127,6 +127,7 @@ def test_low_confidence_stamps_retain_evidence_but_never_become_measured_word_an
     heard = [{'start': i, 'end': i + .5, 'text': f'word{i}', 'p': .95, 'segment': 0} for i in range(12)]
     heard[0]['p'] = .04
     heard[1]['estimated'] = True
+    heard[3]['end'] = heard[3]['start']
     text = ' '.join(w['text'] for w in heard)
     aligned, _, _ = time_lines([text], heard)
     transcribed = transcribed_lines(heard)
@@ -134,6 +135,7 @@ def test_low_confidence_stamps_retain_evidence_but_never_become_measured_word_an
         assert result[0]['words'][0] == {'time': 0, 'end': .5, 'text': 'word0', 'estimated': True}
         assert result[0]['words'][1]['estimated'] is True
         assert 'estimated' not in result[0]['words'][2]
+        assert result[0]['words'][3]['estimated'] is True, 'a rejected zero-length span is not an onset-only source'
 
 
 def test_missing_audio_still_publishes_conflict_as_uncertain():

@@ -8,6 +8,7 @@ import pytest
 from chordlyze_backend import corrections
 from chordlyze_backend.analysis.provenance import model_metadata
 from chordlyze_backend.song_jobs import SongJobs
+from chordlyze_backend.lyrics_validation import lyric_text_sha256, reviewed_lyric_catalog
 from scripts import replace_reviewed_chart as repair
 
 
@@ -300,3 +301,29 @@ def test_uncertain_word_evidence_is_preserved_as_estimated(world):
     stored = json.loads(paths[0].read_bytes())['lyrics']['lines'][0]['words']
     assert stored[2] == {**before[2], 'estimated': True}
     assert [(w['time'], w['end'], w['text']) for w in stored] == [(w['time'], w['end'], w['text']) for w in before]
+
+
+@pytest.mark.parametrize('change', [None, 'url', 'audio', 'text'])
+def test_reviewed_artist_text_is_bound_to_complete_text_and_recording(world, change):
+    cache, proposal, paths = world
+    candidate = proposal['replacement']
+    source = {'provider': 'bandcamp', 'url': candidate['audio_source']['url'],
+              'audio_sha256': candidate['audio_sha256'],
+              'text_sha256': lyric_text_sha256(candidate['lyrics']['lines'])}
+    candidate['lyrics']['text_source'] = source
+    if change == 'url':
+        source['url'] = 'https://other.bandcamp.com/track/another-song'
+    elif change == 'audio':
+        source['audio_sha256'] = 'a' * 64
+    elif change == 'text':
+        candidate['lyrics']['lines'][0]['text'] += ' Unreviewed addition'
+    if change:
+        before = snapshot(paths)
+        with pytest.raises(ValueError, match='lyric text provenance'):
+            repair.replace_chart(cache, proposal)
+        assert snapshot(paths) == before
+    else:
+        apply(world)
+        stored = json.loads(paths[0].read_bytes())
+        assert stored['lyrics']['text_source'] == source
+        assert reviewed_lyric_catalog(stored)['lines'][0]['text'] == candidate['lyrics']['lines'][0]['text']

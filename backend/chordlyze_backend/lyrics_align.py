@@ -87,6 +87,10 @@ def _norm(word: str) -> str:
 
 def _uncertain_word(word: dict) -> bool:
     confidence = word.get('p')
+    start, end = word.get('start'), word.get('end')
+    if end is not None and (not isinstance(end, (int, float)) or not math.isfinite(end)
+            or not isinstance(start, (int, float)) or not math.isfinite(start) or end <= start):
+        return True
     return word.get('estimated') is True or (confidence is not None and
         (not isinstance(confidence, (int, float)) or not math.isfinite(confidence) or confidence < .5))
 

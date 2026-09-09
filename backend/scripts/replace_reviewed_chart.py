@@ -29,7 +29,7 @@ from chordlyze_backend.analysis.provenance import is_current
 from chordlyze_backend.analysis.review import matching_review
 from chordlyze_backend.artist_recordings import valid_source_url
 from chordlyze_backend.fulltrack import _recording_candidate
-from chordlyze_backend.lyrics_validation import finite, has_measured_words, mark_unreliable_words, preserves_lyric_text
+from chordlyze_backend.lyrics_validation import finite, has_measured_words, mark_unreliable_words, preserves_lyric_text, reviewed_lyric_catalog
 from chordlyze_backend.song_jobs import SongJobs, library_lock, lyrics_fingerprint
 
 
@@ -165,6 +165,8 @@ def replacement_chart(before: dict, candidate: dict, track: str) -> dict:
     after.update(audio_source=copy.deepcopy(source), lyrics=lyrics,
                  tempo=validate_tempo(candidate.get('tempo'), duration))
     after['chord_review'] = matching_review(candidate.get('chord_review') or [], after['chords'])
+    if lyrics.get('text_source') is not None and reviewed_lyric_catalog(after) is None:
+        raise ValueError('Reviewed lyric text provenance does not match this recording and complete text.')
     for transient in ('analysis_stale', 'chart_revision', 'corrections_stale', 'can_undo', 'boundaries_edited'):
         after.pop(transient, None)
     encoded(after)

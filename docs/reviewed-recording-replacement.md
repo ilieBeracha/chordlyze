@@ -33,6 +33,24 @@ existing library generation remain intact. A Bandcamp recording is supported.
 Lyric line times must be ordered and within the recording. Unreliable word
 geometry is preserved as evidence and explicitly marked estimated.
 
+When the text itself was checked against the artist's Bandcamp page, include
+`lyrics.text_source` with `provider: "bandcamp"`, the exact recording page `url`,
+the replacement `audio_sha256`, and `text_sha256`. Compute the text fingerprint
+using `lyrics_validation.lyric_text_sha256`: NFKC-normalize each full lyric line,
+collapse whitespace, retain case, punctuation, line order and repetitions, then
+hash compact UTF-8 JSON of that string array with `ensure_ascii=False`. This is a
+review assertion, not an automatic claim that any catalog came from the artist.
+The replacement helper rejects a marker whose complete text, recording identity,
+source URL, or source metadata does not match.
+
+Verified artist text remains `matched: "aligned"`. On reads, unrelated cached
+catalog text cannot replace it. On explicit timing retries, the server sends the
+verified text only while the job's expected audio and lyric fingerprints still
+match; the worker aligns that text without another catalog lookup. Publication
+preserves the marker only for exactly the same normalized full text and rejects
+changed text. Worker API payloads cannot introduce a new review assertion. No
+catalog cache files are deleted or rewritten by this operation.
+
 From the backend directory, using its existing Python environment:
 
 ```sh

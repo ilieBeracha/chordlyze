@@ -31,6 +31,11 @@ retried without an ISRC; a YouTube recording retains its video ID. Missing,
 invalid or unavailable provenance does not start another source search. The
 existing decoded-audio fingerprint check still runs before lyric alignment.
 
+Reviewed artist lyrics retain their source URL, complete ordered-text fingerprint
+and recording identity. Reading the chart or retrying its timing cannot replace
+that text with an older catalog entry. Timing retries preserve this provenance
+only while the recording and complete lyric text still match the review.
+
 Large catalog/transcript onset disagreements trigger a bounded acoustic review
 only when at least three nearby measured entrances corroborate a recording
 offset. Catalog time never becomes a measured word timestamp. Recovery requires
@@ -38,8 +43,8 @@ matching text, confident recovered words, and agreeing retained anchors. If the
 audio confirms the original sustained singing, its timing remains unchanged.
 Unresolved prefixes preserve their source stamps as uncertain evidence.
 
-Explicitly estimated or low-confidence recognition cannot become a measured
-anchor through either alignment or recovery. Healthy suffix words, other lyric
+Explicitly estimated, low-confidence or invalid-duration recognition cannot
+become a measured anchor through either alignment or recovery. Healthy suffix words, other lyric
 lines, and chord timestamps are preserved by a local lyric repair.
 
 ## Existing songs
@@ -73,5 +78,7 @@ musical accuracy; automated tests establish internal behavior and safeguards.
 - Backend checks cover both directions of edition mismatch, pinned lyric retry
   sources, low-confidence evidence, outlier entrances, legitimate sustained words,
   bounded recognition, stale replacement plans, backups and interrupted restore.
+- Reviewed artist text survives cached catalog reads and future timing retries;
+  a changed recording, source URL or lyric fingerprint invalidates its authority.
 
 Private song recordings and full lyric proposals remain outside the repository.

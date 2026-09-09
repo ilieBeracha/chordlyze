@@ -57,7 +57,7 @@ from .song_jobs import SongJobs, generation, library_lock
 from .users import UserLibrary
 from .lyrics_repair import repaired_entry
 from .song_jobs import lyrics_fingerprint
-from .lyrics_validation import has_measured_words, preserves_lyric_text
+from .lyrics_validation import has_measured_words, preserves_lyric_text, lyric_text_sha256, reviewed_lyric_catalog
 
 CACHE_DIR = Path(os.environ.get("CHORDLYZE_CACHE",
                                 str(Path(__file__).resolve().parent.parent / "analysis_cache")))
@@ -412,6 +412,9 @@ def claim_song(authorization: str | None = Header(default=None)) -> dict:
                         and entry['audio_sha256'] == job.get('expected_audio_sha256')
                         and isinstance(entry.get('audio_source'), dict)):
                     job = {**job, 'recording_source': entry['audio_source']}
+                    catalog = reviewed_lyric_catalog(entry)
+                    if catalog and lyrics_fingerprint(entry.get('lyrics')) == job.get('expected_lyrics_sha256'):
+                        job['lyric_catalog'] = catalog
         return {"job": job}
 
 
@@ -555,9 +558,16 @@ def attach_lyrics(body: AlignedLyrics, authorization: str | None = Header(defaul
             raise HTTPException(409, 'This lyric timing job requires its recording identity and lease.')
         original_lyrics = lyrics_fingerprint(entry.get('lyrics'))
         previous_lines = (entry.get('lyrics') or {}).get('lines') or []
+        reviewed_catalog = reviewed_lyric_catalog(entry)
+        text_source = (entry.get('lyrics') or {}).get('text_source') if reviewed_catalog else None
+        if text_source and (body.source != 'catalog_aligned' or lyric_text_sha256(lines) != text_source['text_sha256']):
+            raise HTTPException(422, 'Timing retries must preserve the reviewed artist lyric text.')
         entry["lyrics"] = {"lines": lines, "synced": True,
                            "matched": "transcribed" if body.source == "transcribed" else "aligned",
                            "instrumental": False, "aligner": body.aligner}
+        if text_source:
+            entry['lyrics'].update(text_source=text_source, audio_sha256=entry['audio_sha256'],
+                                   audio_duration=entry['audio_duration'])
         if body.timing_note:
             entry["lyrics"]["timing_note"] = body.timing_note
         entry = repaired_entry(entry, CACHE_DIR) or entry

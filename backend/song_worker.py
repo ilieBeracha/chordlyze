@@ -138,8 +138,10 @@ def attach_lyrics(client: WorkerClient, song: dict, audio: Path, generation: str
                    'expected_lyrics_sha256': job['expected_lyrics_sha256']} if job else {})
     params = {'title': song['title'], 'artist': song.get('artist') or '',
               'duration': song.get('duration'), 'album': song.get('album')}
-    found = None
+    found = job.get('lyric_catalog') if job else None
     for attempt in range(LYRICS_LOOKUP_RETRIES):
+        if found is not None:
+            break
         try:
             found = client.get('/lyrics', params)
             break
