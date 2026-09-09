@@ -41,6 +41,10 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
     @MainActor static func main() async throws {
         lyricCompletenessTests()
         independentChordTimingTests()
+        partialWordTimingTests()
+        try sharedWordTimingContractTests()
+        estimatedWordTimingTests()
+        try await savedAlignmentRefreshTests()
         modelTests()
         barMapTests()
         runnerTests()
@@ -57,6 +61,39 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         try await spotifyStartupTests()
         recentPlaysTests()
         print("Song sheet and playback: \(checks)/\(checks) checks passed")
+    }
+
+    @MainActor static func sharedWordTimingContractTests() throws {
+        struct Case: Decodable {
+            let id: String
+            let line: LyricLine
+            let boundary: Double
+            let usable: [Int]
+        }
+        let data = try Data(contentsOf: URL(fileURLWithPath: "tests/fixtures/word-timing-contract.json"))
+        let fixtures = try JSONDecoder().decode([Case].self, from: data)
+        check(fixtures.filter { $0.id.hasPrefix("reported-") }.count == 124, "All reported failure geometries remain covered")
+        for fixture in fixtures {
+            let original = fixture.line.words!
+            check(SheetModel.usableWordIndices(fixture.line, before: fixture.boundary) == fixture.usable,
+                  "Shared backend/client timing contract: \(fixture.id)")
+            let projected = SheetModel.completeWords(fixture.line, before: fixture.boundary)
+            if fixture.usable.isEmpty {
+                check(projected == nil, "A wholly uncertain phrase cannot invent word anchors: \(fixture.id)")
+                continue
+            }
+            check(projected?.map(\.text) == original.map(\.text), "All lyric words survive: \(fixture.id)")
+            for index in original.indices {
+                if fixture.usable.contains(index) {
+                    check(projected![index] == original[index], "Usable word stays exact: \(fixture.id)/\(index)")
+                } else {
+                    check(projected![index].estimated == true && projected![index].end == nil,
+                          "Uncertain word stays visibly approximate: \(fixture.id)/\(index)")
+                }
+            }
+            check(zip(projected!, projected!.dropFirst()).allSatisfy { $0.time <= $1.time },
+                  "Presentation never reverses lyric order: \(fixture.id)")
+        }
     }
 
 
@@ -319,8 +356,9 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         let damaged = LyricLine(time: 0, text: "First sample phrase", words: [
             WordStamp(time: 0, text: "First", end: 1), WordStamp(time: 1, text: "sample", end: 18),
             WordStamp(time: 18, text: "phrase", end: 19)])
-        check(SheetModel.completeWords(damaged, before: 20) == nil,
-              "A word stretched across an intro cannot supply precise word positions")
+        let guarded = SheetModel.completeWords(damaged, before: 20)!
+        check(guarded.prefix(2).allSatisfy { $0.estimated == true && $0.end == nil } && guarded[2] == damaged.words![2],
+              "A stretched intro cannot supply precise positions; its healthy suffix remains available")
         let fallback = SheetModel.build(analysis: analysis, lines: [damaged], duration: 20)
         check(fallback.first?.text == damaged.text && fallback.first?.chords.allSatisfy { $0.wordIndex == nil } == true,
               "Declining damaged word timing preserves the full lyric and independent chord changes")
@@ -339,6 +377,109 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
             check(shifted.flatMap(\.chords).map(\.event) == SheetModel.events(analysis),
                   "Events survive arbitrary vocal boundaries, including exact chord and word endpoints")
         }
+    }
+
+    @MainActor static func partialWordTimingTests() {
+        let line = LyricLine(time: 0, text: "First second third last", words: [
+            WordStamp(time: 1, text: "First", end: 2), WordStamp(time: 3, text: "second", end: 4),
+            WordStamp(time: 2.5, text: "third", end: 3.5), WordStamp(time: 5, text: "last", end: 6)])
+        check(SheetModel.usableWordIndices(line, before: 7) == [0, 3], "Both sides of a reversed sequence remain uncertain")
+        let projected = SheetModel.completeWords(line, before: 7)!
+        check(projected[0] == line.words![0] && projected[3] == line.words![3], "Healthy anchors retain their exact stamps")
+        check(projected.map(\.text) == line.words!.map(\.text), "Projection never sorts, drops or rewrites lyric tokens")
+        check(projected[1].estimated == true && projected[2].estimated == true && projected[1].end == nil && projected[2].end == nil,
+              "Only explicitly approximate positions fill the uncertain region")
+        check(zip(projected, projected.dropFirst()).allSatisfy { $0.time <= $1.time }, "Word highlighting receives an ordered display timeline")
+        check(line.words![1].time == 3 && line.words![2].time == 2.5, "Source evidence stays unchanged")
+        let crossing = LyricLine(time: 0, text: "First last", words: [
+            WordStamp(time: 1, text: "First", end: 2), WordStamp(time: 5.02, text: "last", end: 6)])
+        let bounded = SheetModel.completeWords(crossing, before: 5)!
+        check(bounded[0] == crossing.words![0] && bounded[1].estimated == true && bounded[1].time < 5,
+              "A small boundary conflict cannot discard an unrelated word anchor")
+        let analysis: ChordAnalysis = decode(["source": "youtube", "audio_duration": 7,
+            "chords": [["start": 0, "end": 1, "label": "N"], ["start": 1, "end": 3, "label": "C:maj"],
+                       ["start": 3, "end": 5, "label": "G:maj"], ["start": 5, "end": 7, "label": "A:min"]]])
+        let rows = SheetModel.build(analysis: analysis, lines: [line], duration: 7)
+        let placed = rows.flatMap(\.chords)
+        check(placed.map(\.event) == SheetModel.events(analysis), "Partial recovery keeps every musical event exactly once")
+        check(placed.first { $0.event.start == 1 }?.wordIndex == 0 && placed.first { $0.event.start == 5 }?.wordIndex == 3,
+              "Correct anchors survive on both sides of ambiguous words")
+        check(placed.first { $0.event.start == 3 }?.wordIndex == nil, "An estimate never becomes a claimed chord anchor")
+    }
+
+    @MainActor static func estimatedWordTimingTests() {
+        // Same mixed measured/interpolated timing as the reported split phrase.
+        let analysis: ChordAnalysis = decode(["source": "youtube", "audio_duration": 46,
+            "chords": [["start": 0, "end": 34.644, "label": "E:min7"],
+                       ["start": 34.644, "end": 41.123, "label": "B:min7"],
+                       ["start": 41.123, "end": 42.98, "label": "A:maj"],
+                       ["start": 42.98, "end": 46, "label": "E:min7"]]])
+        let line = LyricLine(time: 33.51, text: "We keep moving onward", words: [
+            WordStamp(time: 33.51, text: "We", estimated: true),
+            WordStamp(time: 37.2, text: "keep", end: 37.76),
+            WordStamp(time: 37.76, text: "moving", end: 38.34),
+            WordStamp(time: 41.65, text: "onward", estimated: true)])
+        let rows = SheetModel.build(analysis: analysis, lines: [line], duration: 46)
+        check(rows.filter { !$0.text.isEmpty }.map(\.text) == [line.text], "An estimated word cannot split off the end of a phrase")
+        check(rows.last?.end == 46 && rows.last?.text == line.text, "Unknown vocal end cannot manufacture an instrumental tail")
+        check(rows.last?.chords.allSatisfy { $0.wordIndex == nil } == true, "Estimated word onsets do not claim precise chord anchors")
+        check(rows.flatMap(\.chords).map(\.event) == SheetModel.events(analysis), "Keeping a phrase intact preserves every event")
+        for measured in [false, true] {
+            for onset in stride(from: 3.0, through: 15.0, by: 0.5) {
+                let words = [WordStamp(time: 1, text: "First", end: 2),
+                             WordStamp(time: onset, text: "last", end: measured ? onset + 0.5 : nil, estimated: !measured)]
+                let candidate = SheetModel.build(analysis: chart([["start": 0, "end": 2.5, "label": "C:maj"],
+                    ["start": 2.5, "end": 20, "label": "G:maj"]]),
+                    lines: [LyricLine(time: 1, text: "First last", words: words)], duration: 20)
+                check(candidate.filter { !$0.text.isEmpty }.map(\.text).joined(separator: " ") == "First last", "Splitting never drops or duplicates words")
+                check(candidate.flatMap(\.chords).map(\.event.start) == [0, 2.5], "Measured and estimated gaps preserve every chord once")
+                if !measured { check(candidate.filter { !$0.text.isEmpty }.count == 1, "Estimated gaps always retain the full phrase") }
+                if measured && onset >= 5 { check(candidate.filter { !$0.text.isEmpty }.count == 2, "A measured long rest still separates its chord change") }
+            }
+        }
+        let unknown = LyricLine(time: 1, text: "Onsets only", words: [WordStamp(time: 1, text: "Onsets"), WordStamp(time: 9, text: "only")])
+        let unknownRows = SheetModel.build(analysis: chart([["start": 0, "end": 3, "label": "C:maj"], ["start": 3, "end": 20, "label": "G:maj"]]), lines: [unknown], duration: 20)
+        check(unknownRows.filter { !$0.text.isEmpty }.map(\.text) == [unknown.text], "Legacy onset-only lyrics do not prove silence")
+        let stamped: WordStamp = decode(["time": 1, "text": "Estimate", "estimated": true, "end": 2])
+        check(!stamped.hasMeasuredOnset && stamped.measuredEnd == nil, "Explicit estimated provenance wins over a supplied end")
+    }
+
+    @MainActor static func savedAlignmentRefreshTests() async throws {
+        func response(estimated: Bool) -> SongStatus {
+            var finalWord: [String: Any] = ["time": 9.0, "text": "phrase"]
+            if estimated { finalWord["estimated"] = true }
+            return decode(["job": ["state": "ready", "worker_online": true], "library_generation": "unchanged",
+                "analysis": ["source": "youtube", "audio_duration": 20, "audio_sha256": "same-recording", "chart_revision": "same-chart",
+                    "chords": [["start": 0, "end": 2.5, "label": "C:maj"],
+                               ["start": 2.5, "end": 9.1, "label": "G:maj"],
+                               ["start": 9.1, "end": 20, "label": "A:min"]]],
+                "lyrics": ["synced": true, "matched": "aligned",
+                    "lines": [["time": 1, "text": "Complete phrase", "words": [
+                        ["time": 1, "end": 2, "text": "Complete"], finalWord]]]]])
+        }
+        var current = response(estimated: false)
+        var analysisRequests = 0
+        let sheet = SongSheetStore(song: SongDescriptor(trackID: "saved-alignment", title: "Sample", artist: "Test", duration: 20),
+            service: .init(request: { _ in analysisRequests += 1; return current }, status: { _ in current },
+                lyrics: { _ in nil }))
+        let observation = Task { await sheet.observe() }
+        try await waitFor { sheet.canPractice && sheet.rows.contains { $0.words?.count == 2 } }
+        check(sheet.rows.flatMap(\.chords).first { $0.event.start == 9.1 }?.wordIndex == 1,
+              "The fixture starts with the legacy cached word association")
+        check(sheet.lyricsNote == "Lyrics timed from the recording", "The final healthy phrase uses the real recording boundary")
+        let originalEvents = SheetModel.events(sheet.analysis)
+        current = response(estimated: true)
+        sheet.refresh()
+        try await waitFor { sheet.rows.contains { $0.words?.last?.estimated == true } }
+        check(sheet.rows.flatMap(\.chords).first { $0.event.start == 9.1 }?.wordIndex == nil,
+              "A provenance-only lyric refresh rebuilds the visible placement")
+        check(sheet.analysis?.chartRevision == "same-chart", "Lyric repair does not require a new chord revision")
+        check(SheetModel.events(sheet.analysis) == originalEvents, "Refreshing estimated lyrics does not change musical events")
+        check(sheet.rows.filter { !$0.text.isEmpty }.map(\.text) == ["Complete phrase"], "Cached lyric text remains complete")
+        check(sheet.lyricsNote?.contains("approximate") == true, "The app explains estimated timing even without a server note")
+        check(analysisRequests == 0, "Refreshing a saved song never re-requests analysis")
+        observation.cancel()
+        await observation.value
     }
 
     @MainActor static func lyricCompletenessTests() {
@@ -376,7 +517,13 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         ] {
             let incomplete = SheetModel.build(analysis: chart(), lines: [LyricLine(time: 1, text: "keep every word", words: words), LyricLine(time: 8, text: "next line", words: nil)], duration: 20)
             let first = incomplete.first { !$0.text.isEmpty }!
-            check(first.text == "keep every word" && first.words == nil, "Incomplete or invalid timing falls back to full text, without losing words")
+            check(first.text == "keep every word", "Incomplete or invalid timing never loses lyric words")
+            if words.count == 1 {
+                check(first.words == nil, "An incomplete word array cannot replace the complete lyric text")
+            } else {
+                check(first.words?.count == 3 && first.words!.contains { $0.estimated == true },
+                      "Complete text retains its usable anchors and explicitly estimates the damaged positions")
+            }
         }
         let shortIntro = SheetModel.build(analysis: chart(), lines: [LyricLine(time: 0.2, text: "Early entrance", words: nil)], duration: 20)
         check(shortIntro.flatMap(\.chords).map(\.event) == SheetModel.events(chart()), "A sub-second wordless gap cannot swallow its chord change")
@@ -433,15 +580,15 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         // A word-timed line with a long pause that carries chord changes splits around an instrumental.
         let paused = SheetModel.build(analysis: chart([["start": 0, "end": 2, "label": "C:maj"], ["start": 2, "end": 5, "label": "G:maj"],
                                                        ["start": 5, "end": 8, "label": "A:min"], ["start": 8, "end": 20, "label": "F:maj"]]),
-            lines: [LyricLine(time: 1, text: "When when did it", words: [WordStamp(time: 1, text: "When", end: 1.4), WordStamp(time: 9, text: "when"),
-                                                                        WordStamp(time: 9.5, text: "did"), WordStamp(time: 10, text: "it")])], duration: 20)
+            lines: [LyricLine(time: 1, text: "When when did it", words: [WordStamp(time: 1, text: "When", end: 1.4), WordStamp(time: 9, text: "when", end: 9.4),
+                                                                        WordStamp(time: 9.5, text: "did", end: 9.8), WordStamp(time: 10, text: "it", end: 11)])], duration: 20)
         check(paused.map(\.text) == ["", "When", "", "when did it", "", ""], "The pause after the first word becomes its own row")
         check(paused[2].chords.map { $0.event.chord?.display } == ["G", "Am", "F"] && paused[1].chords.isEmpty,
               "Every change after the word ends stays in the instrumental pause")
         check(paused[3].start == 9 && paused[3].chords.isEmpty && paused[3].held?.chord?.display == "F",
               "A held chord is not a new attack at the next word")
         let lone = SheetModel.build(analysis: chart([["start": 0, "end": 3, "label": "C:maj"], ["start": 3, "end": 20, "label": "F:maj"]]),
-            lines: [LyricLine(time: 1, text: "When when", words: [WordStamp(time: 1, text: "When"), WordStamp(time: 9, text: "when")])], duration: 20)
+            lines: [LyricLine(time: 1, text: "When when", words: [WordStamp(time: 1, text: "When", end: 2), WordStamp(time: 9, text: "when", end: 10)])], duration: 20)
         check(lone.filter { !$0.text.isEmpty }.count == 2 && lone.first { $0.isInstrumental && $0.start > 1 }?.chords.first?.event.start == 3, "Even a single change during a long rest belongs to the rest")
         let brief = SheetModel.build(analysis: chart([["start": 0, "end": 20, "label": "C:maj"]]),
             lines: [LyricLine(time: 1, text: "When when", words: [WordStamp(time: 1, text: "When"), WordStamp(time: 9, text: "when")])], duration: 20)

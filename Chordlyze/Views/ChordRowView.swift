@@ -46,7 +46,10 @@ struct ChordRowView: View {
     private var rtl: Bool { row.text.isRTLText }
     /// With no playhead nothing is being sung, and no line sits back.
     private var active: Bool { playhead.map(row.contains) ?? true }
-    private var independentChanges: Bool { !row.text.isEmpty && row.chords.contains { $0.wordIndex == nil } }
+    // A line-only timestamp cannot locate changes among words. A word-timed
+    // row, however, keeps its individual anchors even when other changes fall
+    // in a gap: ChordLyricLine inserts those changes between the word tokens.
+    private var independentChanges: Bool { !row.text.isEmpty && row.words == nil && !row.chords.isEmpty }
 
     var body: some View {
         VStack(alignment: rtl ? .trailing : .leading, spacing: style == .sheet ? 4 : 6) {
@@ -70,7 +73,7 @@ struct ChordRowView: View {
     /// Keep the existing compact chord flow. Its cursor follows only chord
     /// onsets, linearly between changes; lyric geometry never retimes it.
     private var timedRow: some View {
-        FlowLayout(spacing: style == .sheet ? 14 : 22) {
+        ChordLyricFlow(spacing: style == .sheet ? 14 : 22) {
             ForEach(Array(row.chords.enumerated()), id: \.element.id) { index, placed in
                 ChordChip(name: placed.event.display(transposedBy: transposeBy),
                           active: playhead.map(placed.event.contains) ?? false,

@@ -69,6 +69,8 @@ bash scripts/test_music_collection.sh
 bash scripts/test_practice.sh
 ```
 
+The song-sheet test command also runs the actual SwiftUI chord/word render checks. To retain their PNGs for visual review, run `bash scripts/test_chord_layout.sh /tmp/chordlyze-alignment-renders`.
+
 The repository is connected to Xcode Cloud's `Default` workflow. After merging into `main`, verify its iOS build and archive checks, then check the processed build in App Store Connect → TestFlight. Availability depends on the workflow's distribution settings and Apple's processing. Local distribution is also possible by archiving and distributing from Xcode with the configured Apple Developer team. The backend must remain reachable.
 
 ## Local container

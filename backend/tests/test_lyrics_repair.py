@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import pytest
 
 from chordlyze_backend.lyrics_repair import repaired_entry
 
@@ -72,7 +73,9 @@ def test_song_read_repairs_old_intro_without_rewriting_chart(tmp_path, monkeypat
     original = path.read_bytes()
     revision = main.corrections.revision(entry)
     result = main._song_status('song')
-    assert result['lyrics']['lines'][0] == {'time': 17.45, 'text': 'Opening phrase'}
+    assert result['lyrics']['lines'][0]['time'] == 17.45
+    assert all(w['estimated'] for w in result['lyrics']['lines'][0]['words'])
+    assert result['lyrics']['timing_review'] == {'lines': 1, 'words': 2}
     assert result['lyrics']['timing_note']
     assert result['analysis']['chords'] == entry['chords']
     assert result['analysis']['chart_revision'] == revision
@@ -87,3 +90,33 @@ def test_unreadable_catalog_keeps_chart_available(tmp_path):
     for invalid in ('{partial', 'null', '[]'):
         path.write_text(invalid)
         assert repaired_entry(entry, tmp_path) is None
+
+
+@pytest.mark.parametrize('matched', ['aligned', 'transcribed'])
+def test_old_chart_estimates_repaired_on_both_reads_without_catalog(tmp_path, monkeypatch, matched):
+    from chordlyze_backend import main
+    from chordlyze_backend.analysis.provenance import model_metadata
+    monkeypatch.setattr(main, 'CACHE_DIR', tmp_path)
+    entry = fixture(tmp_path)
+    entry['lyrics']['matched'] = matched
+    next(tmp_path.glob('lyrics5-*.json')).unlink()
+    entry.update(model_metadata('ismir2019'))
+    entry.update(source='youtube', audio_duration=245)
+    entry['lyrics']['lines'] = [{'time': 2, 'text': 'Keep this phrase', 'words': [
+        {'time': 2, 'end': 2.5, 'text': 'Keep'}, {'time': 6, 'text': 'this'},
+        {'time': 10, 'end': 11, 'text': 'phrase'}]}]
+    path = tmp_path / 'track-song.json'
+    path.write_text(json.dumps(entry))
+    original = path.read_bytes()
+    revision = main.corrections.revision(entry)
+    song = main._song_status('song')
+    track = main.get_track_analysis('song', user='tester')
+    assert song['lyrics'] == track['lyrics']
+    assert song['lyrics']['lines'][0]['words'][1]['estimated'] is True
+    assert song['lyrics']['completeness_version'] == 3
+    assert song['analysis']['chords'] == entry['chords']
+    assert song['analysis']['chart_revision'] == revision
+    assert path.read_bytes() == original
+    repaired = repaired_entry(entry, tmp_path)
+    assert repaired_entry(repaired, tmp_path) is None
+    assert {k: v for k, v in repaired.items() if k != 'lyrics'} == {k: v for k, v in entry.items() if k != 'lyrics'}

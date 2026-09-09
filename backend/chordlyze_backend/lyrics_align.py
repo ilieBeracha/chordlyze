@@ -18,6 +18,8 @@ import subprocess
 import sys
 import unicodedata
 
+from .lyrics_validation import MAX_WORD_DURATION, mark_unreliable_words, usable_word_indices
+
 WHISPER_MODEL = os.environ.get('CHORDLYZE_WHISPER_MODEL', 'small')
 # "groq": hosted whisper-large-v3-turbo, seconds per song, needs GROQ_API_KEY.
 # "local": faster-whisper in a subprocess, minutes per song on shared CPUs.
@@ -25,13 +27,12 @@ TRANSCRIBER = os.environ.get('CHORDLYZE_TRANSCRIBER', 'local')
 GROQ_MODEL = os.environ.get('CHORDLYZE_GROQ_MODEL', 'whisper-large-v3-turbo')
 GROQ_URL = os.environ.get('CHORDLYZE_GROQ_URL', 'https://api.groq.com/openai/v1/audio/transcriptions')
 ALIGNER = (f'groq-{GROQ_MODEL}+text-match-v1' if TRANSCRIBER == 'groq'
-           else f'faster-whisper-{WHISPER_MODEL}+text-match-v1')
+           else f'faster-whisper-{WHISPER_MODEL}+text-match-v1') + '+bounded-word-repair-v2'
 MIN_MATCHED_WORDS = 0.5   # share of lyric words found in the transcript
 MIN_PLACED_LINES = 0.6    # share of lyric lines that received a time
 MIN_TRANSCRIBED_WORDS = 12       # a transcript kept as the lyrics needs this many words
 MIN_TRANSCRIBED_CONFIDENCE = 0.5  # and this mean word probability
 MAX_TRANSCRIBED_LINE = 9          # words per line when a segment runs long
-MAX_WORD_DURATION = 8.0          # beyond this, retain text but decline word-level precision
 
 
 def reliable_word_times(line: dict) -> bool:
@@ -48,6 +49,21 @@ def reliable_word_times(line: dict) -> bool:
             return False
         previous = start
     return True
+
+
+def mark_estimated_words(lines: list[dict]) -> None:
+    """Backfill legacy recording alignments without changing their timestamps.
+
+    Older alignments retained ends only for heard words. Do not classify an
+    entirely onset-only source: enhanced LRC also legitimately has no ends.
+    Explicit provenance from newer workers always wins.
+    """
+    if not any(w.get('end') is not None for line in lines for w in line.get('words') or []):
+        return
+    for line in lines:
+        for word in line.get('words') or []:
+            if word.get('end') is None and 'estimated' not in word:
+                word['estimated'] = True
 
 
 class AlignmentUnavailable(RuntimeError):
@@ -167,6 +183,8 @@ def time_lines(lines: list[str], transcript: list[dict]) -> tuple[list[dict], in
             word = {'time': round(times[k], 2), 'text': lyric[k][1]}
             if ends[k] is not None and ends[k] > times[k]:
                 word['end'] = round(ends[k], 2)
+            else:
+                word['estimated'] = pairing[k] is None
             words.append(word)
         result.append({'time': round(times[positions[0]], 2), 'text': line, 'words': words})
         last = times[positions[0]]
@@ -199,10 +217,10 @@ def complete_lyrics(catalog: dict, aligned: list[dict]) -> tuple[list[dict], str
     invalid = {i for i, j in pairs.items() if not reliable_word_times(aligned[j])}
     if invalid:
         from statistics import median
+        original_aligned = aligned
         aligned = copy.deepcopy(aligned)
-        for i in invalid:
+        for i in sorted(invalid):
             line = aligned[pairs[i]]
-            line.pop('words', None)
             if catalog.get('synced'):
                 neighbors = sorted((k for k in pairs if k not in invalid and aligned[pairs[k]].get('words')),
                                    key=lambda k: abs(k-i))[:5]
@@ -210,7 +228,24 @@ def complete_lyrics(catalog: dict, aligned: list[dict]) -> tuple[list[dict], str
                 offset = median(offsets) if len(offsets) >= 3 else 0.0
                 consistent = [x for x in offsets if abs(x-offset) <= 1.0]
                 offset = median(consistent) if len(consistent) >= 3 else 0.0
-                line['time'] = round(max(0, float(source[i]['time']) + offset), 3)
+                candidate = round(max(0, float(source[i]['time']) + offset), 3)
+                position = pairs[i]
+                previous = original_aligned[position - 1] if position else None
+                following = original_aligned[position + 1] if position + 1 < len(original_aligned) else None
+                lower = float(previous['time']) if previous else -1.0
+                if previous:
+                    preserved = usable_word_indices(previous, line['time'])
+                    lower = max([lower, *[float(previous['words'][k]['time']) for k in preserved]])
+                upper = float(following['time']) if following else math.inf
+                own_boundary = upper if math.isfinite(upper) else max(w['time'] for w in line['words']) + 1
+                own_anchors = usable_word_indices(line, own_boundary)
+                first_anchor = min((line['words'][k]['time'] for k in own_anchors), default=math.inf)
+                # A catalog repair must not make a healthy neighboring word
+                # array fall outside its line, or jump over the next phrase.
+                # Retain coarse original timing when these sources conflict;
+                # only a recording-backed repair may settle the disagreement.
+                if lower < candidate < upper and candidate <= first_anchor:
+                    line['time'] = candidate
     # A different catalog edition must not absorb unrelated transcript text.
     if len(pairs) != len(aligned):
         result = copy.deepcopy(source)
@@ -219,6 +254,7 @@ def complete_lyrics(catalog: dict, aligned: list[dict]) -> tuple[list[dict], str
         return result, 'Approximate lyric timing: complete catalog text retained.'
     result = [copy.deepcopy(aligned[pairs[i]]) if i in pairs else copy.deepcopy(line)
               for i, line in enumerate(source)]
+    mark_estimated_words(result)
     anchors = sorted(pairs)
     for i, line in enumerate(result):
         if i in pairs:
@@ -248,7 +284,12 @@ def complete_lyrics(catalog: dict, aligned: list[dict]) -> tuple[list[dict], str
         for line in result:
             line.pop('words', None)
         return result, 'Approximate lyric timing: complete catalog text retained.'
-    approximate = len(pairs) != len(source) or any(not line.get('words') for line in result)
+    # Preserve malformed stamps as evidence and retain the usable subset.
+    # Removing the whole word array hid healthy anchors and made audits look
+    # repaired even though only a coarse catalog onset had been substituted.
+    mark_unreliable_words(result, None)
+    approximate = len(pairs) != len(source) or any(not line.get('words') or
+        any(w.get('estimated') for w in line['words']) for line in result)
     return result, 'Some lyric timing is approximate; all catalog lines are included.' if approximate else None
 
 
@@ -256,10 +297,16 @@ def transcribe_words(audio: Path, language: str | None) -> list[dict]:
     """Word-timed transcript: [{'start', 'text', 'p', 'segment'}, ...] from the
     configured transcriber."""
     if TRANSCRIBER == 'groq':
-        return transcribe_words_groq(audio, language)
-    if TRANSCRIBER != 'local':
+        words = transcribe_words_groq(audio, language)
+    elif TRANSCRIBER == 'local':
+        words = transcribe_words_local(audio, language)
+    else:
         raise AlignmentUnavailable(f'unknown transcriber {TRANSCRIBER!r}')
-    return transcribe_words_local(audio, language)
+    # The bundled local model retries only malformed spans. It does not make
+    # another paid provider request or hold the model in the song worker.
+    from .lyrics_timing import repair_word_spans
+    return repair_word_spans(audio, words,
+        lambda crop, hint: transcribe_words_local(crop, hint, timeout=120), language)
 
 
 def _compact_audio(audio: Path) -> Path:
@@ -324,7 +371,7 @@ def transcribe_words_groq(audio: Path, language: str | None, post=None, sleep=No
     return words
 
 
-def transcribe_words_local(audio: Path, language: str | None) -> list[dict]:
+def transcribe_words_local(audio: Path, language: str | None, *, timeout: float = 1800) -> list[dict]:
     """Word-timed transcript from a separate process, so the speech model's
     memory is released before the next song."""
     command = [sys.executable, '-m', 'chordlyze_backend.lyrics_align_worker', str(audio)]
@@ -333,7 +380,7 @@ def transcribe_words_local(audio: Path, language: str | None) -> list[dict]:
     env = {**os.environ, 'PYTHONPATH': os.pathsep.join(filter(None, [
         str(Path(__file__).resolve().parents[1]), os.environ.get('PYTHONPATH')]))}
     # Lowest priority: chord charts in progress must not wait for a transcript.
-    completed = subprocess.run(command, capture_output=True, text=True, timeout=1800, env=env,
+    completed = subprocess.run(command, capture_output=True, text=True, timeout=timeout, env=env,
                                preexec_fn=lambda: os.nice(15))
     if completed.returncode != 0:
         # The transcript process prints no lyrics or track metadata on failure.

@@ -41,9 +41,8 @@ enum SheetModel {
     }
     static let minInstrumental: Double = 2
     static let rowLength: Double = 8
-    static let lastWordLength: Double = 1
-    /// A silence this long inside a word-timed line, with chord changes in
-    /// it, splits the line around an instrumental row.
+    /// A measured silence this long inside a word-timed line, with chord
+    /// changes in it, splits the line around an instrumental row.
     static let pauseSplit: Double = 3
     /// Line-timed lyrics: a line is sung over roughly half a second a word,
     /// and never over less than this share of the gap to the next line.
@@ -165,7 +164,7 @@ enum SheetModel {
                 // Only a change just before the next word may anticipate that
                 // word. Earlier changes stay in the rest, even a single change.
                 var partStart = start
-                if let first = words.first, first.time - start > 0.35 {
+                if let first = words.first, first.hasMeasuredOnset, first.time - start > 0.35 {
                     let anticipation = events.last { $0.start >= start && $0.start <= first.time && first.time - $0.start <= 0.35 }
                     partStart = anticipation?.start ?? first.time
                     append(start: start, end: partStart)
@@ -174,8 +173,12 @@ enum SheetModel {
                 for (index, word) in words.enumerated() {
                     part.append(word)
                     guard index + 1 < words.count else { break }
-                    let nextOnset = words[index + 1].time
-                    let sungEnd = min(nextOnset, word.end ?? (word.time + lastWordLength))
+                    let following = words[index + 1]
+                    // Interpolation is not evidence of silence. Keep the phrase
+                    // intact unless both sides of the rest were actually heard.
+                    guard let measuredEnd = word.measuredEnd, following.hasMeasuredOnset else { continue }
+                    let nextOnset = following.time
+                    let sungEnd = min(nextOnset, measuredEnd)
                     let changes = events.filter { $0.start >= sungEnd && $0.start < nextOnset }.map(\.start)
                     if nextOnset - sungEnd >= pauseSplit, let lastChange = changes.last {
                         let resume = nextOnset - lastChange <= 0.35 ? lastChange : nextOnset
@@ -186,8 +189,7 @@ enum SheetModel {
                     }
                 }
                 let text = partStart == start ? line.text : part.map(\.text).joined(separator: " ")
-                if let last = part.last, next - (last.end ?? (last.time + lastWordLength)) >= minInstrumental {
-                    let sungEnd = last.end ?? (last.time + lastWordLength)
+                if let sungEnd = part.last?.measuredEnd, next - sungEnd >= minInstrumental {
                     append(start: partStart, end: sungEnd, text: text, words: part)
                     append(start: sungEnd, end: next)
                 } else {
@@ -202,17 +204,54 @@ enum SheetModel {
         return rows
     }
 
-    /// Only a complete word array may replace the authoritative lyric text.
-    /// A partial, out-of-range or reordered array falls back to line timing.
+    /// Keep every lyric token and usable anchor. Uncertain tokens receive
+    /// presentation-only estimates; original saved stamps are never changed.
     static func completeWords(_ line: LyricLine, before end: Double) -> [WordStamp]? {
         guard let words = line.words, !words.isEmpty,
-              words.allSatisfy({ word in
-                  word.time.isFinite && word.time >= line.time && word.time < end
-                      && (word.end.map { $0.isFinite && $0 > word.time && $0 - word.time <= 8 } ?? true)
-              }),
-              zip(words, words.dropFirst()).allSatisfy({ $0.time <= $1.time }),
               normalizedLyric(words.map(\.text).joined(separator: " ")) == normalizedLyric(line.text) else { return nil }
-        return words
+        let usable = usableWordIndices(line, before: end)
+        guard !usable.isEmpty else { return nil }
+        if usable.count == words.count { return words }
+        var result = words
+        let anchors = [-1] + usable + [words.count]
+        for (left, right) in zip(anchors, anchors.dropFirst()) where right - left > 1 {
+            let start = left >= 0 ? words[left].time : line.time
+            let finish = right < words.count ? words[right].time : end
+            for index in (left + 1)..<right {
+                let share = Double(index - left) / Double(right - left)
+                result[index] = WordStamp(time: start + (finish - start) * share,
+                                          text: words[index].text, estimated: true)
+            }
+        }
+        return result
+    }
+
+    /// Mirrored by backend lyrics_validation.usable_word_indices. Both sides
+    /// refuse to choose a side of a backward timestamp sequence as precise.
+    static func usableWordIndices(_ line: LyricLine, before end: Double) -> [Int] {
+        guard let words = line.words, line.time.isFinite, end.isFinite, end > line.time else { return [] }
+        let longPrefix = words.indices.last { index in
+            guard let finish = words[index].end else { return false }
+            return words[index].time.isFinite && finish.isFinite && finish - words[index].time > 8
+        } ?? -1
+        let candidates = words.indices.filter { index in
+            let word = words[index]
+            return index > longPrefix && word.time.isFinite && word.time >= line.time && word.time < end
+                && (word.end.map { $0.isFinite && $0 > word.time && $0 - word.time <= 8 } ?? true)
+        }
+        var maximum = -Double.infinity
+        var forward = Set<Int>()
+        for index in candidates {
+            if words[index].time >= maximum { forward.insert(index) }
+            maximum = max(maximum, words[index].time)
+        }
+        var minimum = Double.infinity
+        var result: [Int] = []
+        for index in candidates.reversed() {
+            if forward.contains(index) && words[index].time <= minimum { result.append(index) }
+            minimum = min(minimum, words[index].time)
+        }
+        return result.reversed()
     }
 
     private static func normalizedLyric(_ text: String) -> String {
@@ -226,10 +265,10 @@ enum SheetModel {
             let position = max(0, (event.start - start) / max(end - start, 0.001))
             let wordIndex: Int?
             if let words, !words.isEmpty {
-                if let sounding = words.lastIndex(where: { $0.time <= event.start }),
+                if let sounding = words.lastIndex(where: { $0.time <= event.start }), words[sounding].estimated != true,
                    event.start < (words[sounding].end ?? (words[sounding].time + 0.75)) {
                     wordIndex = sounding
-                } else if let upcoming = words.firstIndex(where: { $0.time > event.start && $0.time - event.start <= 0.35 }) {
+                } else if let upcoming = words.firstIndex(where: { $0.time > event.start && $0.time - event.start <= 0.35 }), words[upcoming].estimated != true {
                     wordIndex = upcoming
                 } else { wordIndex = nil }
             // A line timestamp says nothing about which word a change starts on.

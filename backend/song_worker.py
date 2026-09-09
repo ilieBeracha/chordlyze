@@ -25,6 +25,7 @@ from chordlyze_backend.analysis.ismir import close, ismir_available, warm
 from chordlyze_backend.fulltrack import fetch_full_track
 from chordlyze_backend.audio_apify import ApifyAudio, AudioProviderError, DownloadCancelled
 from chordlyze_backend.lyrics_align import ALIGNER, align_lyrics, transcribe_lyrics, complete_lyrics
+from chordlyze_backend.lyrics_timing import finalize_line_timings
 
 
 class WorkerClient:
@@ -113,6 +114,8 @@ def publishable_lines(lines: list[dict]) -> list[dict]:
             stamp = {'time': max(0.0, float(w['time'])), 'text': str(w.get('text') or '').strip()[:200]}
             if w.get('end') is not None and float(w['end']) > stamp['time']:
                 stamp['end'] = float(w['end'])
+            if isinstance(w.get('estimated'), bool):
+                stamp['estimated'] = w['estimated']
             words.append(stamp)
         words = [w for w in words if w['text']][:200]
         if words:
@@ -141,9 +144,12 @@ def attach_lyrics(client: WorkerClient, song: dict, audio: Path, generation: str
                 lines = transcribe(audio)
                 if lines is None:
                     return 'none'
-                client.post('/internal/jobs/lyrics', {'track_id': song['track_id'], 'library_generation': generation,
-                                                      'lines': publishable_lines(lines), 'aligner': ALIGNER,
-                                                      'source': 'transcribed'})
+                lines, review = finalize_line_timings(audio, publishable_lines(lines), song.get('duration'))
+                payload = {'track_id': song['track_id'], 'library_generation': generation,
+                           'lines': lines, 'aligner': ALIGNER, 'source': 'transcribed'}
+                if review:
+                    payload['timing_note'] = 'Some lyric timing is approximate.'
+                client.post('/internal/jobs/lyrics', payload)
                 return 'transcribed'
             # The catalog behind /lyrics answers 503 now and then; the recording is
             # already downloaded, so wait and ask again before giving up.
@@ -162,8 +168,11 @@ def attach_lyrics(client: WorkerClient, song: dict, audio: Path, generation: str
         return ('synced unaligned ' if found.get('synced') else 'unaligned ') + \
             ' '.join(f'{key}={value}' for key, value in stats.items())
     timed, timing_note = complete_lyrics(found, publishable_lines(timed))
+    timed, review = finalize_line_timings(audio, timed, song.get('duration'))
+    if review:
+        timing_note = timing_note or 'Some lyric timing is approximate.'
     payload = {'track_id': song['track_id'], 'library_generation': generation,
-               'lines': publishable_lines(timed), 'aligner': ALIGNER + '+complete-v2'}
+               'lines': publishable_lines(timed), 'aligner': ALIGNER + '+complete-v3'}
     if timing_note:
         payload['timing_note'] = timing_note
     client.post('/internal/jobs/lyrics', payload)

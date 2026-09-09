@@ -161,7 +161,36 @@ struct SongSheetPreview: View {
         return SongSheetStore(song: song, analysis: payload.analysis, service: .init(request: { _ in payload }, status: { _ in payload }, lyrics: { _ in nil }))
     }
 
+    /// Mixed measured/estimated timing from the reported geometry, with
+    /// authored words. Exercises the real page without a backend connection.
+    @MainActor private static func mixedWordTimingStore() -> SongSheetStore {
+        let song = SongDescriptor(trackID: "mixed-timing-preview", title: "Word alignment", artist: "Offline regression sample", duration: 60)
+        let starts = [0.0, 3.808, 12.492, 21.13, 29.791, 31.951, 34.644, 41.123, 42.98, 47.09, 51.409, 53.568, 54.637, 55.728, 60]
+        let labels = ["N", "E:min", "E:min7", "D:min7", "E:min7", "A:maj/5", "E:min7", "A:maj/5", "E:min7", "B:min7", "A:7", "F#:min7", "B:min7", "E:min7"]
+        let phrases: [(Double, String, [Double], [Double?])] = [
+            (33.51, "We keep moving onward", [33.51, 37.2, 37.76, 41.65], [nil, 37.76, 38.34, nil]),
+            (45.54, "These phrases remain together while all the changes play", [45.54, 45.84, 46.26, 47.56, 48.86, 50.16, 50.8, 51.62, 52.88], [45.84, 46.26, 46.78, nil, nil, 50.8, 51.62, 51.98, nil]),
+            (54.14, "We follow every word in time", [54.14, 54.42, 54.48, 55.3, 55.7, 55.88], [54.42, 54.48, 55.3, 55.7, 55.88, 57.04])]
+        var lines: [[String: Any]] = [["time": 28.225, "text": "The opening phrase"]]
+        for (time, text, onsets, ends) in phrases {
+            let words = text.split(separator: " ").enumerated().map { index, word -> [String: Any] in
+                var stamp: [String: Any] = ["time": onsets[index], "text": String(word)]
+                if let end = ends[index] { stamp["end"] = end }
+                else { stamp["estimated"] = true }
+                return stamp
+            }
+            lines.append(["time": time, "text": text, "words": words])
+        }
+        let payload: SongStatus = decode([
+            "job": ["state": "ready", "worker_online": true], "library_generation": "preview",
+            "analysis": ["source": "youtube", "audio_duration": 60, "song_duration": 60,
+                "chords": labels.indices.map { ["start": starts[$0], "end": starts[$0+1], "label": labels[$0]] }],
+            "lyrics": ["synced": true, "matched": "aligned", "timing_note": "Some lyric timing is approximate.", "lines": lines]])
+        return SongSheetStore(song: song, analysis: payload.analysis, service: .init(request: { _ in payload }, status: { _ in payload }, lyrics: { _ in nil }))
+    }
+
     @MainActor private static func makeStore() -> SongSheetStore {
+        if ProcessInfo.processInfo.arguments.contains("--mixed-word-timing-preview") { return mixedWordTimingStore() }
         if ProcessInfo.processInfo.arguments.contains("--independent-chords-preview") { return independentTimingStore() }
         if ProcessInfo.processInfo.arguments.contains("--phrase-boundary-preview") { return phraseBoundaryStore() }
 
