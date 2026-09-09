@@ -1,7 +1,7 @@
 import Foundation
 
-/// One timeline for every surface. A chord is shown once, where it starts;
-/// a row never repeats the chord still sounding from the previous row.
+/// One timeline for every surface. Chord changes retain their original times;
+/// a plain opening chord may be repeated for reading at a new vocal passage.
 /// Blank LRC timestamps preserve instrumental breaks.
 enum SheetModel {
     struct Event: Identifiable, Equatable {
@@ -33,6 +33,9 @@ enum SheetModel {
         /// this row's start. A lyric entrance may show it as a continuation,
         /// without adding another change to the playback or practice timeline.
         let held: Event?
+        /// Reading context, not a new musical event. Ordinary lyric lines and
+        /// screen-width wraps do not start another vocal passage.
+        var beginsVocalPassage = false
         var id: Double { start }
         func contains(_ time: Double) -> Bool { time >= start && time < end }
         var isInstrumental: Bool { kind == .instrumental }
@@ -46,14 +49,25 @@ enum SheetModel {
             !text.isEmpty && !chords.isEmpty && (words == nil || chords.contains { $0.wordIndex == nil })
         }
 
-        /// A held chord is useful at a known vocal entrance, but an estimated
-        /// first word cannot establish which chord starts that lyric.
+        /// Only a passage entrance needs a reminder of the sounding chord.
+        /// A line timestamp can establish its opening; an explicitly estimated
+        /// word cannot. Unsynchronized lyrics use separate, untimed rows.
         var vocalEntranceChord: Event? {
-            guard !text.isEmpty, let first = words?.first, first.hasMeasuredOnset,
-                  let finish = first.measuredEnd, finish.isFinite, finish > first.time,
-                  first.time >= start, first.time < end,
-                  let held, held.chord != nil, held.contains(first.time) else { return nil }
+            guard beginsVocalPassage, !text.isEmpty, let held, held.chord != nil else { return nil }
+            let entrance: Double
+            if let first = words?.first {
+                guard first.hasMeasuredOnset else { return nil }
+                entrance = first.time
+            } else { entrance = start }
+            guard entrance >= start, entrance < end, held.contains(entrance) else { return nil }
             return held
+        }
+
+        /// The opening chord uses the same typography and word cell as a change,
+        /// while `chords` remains the unchanged playback/practice event sequence.
+        var displayChords: [Placed] {
+            guard let opening = vocalEntranceChord else { return chords }
+            return [Placed(event: opening, position: 0, wordIndex: needsChordSequence ? nil : 0)] + chords
         }
     }
     static let minInstrumental: Double = 2
@@ -92,6 +106,27 @@ enum SheetModel {
     }
     static func activeRow(_ rows: [Row], at time: Double) -> Row? {
         rows.first { $0.contains(time) }
+    }
+    /// A short lead-in containing only the opening chord reads once above the
+    /// lyric. Keep substantial intros and every distinct change in the sheet;
+    /// the original rows still own their timing and practice ranges.
+    static func readingRows(_ rows: [Row]) -> [Row] {
+        let visible = rows.filter(\.hasVisibleContent)
+        return visible.enumerated().compactMap { index, row in
+            if row.text.isEmpty, row.end - row.start <= minInstrumental,
+               row.chords.count == 1, index + 1 < visible.count,
+               visible[index + 1].start - row.start <= minInstrumental,
+               visible[index + 1].vocalEntranceChord == row.chords.first?.event {
+                return nil
+            }
+            return row
+        }
+    }
+    /// Seeking into a folded lead-in scrolls to its opening lyric. This maps
+    /// only display identity; the row's original playback interval is intact.
+    static func readingRowID(_ row: Row, in rows: [Row]) -> Double {
+        guard row.hasVisibleContent else { return row.id }
+        return readingRows(rows).first { $0.start >= row.start }?.id ?? row.id
     }
     /// The chord rail: the sounding chord (or, in a gap, the first to come)
     /// and the next changes of chord after it, up to `count` in all. Events
@@ -217,6 +252,18 @@ enum SheetModel {
             cursor = next
         }
         if cursor < end { append(start: cursor, end: end) }
+        var lastVocalEnd: Double?
+        var changesSinceVocal = false
+        for index in rows.indices {
+            if rows[index].text.isEmpty {
+                changesSinceVocal = changesSinceVocal || !rows[index].chords.isEmpty
+            } else {
+                rows[index].beginsVocalPassage = lastVocalEnd == nil ||
+                    (changesSinceVocal && rows[index].start - lastVocalEnd! >= pauseSplit)
+                lastVocalEnd = rows[index].end
+                changesSinceVocal = false
+            }
+        }
         return rows
     }
 

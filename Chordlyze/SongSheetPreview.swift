@@ -196,6 +196,56 @@ struct SongSheetPreview: View {
         return SongSheetStore(song: song, analysis: payload.analysis, service: .init(request: { _ in payload }, status: { _ in payload }, lyrics: { _ in nil }))
     }
 
+    /// Authored text reproduces short repeating phrases and long wrapped lines
+    /// from the reported plain-chart layouts. Every request remains offline.
+    @MainActor private static func plainChordsStore() -> SongSheetStore {
+        let high = ProcessInfo.processInfo.arguments.contains("--plain-chords-high")
+        let phrases = high ? [
+            "Old dreams, we gathered beside the window",
+            "Old dreams were folded into the evening",
+            "Now the quiet street is shining through the rain",
+            "We keep a little light beside the door",
+            "So the morning finds us waiting by the river",
+            "And every cloud moves on",
+            "Old dreams, old dreams"] : [
+            "Across the open valley",
+            "We follow every footstep",
+            "Across the open valley",
+            "We follow every footstep",
+            "Dear friend, let the quiet evening bring you home",
+            "Carry your coat, gather your letters",
+            "And walk along beside the stream"]
+        let starts = [0.16, 6.0, 9.6, 12, 18, 21.6, 24, 29, 32, 36, 42]
+        let labels = high ? ["D#:min", "A#:min", "G#:min", "D#:min", "A#:min", "G#:min", "D#:min", "A#:min", "G#:min", "D#:min"] :
+            ["A:min", "C:maj", "G:maj", "A:min", "C:maj", "G:maj", "A:min", "C:maj", "G:maj", "A:min"]
+        var lines: [[String: Any]] = []
+        for (index, text) in phrases.enumerated() {
+            let onset = index == 0 ? 0.6 : Double(index) * 6
+            var line: [String: Any] = ["time": onset, "text": text]
+            // The first short line deliberately has only a catalog line onset:
+            // its ringing Am still belongs above that line as an ordinary chord.
+            if high || index != 0 {
+                let tokens = text.split(separator: " ")
+                let step = 4.8 / Double(tokens.count)
+                line["words"] = tokens.enumerated().map { wordIndex, token in
+                    ["time": onset + Double(wordIndex) * step,
+                     "end": onset + Double(wordIndex + 1) * step, "text": String(token)] as [String: Any]
+                }
+            }
+            lines.append(line)
+        }
+        let song = SongDescriptor(trackID: high ? "plain-long-preview" : "plain-short-preview",
+                                  title: high ? "Evening windows" : "Valley road", artist: "Offline sample", duration: 42)
+        let payload: SongStatus = decode([
+            "job": ["state": "ready", "worker_online": true], "library_generation": "preview",
+            "analysis": ["source": "youtube", "audio_duration": 42, "song_duration": 42,
+                "key": high ? "D# minor" : "A minor", "tempo": ["bpm": high ? 112 : 143, "beats": (0..<84).map { Double($0) * 0.5 }],
+                "chords": labels.indices.map { ["start": starts[$0], "end": starts[$0 + 1], "label": labels[$0]] }],
+            "lyrics": ["synced": true, "matched": "aligned", "lines": lines]])
+        return SongSheetStore(song: song, analysis: payload.analysis,
+            service: .init(request: { _ in payload }, status: { _ in payload }, lyrics: { _ in nil }))
+    }
+
     /// Interactive, entirely offline reanalysis fixture for real settings UI checks.
     @MainActor private static func developerToolsStore() -> SongSheetStore {
         let args = ProcessInfo.processInfo.arguments
@@ -235,6 +285,7 @@ struct SongSheetPreview: View {
     }
 
     @MainActor private static func makeStore() -> SongSheetStore {
+        if ProcessInfo.processInfo.arguments.contains("--plain-chords-preview") { return plainChordsStore() }
         if ProcessInfo.processInfo.arguments.contains("--song-developer-preview") { return developerToolsStore() }
         if ProcessInfo.processInfo.arguments.contains("--mixed-word-timing-preview") { return mixedWordTimingStore() }
         if ProcessInfo.processInfo.arguments.contains("--independent-chords-preview") { return independentTimingStore() }

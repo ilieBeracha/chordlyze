@@ -28,7 +28,8 @@ struct LiveNowView: View {
                 let wordPosition = chartPosition() ?? lastPosition
                 let position = wordPosition
                 let displayPosition = max(0, min(position, duration > 0 ? duration : .infinity))
-                let activeID = store.followingRow(at: wordPosition)?.id
+                let activeID = store.followingRow(at: wordPosition)
+                    .map { SheetModel.readingRowID($0, in: store.rows) }
                 VStack(spacing: 0) {
                     SongSheetHeader(store: store) {
                         if let grid = beatGrid, !grid.bars.isEmpty, onSeek != nil {

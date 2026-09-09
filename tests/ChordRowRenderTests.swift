@@ -31,9 +31,10 @@ extension Color { static let spotifyGreen = Color(red: 30 / 255, green: 215 / 25
         return SheetModel.build(analysis: chart, lines: [line], duration: 8).first!
     }
     @MainActor static func render(_ row: SheetModel.Row, width: Double, style: ChordRowView.Style = .live,
-                                  transpose: Int = 0, playhead: Double? = nil) throws -> CGImage {
+                                  transpose: Int = 0, playhead: Double? = nil,
+                                  verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil) throws -> CGImage {
         let view = ChordRowView(row: row, transposeBy: transpose, playhead: playhead, style: style,
-                                onChordTap: { _ in })
+                                onChordTap: { _ in }, verdict: verdict)
             .padding(16).frame(width: width, alignment: .leading).background(.black)
             .environment(\.colorScheme, .dark)
         let renderer = ImageRenderer(content: view)
@@ -47,7 +48,7 @@ extension Color { static let spotifyGreen = Color(red: 30 / 255, green: 215 / 25
     }
     // Inspect actual rendered glyphs, not a second implementation of layout.
     // Authored fixtures use separated green chord names and neutral lyric words.
-    static func glyphs(_ image: CGImage, chords: Bool, rtl: Bool = false) -> [CGRect] {
+    static func glyphs(_ image: CGImage, chords: Bool, rtl: Bool = false, wordGap: Int = 10) -> [CGRect] {
         let width = image.width, height = image.height
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         pixels.withUnsafeMutableBytes { bytes in
@@ -69,17 +70,17 @@ extension Color { static let spotifyGreen = Color(red: 30 / 255, green: 215 / 25
                 if include { columns[y].append(x) }
             }
         }
-        func groups(_ values: [Int]) -> [[Int]] {
+        func groups(_ values: [Int], maximumGap: Int = 10) -> [[Int]] {
             var result: [[Int]] = []
             for value in values {
-                if let last = result.last?.last, value - last <= 10 { result[result.count-1].append(value) }
+                if let last = result.last?.last, value - last <= maximumGap { result[result.count-1].append(value) }
                 else { result.append([value]) }
             }
             return result
         }
         return groups((0..<height).filter { !columns[$0].isEmpty }).flatMap { band in
             let xs = Set(band.flatMap { columns[$0] }).sorted()
-            let rects = groups(xs).map { xs in CGRect(x: xs.first!, y: band.first!,
+            let rects = groups(xs, maximumGap: chords ? 10 : wordGap).map { xs in CGRect(x: xs.first!, y: band.first!,
                 width: xs.last! - xs.first! + 1, height: band.last! - band.first! + 1) }
                 .filter { !chords || ($0.width > 6 && $0.height > 8) } // Exclude the thin cursor and its rounded corners.
             return rtl ? Array(rects.reversed()) : rects
@@ -194,6 +195,113 @@ extension Color { static let spotifyGreen = Color(red: 30 / 255, green: 215 / 25
         check(brightGlyphs(atOnset, bounds: bounds, chords: true) == [0], "The opening chord lights at its actual onset")
         return images
     }
+    @MainActor static func plainPassageTests(output: URL) throws -> Int {
+        let chart = try analysis(starts: [0, 6, 9, 12, 18, 21, 24],
+                                 labels: ["A:min", "C:maj", "G:maj", "A:min", "C:maj", "G:maj"])
+        let text = ["Over the ridge", "Our small boat moves quietly beside the old river",
+                    "Over the ridge", "Our small boat moves quietly beside the old river"]
+        let lines = text.indices.map { index -> LyricLine in
+            let onset = index == 0 ? 0.6 : Double(index) * 6
+            let words = text[index].split(separator: " ")
+            let step = 4.8 / Double(words.count)
+            return LyricLine(time: onset, text: text[index], words: index == 0 ? nil : words.enumerated().map {
+                WordStamp(time: onset + Double($0.offset) * step, text: String($0.element),
+                          end: onset + Double($0.offset + 1) * step)
+            })
+        }
+        let vocals = SheetModel.readingRows(SheetModel.build(analysis: chart, lines: lines, duration: 24))
+        check(vocals.count == 4 && vocals.map(\.beginsVocalPassage) == [true, false, false, false],
+              "The multi-row fixture is one passage with ordinary repeated phrases")
+        check(vocals.map { $0.displayChords.count } == [1, 2, 1, 2],
+              "Only the opening line receives its already sounding chord")
+        let wordCount = text.reduce(0) { $0 + $1.split(separator: " ").count }
+        var images = 0
+        for style in [ChordRowView.Style.sheet, .live] {
+            for width in [280.0, 320, 375.5, 390, 430.5, 464] {
+                for transpose in [0, 2] {
+                    let content = VStack(alignment: .leading, spacing: style == .sheet ? 14 : 16) {
+                        ForEach(vocals) { row in
+                            ChordRowView(row: row, transposeBy: transpose, style: style,
+                                         onChordTap: { _ in })
+                        }
+                    }
+                    .padding(16).frame(width: width, alignment: .leading).background(.black)
+                    .environment(\.colorScheme, .dark)
+                    let renderer = ImageRenderer(content: content)
+                    renderer.scale = 2
+                    guard let image = renderer.cgImage else { throw CocoaError(.coderInvalidValue) }
+                    // The rounded sheet font can have11px intra-word ink gaps;
+                    // real word-cell spacing is at least16px at this scale.
+                    let chords = glyphs(image, chords: true), words = glyphs(image, chords: false, wordGap: 14)
+                    if chords.count != 6 || words.count != wordCount {
+                        try save(image, to: URL(fileURLWithPath: "/tmp/chordlyze-plain-render-failure.png"))
+                    }
+                    check(chords.count == 6 && words.count == wordCount,
+                          "Wrapped multi-row \(style) at \(width): expected 6 chords and \(wordCount) words; found \(chords) and \(words)")
+                    check(chords.allSatisfy { chord in words.allSatisfy { !$0.intersects(chord) } },
+                          "Wrapped multi-row \(style) at \(width): chord ink never overlaps any lyric line")
+                    check((chords + words).allSatisfy { $0.minX >= 30 && $0.maxX <= Double(image.width) - 30 },
+                          "Wrapped multi-row \(style) at \(width): every glyph stays within the padded screen")
+                    check(chords.first!.maxY < words.first!.minY
+                          && words.first!.minY - chords.first!.maxY < 42,
+                          "The first line-only chord sits directly above the first word without a separate caption")
+                    let name = "plain-passage-\(style)-\(width)-transpose-\(transpose).png"
+                    try save(image, to: output.appendingPathComponent(name))
+                    images += 1
+                }
+            }
+        }
+        // The opening chord is the same event as before the lyric starts. A
+        // future change cannot light early, and words keep identical ink.
+        let first = vocals[0]
+        let silent = try render(first, width: 320, playhead: -0.1)
+        let sounding = try render(first, width: 320, playhead: 1)
+        let expired = try render(first, width: 320, playhead: 6)
+        let bounds = glyphs(sounding, chords: true), wordBounds = glyphs(sounding, chords: false)
+        check(bounds.count == 1 && brightGlyphs(silent, bounds: bounds, chords: true).isEmpty,
+              "The plain first chord cannot highlight before its original onset")
+        check(brightGlyphs(sounding, bounds: bounds, chords: true) == [0]
+              && brightGlyphs(expired, bounds: bounds, chords: true).isEmpty,
+              "The plain first chord lights only for its unchanged sounding interval")
+        check(neutralInk(silent, bounds: wordBounds) == neutralInk(sounding, bounds: wordBounds)
+              && neutralInk(sounding, bounds: wordBounds) == neutralInk(expired, bounds: wordBounds),
+              "Plain chord guidance does not reintroduce lyric highlighting")
+        var scored: [Double] = []
+        _ = try render(first, width: 320, playhead: 1, verdict: { start in
+            scored.append(start); return .hit(offset: 0)
+        })
+        check(scored.isEmpty, "A repeated opening chord receives no new practice verdict")
+        _ = try render(vocals[1], width: 320, playhead: 6, verdict: { start in
+            scored.append(start); return .hit(offset: 0)
+        })
+        check(Set(scored) == Set([6.0, 9.0]), "Actual changes keep their original practice verdicts")
+        let wrapText = "Alpha bravo charlie delta echoes foxtrot"
+        let wrapEvent = SheetModel.Event(start: 0, end: 12, chord: Chord(display: "C"))
+        let wrapWords = wrapText.split(separator: " ").enumerated().map {
+            WordStamp(time: Double($0.offset), text: String($0.element), end: Double($0.offset) + 0.5)
+        }
+        let wrapWithChord = SheetModel.Row(start: 0, end: 12, kind: .lyric, text: wrapText, words: wrapWords,
+            chords: [.init(event: wrapEvent, position: 0, wordIndex: 0)], held: nil)
+        let wrapWithoutChord = SheetModel.Row(start: 0, end: 12, kind: .lyric, text: wrapText,
+            words: wrapWords, chords: [], held: nil)
+        for style in [ChordRowView.Style.sheet, .live] {
+            for width in [280.0, 320] {
+                let withChord = try render(wrapWithChord, width: width, style: style)
+                let withoutChord = try render(wrapWithoutChord, width: width, style: style)
+                let extraHeight = withChord.height - withoutChord.height
+                let oneChordBand = style == .sheet ? 54 : 62
+                check(abs(extraHeight - oneChordBand) <= 2,
+                      "Wrapped \(style) words reserve exactly one chord band, never empty bands above later text-only wraps: \(extraHeight)")
+                check(glyphs(withChord, chords: true).count == 1
+                      && glyphs(withChord, chords: false, wordGap: 14).count == 6,
+                      "A plain first chord appears once while all wrapped words remain visible")
+                try save(withChord, to: output.appendingPathComponent("text-only-wrap-\(style)-\(Int(width)).png"))
+                images += 1
+            }
+        }
+        return images
+    }
+
     @MainActor static func main() throws {
         _ = NSApplication.shared
         let output = URL(fileURLWithPath: CommandLine.arguments.dropFirst().first ?? "/tmp/chordlyze-alignment-renders")
@@ -272,7 +380,7 @@ extension Color { static let spotifyGreen = Color(red: 30 / 255, green: 215 / 25
         for width in [280.0, 320, 390, 464] {
             let image = try render(vocal, width: width)
             let chords = glyphs(image, chords: true), words = glyphs(image, chords: false)
-            check(chords.count == 3 && words.count == 6, "Recovered phrase retains each word, vocal change and held entrance cue")
+            check(chords.count == 3 && words.count == 6, "Recovered phrase retains each word, vocal change and plain initial chord")
             for (chord, word) in [2, 5].enumerated() {
                 check(abs(chords[chord + 1].minX - words[word].minX) <= 7, "Recovered onset preserves chord/word placement")
                 check(chords[chord + 1].maxY < words[word].minY && words[word].minY - chords[chord + 1].maxY < 42,
@@ -327,6 +435,7 @@ extension Color { static let spotifyGreen = Color(red: 30 / 255, green: 215 / 25
             images += 1
         }
         images += try chordOnlyHighlightTests(output: output)
+        images += try plainPassageTests(output: output)
         print("Chord row rendering: \(checks) checks passed; \(images + 2) PNGs in \(output.path)")
     }
 }

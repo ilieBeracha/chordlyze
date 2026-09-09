@@ -999,7 +999,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(sheet.hasTimedLyricWords && !sheet.hasCompleteLyricTiming && sheet.needsLyricTiming
               && sheet.followingRow(at: 18.2) == nil && sheet.followingRow(at: 20.1)?.text == "Estimated measured",
               "Partial timing follows measured words while estimated prefixes remain inactive and recoverable")
-        check(sheet.needsChordPlaybackSummary, "A partial estimated entrance still exposes the sounding and next chords")
+        check(!sheet.needsChordPlaybackSummary, "A partly timed sheet stays a plain chord chart without a redundant first-chord summary")
         requestMode = 1
         await sheet.requestLyricTiming()
         check(sheet.lyricTimingError != nil, "A new uncertain request reports its own failure")
@@ -1105,9 +1105,9 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(vocal.vocalEntranceChord == SheetModel.events(analysis).first,
               "A reliable vocal entrance identifies the exact chord already ringing")
         check(vocal.vocalEntranceChord?.start == 0 && vocal.chords.map(\.event.start) == [5, 7],
-              "The entrance cue cannot create an attack at the lyric onset")
+              "Displaying the first chord cannot create an attack at the lyric onset")
         check(rows.flatMap(\.chords).map(\.event) == SheetModel.events(analysis),
-              "An entrance cue keeps the complete scoring and playback sequence unchanged")
+              "Displaying the first chord keeps the complete scoring and playback sequence unchanged")
         check(!vocal.needsChordSequence && vocal.chords.map(\.wordIndex) == [1, 2],
               "Fully supported changes retain their word anchors")
         var uncertain = line.words!
@@ -1117,8 +1117,8 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(estimated.vocalEntranceChord == nil, "An estimated first word cannot claim the first vocal chord")
         let lineOnly = SheetModel.build(analysis: analysis,
             lines: [LyricLine(time: 3, text: line.text, words: nil)], duration: 12).first { !$0.text.isEmpty }!
-        check(lineOnly.vocalEntranceChord == nil && lineOnly.needsChordSequence,
-              "Line-only timing uses a chord sequence without claiming a measured vocal entrance")
+        check(lineOnly.vocalEntranceChord == vocal.held && lineOnly.needsChordSequence,
+              "A synchronized line onset can identify its first chord without inventing word timing")
         uncertain[1].estimated = true
         let partial = SheetModel.build(analysis: analysis,
             lines: [LyricLine(time: 3, text: line.text, words: uncertain)], duration: 12).first { !$0.text.isEmpty }!
@@ -1126,6 +1126,107 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
               "Mixed timing presents one sequence while retaining reliable anchors in the model")
         check(rows.filter { $0.text.isEmpty }.allSatisfy { $0.vocalEntranceChord == nil },
               "Wordless rows cannot invent vocal entrances")
+        check(vocal.beginsVocalPassage && vocal.displayChords.map(\.event.start) == [0, 5, 7]
+              && vocal.displayChords.map(\.wordIndex) == [0, 1, 2],
+              "The first ringing chord sits above the first word in the same chord line")
+        check(vocal.displayChords.first?.event.display(transposedBy: 2) == "C#m"
+              && vocal.displayChords.first?.event == vocal.held,
+              "The first displayed chord transposes normally without changing its event identity")
+        let onsetOnly = LyricLine(time: 3, text: line.text, words: line.words!.map {
+            WordStamp(time: $0.time, text: $0.text, estimated: false)
+        })
+        let onsetRow = SheetModel.build(analysis: analysis, lines: [onsetOnly], duration: 12)
+            .first { !$0.text.isEmpty }!
+        check(onsetRow.vocalEntranceChord == vocal.held,
+              "A measured onset can show the first chord without requiring a vocal end")
+
+        // The screenshot's repeated phrases are ordinary lines in one passage.
+        // Their old chord must not be repeated merely because text moved down.
+        let repeating = chart([["start": 0, "end": 20, "label": "A:min"]])
+        let repeatedLines = [LyricLine(time: 1, text: "Across the open valley", words: nil),
+                             LyricLine(time: 4, text: "We follow every footstep", words: nil),
+                             LyricLine(time: 7, text: "Across the open valley", words: nil)]
+        let repeatedRows = SheetModel.build(analysis: repeating, lines: repeatedLines, duration: 20)
+        let repeatedVocals = repeatedRows.filter { !$0.text.isEmpty }
+        check(repeatedVocals.map(\.beginsVocalPassage) == [true, false, false],
+              "Ordinary new lyric lines and repeated sentences do not begin another passage")
+        check(repeatedVocals.map { $0.displayChords.count } == [1, 0, 0],
+              "An initial line-only Am is readable once without repeating it above every sentence")
+        check(repeatedRows.flatMap(\.chords).map(\.event) == SheetModel.events(repeating),
+              "Repeated lyric lines never add another musical event")
+        let readingRows = SheetModel.readingRows(repeatedRows)
+        check(readingRows.first?.text == repeatedLines.first?.text
+              && readingRows.flatMap(\.displayChords).filter { $0.event.start == 0 }.count == 1,
+              "A lone chord immediately before the first lyric is displayed once above that lyric")
+        check(repeatedRows.first?.chords.first?.event.start == 0,
+              "Removing a duplicate from reading does not remove the original playback event")
+        let openingPlaybackRow = SheetModel.activeRow(repeatedRows, at: 0.2)!
+        check(SheetModel.readingRowID(openingPlaybackRow, in: repeatedRows) == repeatedVocals[0].id,
+              "Seeking backward into a hidden short lead-in scrolls to the displayed opening lyric")
+        check(SheetModel.readingRowID(repeatedVocals[0], in: repeatedRows) == repeatedVocals[0].id,
+              "An existing lyric row retains its normal navigation identifier")
+        let longIntro = SheetModel.build(analysis: repeating,
+            lines: [LyricLine(time: 5, text: "Across the open valley", words: nil)], duration: 20)
+        check(SheetModel.readingRows(longIntro).first?.isInstrumental == true,
+              "A real long instrumental opening remains visible before the first lyric")
+        check(SheetModel.readingRowID(longIntro[0], in: longIntro) == longIntro[0].id,
+              "A visible instrumental introduction retains its own navigation destination")
+        let splitIntroChart: ChordAnalysis = decode(["source": "youtube", "audio_duration": 25,
+            "chords": [["start": 0, "end": 25, "label": "C:maj"]]])
+        let splitIntro = SheetModel.build(analysis: splitIntroChart, lines: [
+            LyricLine(time: 1, text: "", words: nil),
+            LyricLine(time: 20, text: "Morning", words: [WordStamp(time: 20, text: "Morning", end: 21)])], duration: 25)
+        check(splitIntro.first?.end == 1 && SheetModel.readingRows(splitIntro).first?.chords.first?.event.start == 0,
+              "Blank catalog markers cannot hide a long sustained intro by splitting its first row short")
+        let introChanges = chart([["start": 0, "end": 0.2, "label": "A:min"],
+                                  ["start": 0.2, "end": 0.4, "label": "C:maj"],
+                                  ["start": 0.4, "end": 20, "label": "G:maj"]])
+        let compactIntro = SheetModel.build(analysis: introChanges,
+            lines: [LyricLine(time: 0.6, text: "Across the open valley", words: nil)], duration: 20)
+        check(SheetModel.readingRows(compactIntro).first?.chords.count == 3,
+              "Even a short instrumental progression retains all of its changes")
+        check(SheetModel.readingRows(rows).first?.chords.first?.event.start == 0,
+              "The three-second intro in the measured fixture remains a visible musical opening")
+
+        let atFirstWord = LyricLine(time: 5, text: "Alpha bravo charlie", words: [
+            WordStamp(time: 5, text: "Alpha", end: 5.5),
+            WordStamp(time: 6, text: "bravo", end: 6.5),
+            WordStamp(time: 7, text: "charlie", end: 8)])
+        let actualChange = SheetModel.build(analysis: analysis, lines: [atFirstWord], duration: 12)
+            .first { !$0.text.isEmpty }!
+        check(actualChange.held == nil && actualChange.displayChords.map(\.event.start) == [5, 7],
+              "An actual first-word change is displayed once with no duplicate initial chord")
+        check(Set(actualChange.displayChords.map(\.id)).count == actualChange.displayChords.count,
+              "First-word rendering retains unique chord identities")
+
+        let restedChart = chart([["start": 0, "end": 4, "label": "A:min"],
+                                 ["start": 4, "end": 10, "label": "C:maj"],
+                                 ["start": 10, "end": 20, "label": "G:maj"]])
+        let restedLines = [LyricLine(time: 1, text: "Soft morning", words: [
+            WordStamp(time: 1, text: "Soft", end: 1.5), WordStamp(time: 2, text: "morning", end: 3)]),
+            LyricLine(time: 8, text: "Across the valley", words: [
+                WordStamp(time: 8, text: "Across", end: 8.5), WordStamp(time: 9, text: "the", end: 9.5),
+                WordStamp(time: 10, text: "valley", end: 11)])]
+        let restedRows = SheetModel.build(analysis: restedChart, lines: restedLines, duration: 20)
+        let restedVocals = restedRows.filter { !$0.text.isEmpty }
+        check(restedVocals.map(\.beginsVocalPassage) == [true, true],
+              "A measured long rest with an instrumental chord change begins a new passage")
+        check(restedVocals[1].displayChords.map(\.event.start) == [4, 10],
+              "The new passage starts with its ringing C followed by the actual G change")
+        let quietRows = SheetModel.build(analysis: repeating, lines: restedLines, duration: 20)
+        check(quietRows.filter { !$0.text.isEmpty }.map(\.beginsVocalPassage) == [true, false],
+              "A long empty gap without any chord changes does not repeat the same chord")
+        let shortRestLines = [restedLines[0], LyricLine(time: 5.5, text: "Across the valley", words: [
+            WordStamp(time: 5.5, text: "Across", end: 6), WordStamp(time: 6.1, text: "the", end: 6.5),
+            WordStamp(time: 7, text: "valley", end: 8)])]
+        let shortRows = SheetModel.build(analysis: restedChart, lines: shortRestLines, duration: 20)
+        check(shortRows.filter { !$0.text.isEmpty }.map(\.beginsVocalPassage) == [true, false],
+              "A brief inter-line breath does not repeat the previous chord")
+        for time in [0.0, 1, 3, 3.99, 4, 7.99, 8, 9.99, 10, 19.99, 20] {
+            let original = SheetModel.activeEvent(SheetModel.events(restedChart), at: time)
+            let retained = SheetModel.activeEvent(restedRows.flatMap(\.chords).map(\.event), at: time)
+            check(retained == original, "Plain first-chord display leaves playback unchanged at \(time)")
+        }
     }
 
     @MainActor static func modelTests() {

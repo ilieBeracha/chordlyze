@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Chords above lyric tokens only where reliable word timestamps support it.
-/// Rows with unanchored changes use ChordRowView's timestamped sequence instead
+/// Rows with unanchored changes use ChordRowView's separate sequence instead
 /// of inserting chords beside guessed word positions.
 struct ChordLyricLine: View {
     struct Token: Identifiable {
@@ -22,11 +22,12 @@ struct ChordLyricLine: View {
     var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
     var body: some View {
         let tokens = Self.tokens(text: text, chords: chords, words: words)
-        let hasChords = !chords.isEmpty
         ChordLyricFlow(spacing: style == .sheet ? 8 : 10) {
             ForEach(tokens) { token in
                 VStack(alignment: .leading, spacing: style == .sheet ? 3 : 1) {
-                    if hasChords {
+                    // The flow aligns each visual row at the lyric baseline.
+                    // A wrapped row with no chord needs no empty chord band.
+                    if !token.chords.isEmpty {
                         chordRow(token.chords)
                             .frame(minHeight: style == .sheet ? 24 : 30, alignment: .bottomLeading)
                     }
@@ -126,6 +127,10 @@ struct ChordLyricFlow: Layout {
             usedWidth = max(usedWidth, x - spacing)
         }
         finishRow()
-        return (CGSize(width: usedWidth, height: y + height), frames)
+        // Measurement and placement must wrap at the same width. Returning
+        // only the occupied width lets a parent give us a narrower frame;
+        // placing at that width can then require an unmeasured extra line.
+        let measuredWidth = width.flatMap { $0.isFinite ? max(1, $0) : nil } ?? usedWidth
+        return (CGSize(width: measuredWidth, height: y + height), frames)
     }
 }

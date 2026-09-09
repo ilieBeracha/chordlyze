@@ -140,7 +140,7 @@ final class SongSheetStore: ObservableObject {
     }
     var shift: Int { (capoMode ? -capo : 0) + manualShift }
     var lyricTimingIsSynced: Bool { lyricsResult?.synced == true }
-    var needsChordPlaybackSummary: Bool { canPractice && !hasCompleteLyricTiming }
+    var needsChordPlaybackSummary: Bool { canPractice && usesIndependentLyrics }
     /// Plain catalog lyrics have no relationship to the chart clock. Keep
     /// their text visible while exposing chords on their own real timeline.
     var usesIndependentLyrics: Bool { !lyricTimingIsSynced && !lines.isEmpty }
