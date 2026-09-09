@@ -1,6 +1,26 @@
 # Spotify playback reliability
 
-## Cold-start connection (2026-09-08)
+## Return-from-Spotify regression (2026-09-09)
+
+Build 94 included two defects in the initial native launch integration. It received the SDK authorization token but discarded it, without setting App Remote's connection parameters or connecting. The song page then always sent a Web API play request after returning, even when `authorizeAndPlayURI` had already started the selected song. A regression fixture with an empty app cache and Spotify playing at 23 seconds reproduced that second defect: the old controller issued another play and reset the queue to zero.
+
+The repaired flow completes the native connection before declaring the phone ready. It retains the SDK token in memory, disconnects when inactive, reconnects on foreground, and clears the session on logout or canceled authorization. A connected App Remote supplies player state, play and seek operations for the local Spotify app. Web API playback remains available when no native connection exists. The native device identity is internal and never goes to the Web API; each command's confirmation stays with its selected transport even if connectivity changes while it runs.
+
+Play-along reads fresh playback under the existing command lock. If the selected phone is already playing the requested song, it adopts that state without replaying or rewinding it. A saved resume point ahead of the current position uses a targeted seek without rebuilding the queue. A different or paused song still starts and confirms playback. Practice and synchronization retain their explicit start positions and never start their microphones simply because the app returned from Spotify.
+
+Native startup has a 10-second connection deadline, individual SDK calls have 5-second deadlines, and manual return without a completed callback has a 12-second grace period. Late callbacks, canceled requests and old connection instances cannot restore abandoned operations. A play callback may arrive before the song changes, so a native resume seek waits for the requested track first. The SDK's required `-ObjC` linker flag is present in both the generated Xcode project and `project.yml`.
+
+Spotify/iOS still owns the permission dialog when opening or authorizing Spotify. This change does not bypass that permission. A connected session can be reused without another authorization handoff. Existing artwork and recording metadata survive the change to native player state, and the song page shows pauses and connection interruptions.
+
+The fixtures cover fresh versus stale playback, already-playing returns, later resume points, a different active device, cancellation during a read, callback ordering, native connection failure/timeout, foreground reconnect, late callbacks, transport selection, and waiting for a real track change before seeking. They do not produce Spotify audio. Simulator and unsigned iPhone builds verify compilation and linkage; the reported audible freeze still requires a round trip with the real Spotify app on an iPhone. Do not describe these checks as proof that every device/account/audio route works.
+
+Verification: **2,558 song-sheet/playback checks** (30 added), **310 row-render checks**, **18 HTTP/auth checks**, and the practice suite pass. The final native adapter compiles and links in both Debug Simulator and unsigned Release iPhone builds. The original replay regression was observed failing before the controller change, then passing after it.
+
+Physical acceptance: quit Spotify, start play-along, approve the connection if asked, and verify the intended song remains audible as its chart follows after returning. Repeat with the song already playing, with it paused partway through, and after another background/foreground cycle. Deny the handoff once and verify a retry appears without an automatic launch loop. Practice and synchronization must preserve setup and wait for an explicit start after return.
+
+References: Spotify's [native connection guide](https://developer.spotify.com/documentation/ios/getting-started) and [connection lifecycle](https://developer.spotify.com/documentation/ios/concepts/application-lifecycle).
+
+## Initial cold-start connection (2026-09-08; superseded above)
 
 The initial missing-device error came from trying to control Spotify exclusively through the Web API. An installed but suspended Spotify app need not appear in Spotify Connect. Repeating the playback request cannot launch it. Chordlyze now uses Spotify's official iOS SDK, pinned to **5.0.1**, for its supported `authorizeAndPlayURI` app switch. The existing Web API transport still confirms the actual device, track and position.
 

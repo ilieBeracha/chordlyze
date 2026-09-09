@@ -19,6 +19,7 @@ final class SpotifyNowPlaying: ObservableObject {
         var play: (String, Double, String?) async throws -> Void = { _, _, _ in throw PlayError.notConnected }
         var devices: () async throws -> [SpotifyAPI.Device] = { throw PlayError.notConnected }
         var seekOnDevice: ((Double, String?) async throws -> Void)? = nil
+        var currentOnDevice: ((String?) async throws -> SpotifyAPI.CurrentlyPlaying?)? = nil
         var sleep: (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
     }
     enum PlayError: LocalizedError, Equatable {
@@ -97,11 +98,16 @@ final class SpotifyNowPlaying: ObservableObject {
         return nil
     }
     func start(api: SpotifyAPI) {
-        service = Service(current: { try await api.currentlyPlaying() },
+        let web = Service(current: { try await api.currentlyPlaying() },
                           seek: { try await api.seek(toMs: Int($0 * 1000)) },
                           play: { try await api.play(trackID: $0, positionMs: Int($1 * 1000), deviceID: $2) },
                           devices: { try await api.devices() },
                           seekOnDevice: { try await api.seek(toMs: Int($0 * 1000), deviceID: $1) })
+        #if canImport(SpotifyiOS)
+        service = SpotifyAppLauncher.shared.playbackService(fallback: web)
+        #else
+        service = web
+        #endif
         resume()
     }
     /// Screens and token refreshes may call this repeatedly. They must not
@@ -204,7 +210,7 @@ final class SpotifyNowPlaying: ObservableObject {
                        received: ContinuousClock.Instant) {
         lastSuccess = received
         connectionMessage = nil
-        guard let current, let track = current.item else {
+        guard let current, var track = current.item else {
             playing = nil
             deviceID = nil
             deviceRestricted = false
@@ -215,6 +221,12 @@ final class SpotifyNowPlaying: ObservableObject {
             sheetTask?.cancel(); sheetTask = nil
             subscriptions.removeAll(); sheetID = nil
             return
+        }
+        // App Remote's live track omits catalog artwork and ISRC. Keep
+        // metadata already loaded for the same song when changing transport.
+        if track.album.images?.isEmpty != false, let previous = playing?.track,
+           previous.id == track.id, previous.album.images?.isEmpty == false {
+            track = previous
         }
         let sampledAt = sent.advanced(by: sent.duration(to: received) / 2)
         let next = Playing(track: track, isPlaying: current.isPlaying)
@@ -385,7 +397,9 @@ final class SpotifyNowPlaying: ObservableObject {
             let sent = now()
             guard sent <= deadline else { break }
             do {
-                let current = try await service.current()
+                let current: SpotifyAPI.CurrentlyPlaying?
+                if let read = service.currentOnDevice { current = try await read(device) }
+                else { current = try await service.current() }
                 let received = now()
                 try checkCommand(epoch)
                 if let intent, intent != seekIntent { return }
@@ -414,26 +428,59 @@ final class SpotifyNowPlaying: ObservableObject {
 
     /// Casual playing shares Spotify's confirmed transport, without a practice
     /// session. Keep an already playing song intact and resume a paused one.
-    func playAlong(trackID: String) async throws {
-        let sameSong = playing?.track.id == trackID
-        if sameSong, playing?.isPlaying == true { return }
-        let position = sameSong ? (livePosition() ?? 0) : 0
-        try await play(trackID: trackID, at: position)
+    func playAlong(trackID: String, resumingAt seconds: Double? = nil) async throws {
+        try await performPlay(trackID: trackID, at: seconds, preservePlaying: true)
     }
 
     func play(trackID: String, at seconds: Double) async throws {
+        try await performPlay(trackID: trackID, at: seconds, preservePlaying: false)
+    }
+
+    private func performPlay(trackID: String, at seconds: Double?, preservePlaying: Bool) async throws {
         guard let service else { throw PlayError.notConnected }
-        guard seconds.isFinite, seconds < Double(Int.max / 1000), !trackID.isEmpty else { throw PlayError.invalidPosition }
+        if let seconds, !seconds.isFinite || seconds >= Double(Int.max / 1000) { throw PlayError.invalidPosition }
+        guard !trackID.isEmpty else { throw PlayError.invalidPosition }
         seekIntent += 1
         let epoch = commandEpoch
         do {
             let command = try await acquire(epoch)
             defer { release(command) }
-            let target = max(0, seconds)
+            var target = max(0, seconds ?? 0)
             playbackDevice = nil
             let device = try await discoverPhone(service: service, epoch: epoch)
             try checkCommand(epoch)
             playbackDevice = device.name
+            if preservePlaying {
+                // The SDK can start audio while this app is backgrounded.
+                // Cached state cannot decide whether to restart its queue.
+                let sent = now()
+                let current: SpotifyAPI.CurrentlyPlaying?
+                if let read = service.currentOnDevice { current = try await read(device.id) }
+                else { current = try await service.current() }
+                try checkCommand(epoch)
+                if let current, current.item?.id == trackID, current.device?.id == device.id {
+                    let reported = current.progressMs.map { max(0, Double($0) / 1000) }
+                    if current.isPlaying {
+                        // Preserve audio already started in Spotify. Only a
+                        // saved resume point ahead of it needs a seek.
+                        if let reported, target > reported + 1 {
+                            let issued = now()
+                            do {
+                                if let seek = service.seekOnDevice { try await seek(target, device.id) }
+                                else { try await service.seek(target) }
+                            } catch { if !mayHaveReachedSpotify(error) { throw error } }
+                            try checkCommand(epoch)
+                            try await confirm(service: service, trackID: trackID, target: target, device: device.id,
+                                              requirePlaying: true, issued: issued, epoch: epoch)
+                        } else if target == 0 || reported != nil {
+                            apply(current, sent: sent, received: now())
+                        } else { throw PlayError.notConfirmed }
+                        running = true
+                        return
+                    }
+                    target = max(0, seconds ?? reported ?? 0)
+                }
+            }
             let issued = now() // Device discovery is not playback time.
             do { try await service.play(trackID, target, device.id) }
             catch { if !mayHaveReachedSpotify(error) { throw error } }

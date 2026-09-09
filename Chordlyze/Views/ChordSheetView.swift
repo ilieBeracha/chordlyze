@@ -202,7 +202,8 @@ struct AnalysisTabsView: View {
                     Text("Waiting for Spotify…").font(.footnote).foregroundStyle(Palette.secondary)
                 }.accessibilityIdentifier("spotify-control-pending")
             }
-            if let note = playbackError ?? store.saveError ?? (needsPlaybackDevice ? nil : nowPlaying.controlMessage) {
+            if let note = playbackError ?? store.saveError ?? (needsPlaybackDevice ? nil : nowPlaying.controlMessage)
+                ?? (songIsUp && !nowPlaying.isControlling ? nowPlaying.playbackNote : nil) {
                 Text(note).font(.footnote).foregroundStyle(Palette.warning)
             }
             if needsPlaybackDevice {
@@ -225,7 +226,7 @@ struct AnalysisTabsView: View {
         }
         playbackTask = Task { @MainActor in
             defer { startingPlayback = false; playbackTask = nil }
-            do { try await nowPlaying.play(trackID: store.song.id, at: requestedPlaybackPosition) }
+            do { try await nowPlaying.playAlong(trackID: store.song.id, resumingAt: requestedPlaybackPosition) }
             catch is CancellationError { }
             catch {
                 guard !Task.isCancelled else { return }

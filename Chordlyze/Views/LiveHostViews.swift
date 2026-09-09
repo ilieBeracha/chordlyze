@@ -216,7 +216,7 @@ struct SpotifyDeviceRecoveryView: View {
         }
         .task(id: recovery.authorizationWaitID) {
             guard let attempt = recovery.authorizationWaitID else { return }
-            do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            do { try await Task.sleep(for: .seconds(12)) } catch { return }
             recovery.authorizationTimedOut(attempt: attempt)
             cancelLaunch()
         }

@@ -18,6 +18,7 @@
 		2B0B316D24CDEEE7AD0A48C8 /* Metronome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1649CD4213D38B91DD970BB /* Metronome.swift */; };
 		2BA907A328198DD7AD731B7C /* BackendClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1243AB5316165B94E89C1FE /* BackendClient.swift */; };
 		335DE6B244A15F9E1B74E91F /* ChordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1876BBFA097772E3C9CF64D3 /* ChordView.swift */; };
+		37720A470B486894BC3D06C9 /* SpotifyNativeSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35E43C5BB78AC697291A34C0 /* SpotifyNativeSession.swift */; };
 		3817F5E6B10603979A96BA3F /* ChordMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D18A5847FAF187D94D2E7ED /* ChordMath.swift */; };
 		387811BFFCDDEE897C63ADCB /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F55B762EFBB35519E23900A3 /* LibraryView.swift */; };
 		4D8E7C903F137AA895DAE436 /* PassageAnalysisModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB9DD08634518594411A872A /* PassageAnalysisModel.swift */; };
@@ -72,6 +73,7 @@
 		30ACA8DA715E5954990AADD9 /* ChordShapes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordShapes.swift; sourceTree = "<group>"; };
 		30D6E6D1F80C702489521D6B /* ChordDrillDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordDrillDetector.swift; sourceTree = "<group>"; };
 		3312C302F9B53B1895F12621 /* LyricPlayhead.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricPlayhead.swift; sourceTree = "<group>"; };
+		35E43C5BB78AC697291A34C0 /* SpotifyNativeSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyNativeSession.swift; sourceTree = "<group>"; };
 		3B5F39F29A534B7E488CE8FE /* ChordlyzeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordlyzeApp.swift; sourceTree = "<group>"; };
 		3D7263FB6145FFC9D718A485 /* LiveChordRecognitionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveChordRecognitionView.swift; sourceTree = "<group>"; };
 		3E4FF07B614A2CF0ABCC7DAC /* SpotifyAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyAPI.swift; sourceTree = "<group>"; };
@@ -204,6 +206,7 @@
 				CB9153BF3C8BB64BFD58B5FD /* SpotifyAppLauncher.swift */,
 				7137E803C002FAEC4B13BC6A /* SpotifyAuth.swift */,
 				769A57C51F6F592BF9C0BB12 /* SpotifyLaunchCallback.swift */,
+				35E43C5BB78AC697291A34C0 /* SpotifyNativeSession.swift */,
 				B9466B007A80465DD43B8334 /* SpotifyNowPlaying.swift */,
 				23F4EBD18FDE26AB8F0E18A2 /* TakeRecorder.swift */,
 				5C2B900763ACAA5E17D8CF4E /* Theme.swift */,
@@ -334,6 +337,7 @@
 				E7A3823652D2DE9983BC42DF /* SpotifyAppLauncher.swift in Sources */,
 				B7CA552052205086EC43A233 /* SpotifyAuth.swift in Sources */,
 				F8331C5353E1F4D39947EFB5 /* SpotifyLaunchCallback.swift in Sources */,
+				37720A470B486894BC3D06C9 /* SpotifyNativeSession.swift in Sources */,
 				E9167BC65303156A07B3F87A /* SpotifyNowPlaying.swift in Sources */,
 				6F5B8A44BBA2F9422878CE39 /* TakeRecorder.swift in Sources */,
 				87B01418CC88AEC038A41750 /* Theme.swift in Sources */,
@@ -482,6 +486,10 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.5.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.ilieberacha.chordlyze;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
@@ -508,6 +516,10 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.5.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.ilieberacha.chordlyze;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
