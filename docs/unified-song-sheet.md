@@ -6,6 +6,13 @@ When analysis is unavailable, lyric-only rows do not reserve an empty chord slot
 
 Live follows Spotify playback automatically. Search and Library show the static sheet; Practice uses the same rows with the take's clock. This does not turn Spotify Live into microphone-based song identification. On-device chord drills remain a separate instrument exercise.
 
+Song and Live pages expose **Diagrams** and **Simple version** immediately below
+the header. Diagrams are closed on a fresh page and open only by choice, including
+when lyric timing is incomplete. The same button closes them during playback.
+Simple version uses the existing suggested capo shapes, displays the required
+fret, and is the first toggle in Key & capo. Turning it off restores the displayed
+chords without changing manual transposition, timing calibration or scoring key.
+
 ## Accounts and libraries
 
 Every app request to the backend carries the account's Spotify access token as

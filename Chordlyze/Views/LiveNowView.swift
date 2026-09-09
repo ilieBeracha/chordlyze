@@ -7,6 +7,8 @@ struct LiveNowView: View {
     var onSeek: ((Double) async -> Bool)? = nil
     var playbackNote: String? = nil
     var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
+    /// A running practice plan has already captured its capo and scoring setup.
+    var allowsSimpleVersionChanges = true
     /// Calibrated chart time, no display lead: the caller has already put
     /// Spotify's position (or the take clock) through the song's timing map.
     let chartPosition: () -> TimeInterval?
@@ -15,8 +17,8 @@ struct LiveNowView: View {
     @State private var seekDenied = false
     @State private var showSongMap = false
     private var beatGrid: BeatGrid? { store.beatGrid }
-    /// The strip of chord fingerings above the words; a bottom-bar toggle.
-    @AppStorage("chordRail") private var showRail = false
+    /// A new song starts closed, regardless of its lyric timing or older preferences.
+    @State private var showRail = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -29,16 +31,14 @@ struct LiveNowView: View {
                 let activeID = store.followingRow(at: wordPosition)?.id
                 VStack(spacing: 0) {
                     SongSheetHeader(store: store) {
-                        HeaderCircle(icon: "guitars", on: showRail, label: showRail ? "Hide chord shapes" : "Show chord shapes",
-                                     identifier: "chord-rail-toggle") {
-                            withAnimation(.easeInOut(duration: 0.25)) { showRail.toggle() }
-                        }
                         if let grid = beatGrid, !grid.bars.isEmpty, onSeek != nil {
                             HeaderCircle(icon: "map", on: false, label: "Song map and bar selection", identifier: "song-map") {
                                 showSongMap = true
                             }
                         }
                     }
+                    SongPlayingControls(store: store, showRail: $showRail,
+                                        allowsSimpleVersionChanges: allowsSimpleVersionChanges)
                     // Only what changes the moment: paused, reconnecting, a refused seek.
                     // Timing and edition notes live on the sheet page, not over the words.
                     if let playbackNote {
@@ -52,7 +52,7 @@ struct LiveNowView: View {
                     if store.lyricTimingMessage != nil {
                         SongSheetStatus(store: store).padding(.horizontal, 20).padding(.bottom, 6)
                     }
-                    if showRail || !store.hasCompleteLyricTiming {
+                    if showRail {
                         ChordRailView(events: SheetModel.events(store.analysis), position: position, transposeBy: store.shift,
                                       onTap: { selectedChord = SelectedChord(name: $0) })
                             .transition(.move(edge: .top).combined(with: .opacity))
@@ -95,6 +95,7 @@ struct LiveNowView: View {
             }
         }
         .chordDiagram($selectedChord)
+        .onChange(of: store.song.id) { _, _ in showRail = false }
         .observes(store)
     }
 }

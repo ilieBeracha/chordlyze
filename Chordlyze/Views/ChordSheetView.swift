@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The song page: one song document, the rows Live and Practice use, at
 /// Live's size. When Spotify has the song up the page follows it in place:
-/// sounding chord bright, sung words lit, and seeking by tapping a line.
+/// sounding chord bright, steady lyrics, and seeking by tapping a line.
 /// The header holds playback and a menu for secondary song actions.
 struct AnalysisTabsView: View {
     @StateObject private var store: SongSheetStore
@@ -23,7 +23,9 @@ struct AnalysisTabsView: View {
     @State private var requestedPlaybackPosition = 0.0
     @State private var playbackTask: Task<Void, Never>?
     @Environment(\.openURL) private var openURL
-    @AppStorage("chordRail") private var showRail = false
+    // A fresh song page starts with the diagrams closed. Timing quality must
+    // never override this explicit presentation choice.
+    @State private var showRail = false
 
     /// The Spotify poller behind seeks and calibration; the offline fixture passes its own.
     @ObservedObject var nowPlaying: SpotifyNowPlaying
@@ -53,6 +55,9 @@ struct AnalysisTabsView: View {
                     }.disabled(startingPlayback || nowPlaying.isControlling)
                 }
                 songMenu
+            }
+            if store.canPractice {
+                SongPlayingControls(store: store, showRail: $showRail)
             }
             // Keep the page's identity when Spotify starts during an app switch.
             // Replacing the idle subtree would dismiss its pending recovery.
@@ -110,7 +115,7 @@ struct AnalysisTabsView: View {
         return VStack(spacing: 0) {
             // The optional progression belongs to the viewport, not lyric scroll
             // content: it remains available while auto-follow advances the page.
-            if showRail || (!store.hasCompleteLyricTiming && playhead != nil), store.canPractice {
+            if showRail, store.canPractice {
                 ChordRailView(events: SheetModel.events(store.analysis), position: playhead ?? -1, transposeBy: store.shift,
                               onTap: { selectedChord = SelectedChord(name: $0) })
             }
@@ -168,9 +173,6 @@ struct AnalysisTabsView: View {
                 Button("Practice", systemImage: "guitars") { showPractice = true }
                     .accessibilityIdentifier("song-practice")
                 Button("Key & capo", systemImage: "slider.horizontal.3") { showSettings = true }
-                Button(showRail ? "Hide chord diagrams" : "Show chord diagrams", systemImage: "rectangle.grid.1x2") {
-                    withAnimation(.easeInOut(duration: 0.25)) { showRail.toggle() }
-                }.accessibilityIdentifier("chord-rail-toggle")
                 if let grid = beatGrid, !grid.bars.isEmpty {
                     Button("Song map", systemImage: "map") { showSongMap = true }
                         .accessibilityIdentifier("song-map")
@@ -274,6 +276,60 @@ struct SongSheetHeader<Trailing: View>: View {
 
 extension SongSheetHeader where Trailing == EmptyView {
     init(store: SongSheetStore) { self.init(store: store) { EmptyView() } }
+}
+
+/// Frequent playing choices stay within one tap, outside the scrolling sheet.
+/// Diagram visibility belongs to the page; Simple version belongs to the song.
+struct SongPlayingControls: View {
+    @ObservedObject var store: SongSheetStore
+    @Binding var showRail: Bool
+    var allowsSimpleVersionChanges = true
+
+    private var capoInstruction: String {
+        store.capo == 0 ? "No capo needed" : "Capo on fret \(store.capo)"
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            control("Diagrams", icon: showRail ? "xmark" : "rectangle.grid.1x2", on: showRail) {
+                withAnimation(.easeInOut(duration: 0.25)) { showRail.toggle() }
+            }
+            .accessibilityLabel(showRail ? "Hide chord diagrams" : "Show chord diagrams")
+            .accessibilityValue(showRail ? "Shown" : "Hidden")
+            .accessibilityIdentifier("chord-rail-toggle")
+
+            VStack(spacing: 5) {
+                control("Simple version", icon: store.capoMode ? "checkmark.circle.fill" : "circle", on: store.capoMode) {
+                    store.capoMode.toggle()
+                }
+                .accessibilityValue(store.capoMode ? "On, \(capoInstruction)" : "Off")
+                .disabled(!allowsSimpleVersionChanges)
+                .accessibilityHint(allowsSimpleVersionChanges
+                    ? "Uses easier chord shapes with a suggested capo position."
+                    : "Finish practice before changing chord shapes.")
+                .accessibilityIdentifier("simple-version-toggle")
+                if store.capoMode {
+                    Text(capoInstruction).font(.caption).foregroundStyle(Palette.secondary)
+                        .accessibilityIdentifier("simple-version-capo")
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 20).padding(.bottom, 8)
+    }
+
+    private func control(_ title: String, icon: String, on: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.subheadline.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.horizontal, 10)
+                .foregroundStyle(on ? Color.spotifyGreen : .white)
+                .background(on ? Palette.greenTintFill : Palette.elevated, in: RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 /// A round header control the size of the back circle; green when on.
@@ -426,14 +482,14 @@ struct SongPlayingSettings: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Chord corrections") {
-                    NavigationLink {
-                        ChordCorrectionsView(store: store)
-                    } label: {
-                        Label("Correct chords", systemImage: "pencil")
+                Section {
+                    Toggle("Simple version", isOn: $store.capoMode)
+                        .accessibilityIdentifier("simple-version-settings")
+                    if store.capoMode {
+                        LabeledContent("Capo", value: store.capo == 0 ? "No capo needed" : "Fret \(store.capo)")
                     }
-                    .disabled(store.analysis?.chartRevision == nil || store.analysis?.isPreview != false)
-                    Text("Correct a chord once for this song's sheet, Live and practice.")
+                } footer: {
+                    Text("Uses easier chord shapes. Place a capo at the shown fret to keep the same song key.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("Sounding key") {
@@ -443,12 +499,14 @@ struct SongPlayingSettings: View {
                     Text("Changes the displayed chords and the key used to score your playing. Spotify audio remains in its original key.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-                Section("Guitar chord shapes") {
-                    Toggle("Use suggested capo shapes", isOn: $store.capoMode)
-                    if store.capoMode {
-                        LabeledContent("Place capo at", value: store.capo == 0 ? "No capo needed" : "Fret \(store.capo)")
+                Section("Chord corrections") {
+                    NavigationLink {
+                        ChordCorrectionsView(store: store)
+                    } label: {
+                        Label("Correct chords", systemImage: "pencil")
                     }
-                    Text("With the capo at this fret, the displayed shapes produce the sounding key above. Capo shapes do not change the scoring key.")
+                    .disabled(store.analysis?.chartRevision == nil || store.analysis?.isPreview != false)
+                    Text("Correct a chord once for this song's sheet, Live and practice.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("Timing against Spotify") {

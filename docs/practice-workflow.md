@@ -38,9 +38,16 @@ remains a separate action for recording and feedback.
 
 The compact header contains back, song information, Play and Song options.
 Practice, Key & capo, Save song, Recordings and Song map are labeled menu items.
-The same menu shows or hides chord diagrams; the existing visibility preference
-is retained. Visible diagrams scroll with the lyrics rather than occupying a
-fixed area above them. Song recordings remain reachable when a chart fails.
+Directly below the header, **Diagrams** opens or closes the chord diagrams and
+**Simple version** toggles easier capo shapes in one tap. Diagrams start closed
+on a fresh song page; missing lyric timing never forces them open. When opened,
+the diagrams stay above the scrolling lyrics. Simple version shows the required
+capo fret beneath its button and is also the first option in **Key & capo**.
+It shares the song's existing capo setting across Sheet, Live and Practice and
+does not change Spotify's audio or the scoring key. During an active practice
+session, Simple version is disabled to preserve the captured playing setup;
+diagrams can still be opened and closed. Song recordings remain
+reachable when a chart fails.
 
 ## Practicing a passage
 
