@@ -1,0 +1,5578 @@
+[
+  {
+    "id": "reported-1",
+    "line": {
+      "time": 144.19,
+      "text": "word0 word1 word2 word3 word4 word5",
+      "words": [
+        {
+          "text": "word0",
+          "time": 144.19
+        },
+        {
+          "text": "word1",
+          "time": 146.02
+        },
+        {
+          "text": "word2",
+          "time": 147.85,
+          "end": 148.15
+        },
+        {
+          "text": "word3",
+          "time": 148.15,
+          "end": 148.59
+        },
+        {
+          "text": "word4",
+          "time": 148.59,
+          "end": 149.11
+        },
+        {
+          "text": "word5",
+          "time": 149.11,
+          "end": 149.83
+        }
+      ]
+    },
+    "boundary": 148.885,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "id": "reported-2",
+    "line": {
+      "time": 83.0,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 83.0,
+          "end": 83.42
+        },
+        {
+          "text": "word1",
+          "time": 83.42,
+          "end": 83.6
+        },
+        {
+          "text": "word2",
+          "time": 83.6,
+          "end": 83.92
+        },
+        {
+          "text": "word3",
+          "time": 83.92,
+          "end": 84.02
+        },
+        {
+          "text": "word4",
+          "time": 84.02,
+          "end": 84.18
+        },
+        {
+          "text": "word5",
+          "time": 84.18,
+          "end": 84.52
+        },
+        {
+          "text": "word6",
+          "time": 84.52,
+          "end": 84.74
+        },
+        {
+          "text": "word7",
+          "time": 84.74,
+          "end": 84.82
+        },
+        {
+          "text": "word8",
+          "time": 84.82,
+          "end": 84.84
+        }
+      ]
+    },
+    "boundary": 84.36,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "id": "reported-3",
+    "line": {
+      "time": 92.88,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 92.88,
+          "end": 94.04
+        },
+        {
+          "text": "word1",
+          "time": 94.04,
+          "end": 94.24
+        },
+        {
+          "text": "word2",
+          "time": 94.24,
+          "end": 94.58
+        },
+        {
+          "text": "word3",
+          "time": 94.58,
+          "end": 94.74
+        },
+        {
+          "text": "word4",
+          "time": 94.74,
+          "end": 94.9
+        },
+        {
+          "text": "word5",
+          "time": 94.9,
+          "end": 95.26
+        },
+        {
+          "text": "word6",
+          "time": 95.26,
+          "end": 95.46
+        },
+        {
+          "text": "word7",
+          "time": 95.46,
+          "end": 95.48
+        },
+        {
+          "text": "word8",
+          "time": 95.48,
+          "end": 95.5
+        }
+      ]
+    },
+    "boundary": 94.98,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "id": "reported-4",
+    "line": {
+      "time": 171.22,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 171.22,
+          "end": 171.96
+        },
+        {
+          "text": "word1",
+          "time": 171.96,
+          "end": 172.04
+        },
+        {
+          "text": "word2",
+          "time": 172.04,
+          "end": 172.76
+        },
+        {
+          "text": "word3",
+          "time": 172.76,
+          "end": 173.28
+        },
+        {
+          "text": "word4",
+          "time": 173.28,
+          "end": 173.76
+        },
+        {
+          "text": "word5",
+          "time": 173.94,
+          "end": 174.68
+        },
+        {
+          "text": "word6",
+          "time": 174.68,
+          "end": 175.16
+        },
+        {
+          "text": "word7",
+          "time": 175.16,
+          "end": 175.56
+        },
+        {
+          "text": "word8",
+          "time": 175.56,
+          "end": 176.12
+        }
+      ]
+    },
+    "boundary": 172.32,
+    "usable": [
+      0,
+      1,
+      2
+    ]
+  },
+  {
+    "id": "reported-5",
+    "line": {
+      "time": 290.98,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 290.98,
+          "end": 295.58
+        },
+        {
+          "text": "word1",
+          "time": 295.58,
+          "end": 320.96
+        }
+      ]
+    },
+    "boundary": 320.98,
+    "usable": []
+  },
+  {
+    "id": "reported-6",
+    "line": {
+      "time": 320.98,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 320.98,
+          "end": 323.14
+        },
+        {
+          "text": "word1",
+          "time": 323.14,
+          "end": 350.96
+        }
+      ]
+    },
+    "boundary": 350.98,
+    "usable": []
+  },
+  {
+    "id": "reported-7",
+    "line": {
+      "time": 105.7,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 105.7,
+          "end": 106.2
+        },
+        {
+          "text": "word1",
+          "time": 106.2,
+          "end": 106.92
+        }
+      ]
+    },
+    "boundary": 106.18,
+    "usable": [
+      0
+    ]
+  },
+  {
+    "id": "reported-8",
+    "line": {
+      "time": 0.0,
+      "text": "word0 word1 word2 word3",
+      "words": [
+        {
+          "text": "word0",
+          "time": 0.0,
+          "end": 4.68
+        },
+        {
+          "text": "word1",
+          "time": 4.68,
+          "end": 23.22
+        },
+        {
+          "text": "word2",
+          "time": 23.22,
+          "end": 23.98
+        },
+        {
+          "text": "word3",
+          "time": 23.5,
+          "end": 24.86
+        }
+      ]
+    },
+    "boundary": 24.86,
+    "usable": [
+      2,
+      3
+    ]
+  },
+  {
+    "id": "reported-9",
+    "line": {
+      "time": 110.66,
+      "text": "word0 word1 word2 word3",
+      "words": [
+        {
+          "text": "word0",
+          "time": 110.66,
+          "end": 111.52
+        },
+        {
+          "text": "word1",
+          "time": 111.52,
+          "end": 112.14
+        },
+        {
+          "text": "word2",
+          "time": 112.14,
+          "end": 112.38
+        },
+        {
+          "text": "word3",
+          "time": 112.02,
+          "end": 112.88
+        }
+      ]
+    },
+    "boundary": 112.88,
+    "usable": [
+      0,
+      1
+    ]
+  },
+  {
+    "id": "reported-10",
+    "line": {
+      "time": 112.88,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 112.88,
+          "end": 113.42
+        },
+        {
+          "text": "word1",
+          "time": 113.42,
+          "end": 113.96
+        },
+        {
+          "text": "word2",
+          "time": 113.96,
+          "end": 114.24
+        },
+        {
+          "text": "word3",
+          "time": 114.24,
+          "end": 114.64
+        },
+        {
+          "text": "word4",
+          "time": 114.64,
+          "end": 115.6
+        },
+        {
+          "text": "word5",
+          "time": 119.54,
+          "end": 120.04
+        },
+        {
+          "text": "word6",
+          "time": 120.04,
+          "end": 120.48
+        },
+        {
+          "text": "word7",
+          "time": 120.48,
+          "end": 120.68
+        },
+        {
+          "text": "word8",
+          "time": 120.68,
+          "end": 121.12
+        }
+      ]
+    },
+    "boundary": 120.68,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  {
+    "id": "reported-11",
+    "line": {
+      "time": 30.86,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7",
+      "words": [
+        {
+          "text": "word0",
+          "time": 30.86,
+          "end": 31.2
+        },
+        {
+          "text": "word1",
+          "time": 31.2,
+          "end": 31.44
+        },
+        {
+          "text": "word2",
+          "time": 31.44,
+          "end": 31.7
+        },
+        {
+          "text": "word3",
+          "time": 31.7,
+          "end": 32.08
+        },
+        {
+          "text": "word4",
+          "time": 32.08,
+          "end": 32.24
+        },
+        {
+          "text": "word5",
+          "time": 32.24,
+          "end": 32.46
+        },
+        {
+          "text": "word6",
+          "time": 32.5
+        },
+        {
+          "text": "word7",
+          "time": 32.76,
+          "end": 33.18
+        }
+      ]
+    },
+    "boundary": 32.74,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ]
+  },
+  {
+    "id": "reported-12",
+    "line": {
+      "time": 0.0,
+      "text": "word0 word1 word2 word3 word4",
+      "words": [
+        {
+          "text": "word0",
+          "time": 0.0,
+          "end": 11.0
+        },
+        {
+          "text": "word1",
+          "time": 11.0,
+          "end": 14.6
+        },
+        {
+          "text": "word2",
+          "time": 14.6,
+          "end": 15.26
+        },
+        {
+          "text": "word3",
+          "time": 15.26,
+          "end": 15.42
+        },
+        {
+          "text": "word4",
+          "time": 25.0,
+          "end": 25.06
+        }
+      ]
+    },
+    "boundary": 25.06,
+    "usable": [
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "id": "reported-13",
+    "line": {
+      "time": 40.44,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 40.44,
+          "end": 41.0
+        },
+        {
+          "text": "word1",
+          "time": 41.0,
+          "end": 41.16
+        },
+        {
+          "text": "word2",
+          "time": 41.16,
+          "end": 41.8
+        },
+        {
+          "text": "word3",
+          "time": 41.8,
+          "end": 42.26
+        },
+        {
+          "text": "word4",
+          "time": 42.26,
+          "end": 43.38
+        },
+        {
+          "text": "word5",
+          "time": 43.38,
+          "end": 43.62
+        },
+        {
+          "text": "word6",
+          "time": 43.62,
+          "end": 44.3
+        },
+        {
+          "text": "word7",
+          "time": 44.3,
+          "end": 44.6
+        },
+        {
+          "text": "word8",
+          "time": 44.6,
+          "end": 44.62
+        }
+      ]
+    },
+    "boundary": 44.16,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ]
+  },
+  {
+    "id": "reported-14",
+    "line": {
+      "time": 69.8,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 69.8,
+          "end": 70.42
+        },
+        {
+          "text": "word1",
+          "time": 70.42,
+          "end": 70.86
+        },
+        {
+          "text": "word2",
+          "time": 70.86,
+          "end": 71.36
+        },
+        {
+          "text": "word3",
+          "time": 71.36,
+          "end": 71.92
+        },
+        {
+          "text": "word4",
+          "time": 71.92,
+          "end": 73.04
+        },
+        {
+          "text": "word5",
+          "time": 73.04,
+          "end": 73.32
+        },
+        {
+          "text": "word6",
+          "time": 73.32,
+          "end": 73.68
+        },
+        {
+          "text": "word7",
+          "time": 73.68,
+          "end": 74.14
+        },
+        {
+          "text": "word8",
+          "time": 74.14,
+          "end": 74.16
+        }
+      ]
+    },
+    "boundary": 74.06,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  {
+    "id": "reported-15",
+    "line": {
+      "time": 114.63,
+      "text": "word0 word1 word2 word3 word4 word5 word6",
+      "words": [
+        {
+          "text": "word0",
+          "time": 114.63,
+          "end": 115.03
+        },
+        {
+          "text": "word1",
+          "time": 115.03,
+          "end": 117.47
+        },
+        {
+          "text": "word2",
+          "time": 117.47,
+          "end": 117.83
+        },
+        {
+          "text": "word3",
+          "time": 117.83,
+          "end": 118.45
+        },
+        {
+          "text": "word4",
+          "time": 118.45,
+          "end": 118.95
+        },
+        {
+          "text": "word5",
+          "time": 118.95,
+          "end": 119.33
+        },
+        {
+          "text": "word6",
+          "time": 118.89,
+          "end": 120.05
+        }
+      ]
+    },
+    "boundary": 120.05,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "id": "reported-16",
+    "line": {
+      "time": 69.16,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14",
+      "words": [
+        {
+          "text": "word0",
+          "time": 69.16,
+          "end": 70.3
+        },
+        {
+          "text": "word1",
+          "time": 70.3,
+          "end": 70.7
+        },
+        {
+          "text": "word2",
+          "time": 70.7,
+          "end": 71.18
+        },
+        {
+          "text": "word3",
+          "time": 71.18,
+          "end": 71.42
+        },
+        {
+          "text": "word4",
+          "time": 71.42,
+          "end": 71.88
+        },
+        {
+          "text": "word5",
+          "time": 71.88,
+          "end": 72.32
+        },
+        {
+          "text": "word6",
+          "time": 72.32,
+          "end": 72.38
+        },
+        {
+          "text": "word7",
+          "time": 72.35
+        },
+        {
+          "text": "word8",
+          "time": 72.38,
+          "end": 72.78
+        },
+        {
+          "text": "word9",
+          "time": 72.78,
+          "end": 73.16
+        },
+        {
+          "text": "word10",
+          "time": 73.16,
+          "end": 73.56
+        },
+        {
+          "text": "word11",
+          "time": 73.56,
+          "end": 73.78
+        },
+        {
+          "text": "word12",
+          "time": 73.78,
+          "end": 74.2
+        },
+        {
+          "text": "word13",
+          "time": 74.2,
+          "end": 74.52
+        },
+        {
+          "text": "word14",
+          "time": 74.52,
+          "end": 75.0
+        }
+      ]
+    },
+    "boundary": 74.14,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ]
+  },
+  {
+    "id": "reported-17",
+    "line": {
+      "time": 91.78,
+      "text": "word0 word1 word2",
+      "words": [
+        {
+          "text": "word0",
+          "time": 91.78,
+          "end": 92.2
+        },
+        {
+          "text": "word1",
+          "time": 92.2,
+          "end": 92.56
+        },
+        {
+          "text": "word2",
+          "time": 92.56,
+          "end": 93.08
+        }
+      ]
+    },
+    "boundary": 92.1,
+    "usable": [
+      0
+    ]
+  },
+  {
+    "id": "reported-18",
+    "line": {
+      "time": 95.06,
+      "text": "word0 word1 word2",
+      "words": [
+        {
+          "text": "word0",
+          "time": 95.06,
+          "end": 95.5
+        },
+        {
+          "text": "word1",
+          "time": 95.5,
+          "end": 95.88
+        },
+        {
+          "text": "word2",
+          "time": 95.88,
+          "end": 96.08
+        }
+      ]
+    },
+    "boundary": 95.12,
+    "usable": [
+      0
+    ]
+  },
+  {
+    "id": "reported-19",
+    "line": {
+      "time": 60.84,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 60.84,
+          "end": 61.32
+        },
+        {
+          "text": "word1",
+          "time": 61.46,
+          "end": 78.32
+        }
+      ]
+    },
+    "boundary": 78.32,
+    "usable": []
+  },
+  {
+    "id": "reported-20",
+    "line": {
+      "time": 105.78,
+      "text": "word0 word1 word2 word3 word4 word5",
+      "words": [
+        {
+          "text": "word0",
+          "time": 105.78,
+          "end": 106.28
+        },
+        {
+          "text": "word1",
+          "time": 106.28,
+          "end": 107.96
+        },
+        {
+          "text": "word2",
+          "time": 103.94,
+          "end": 104.26
+        },
+        {
+          "text": "word3",
+          "time": 104.26,
+          "end": 105.82
+        },
+        {
+          "text": "word4",
+          "time": 105.82,
+          "end": 107.28
+        },
+        {
+          "text": "word5",
+          "time": 107.28,
+          "end": 108.02
+        }
+      ]
+    },
+    "boundary": 131.52,
+    "usable": [
+      0,
+      5
+    ]
+  },
+  {
+    "id": "reported-21",
+    "line": {
+      "time": 161.52,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 161.52,
+          "end": 172.2
+        },
+        {
+          "text": "word1",
+          "time": 172.2,
+          "end": 178.64
+        }
+      ]
+    },
+    "boundary": 191.52,
+    "usable": [
+      1
+    ]
+  },
+  {
+    "id": "reported-22",
+    "line": {
+      "time": 198.7,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 198.7,
+          "end": 203.78
+        },
+        {
+          "text": "word1",
+          "time": 194.51,
+          "end": 197.05
+        },
+        {
+          "text": "word2",
+          "time": 197.05,
+          "end": 198.15
+        },
+        {
+          "text": "word3",
+          "time": 198.15,
+          "end": 202.29
+        },
+        {
+          "text": "word4",
+          "time": 202.29,
+          "end": 203.65
+        },
+        {
+          "text": "word5",
+          "time": 203.65,
+          "end": 205.11
+        },
+        {
+          "text": "word6",
+          "time": 205.11,
+          "end": 206.59
+        },
+        {
+          "text": "word7",
+          "time": 206.59,
+          "end": 207.77
+        },
+        {
+          "text": "word8",
+          "time": 207.77,
+          "end": 208.63
+        }
+      ]
+    },
+    "boundary": 224.51,
+    "usable": [
+      0,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  {
+    "id": "reported-23",
+    "line": {
+      "time": 224.51,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 224.51,
+          "end": 227.31
+        },
+        {
+          "text": "word1",
+          "time": 227.31,
+          "end": 254.49
+        }
+      ]
+    },
+    "boundary": 254.51,
+    "usable": []
+  },
+  {
+    "id": "reported-24",
+    "line": {
+      "time": 126.32,
+      "text": "word0 word1 word2 word3 word4 word5 word6",
+      "words": [
+        {
+          "text": "word0",
+          "time": 126.32,
+          "end": 127.2
+        },
+        {
+          "text": "word1",
+          "time": 127.2,
+          "end": 127.52
+        },
+        {
+          "text": "word2",
+          "time": 127.46
+        },
+        {
+          "text": "word3",
+          "time": 127.72,
+          "end": 128.54
+        },
+        {
+          "text": "word4",
+          "time": 171.88,
+          "end": 172.86
+        },
+        {
+          "text": "word5",
+          "time": 172.86,
+          "end": 173.1
+        },
+        {
+          "text": "word6",
+          "time": 173.1,
+          "end": 173.5
+        }
+      ]
+    },
+    "boundary": 131.22,
+    "usable": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "id": "reported-25",
+    "line": {
+      "time": 30.61,
+      "text": "word0 word1 word2 word3 word4 word5",
+      "words": [
+        {
+          "text": "word0",
+          "time": 30.61
+        },
+        {
+          "text": "word1",
+          "time": 31.1
+        },
+        {
+          "text": "word2",
+          "time": 31.58
+        },
+        {
+          "text": "word3",
+          "time": 32.07
+        },
+        {
+          "text": "word4",
+          "time": 32.56,
+          "end": 32.88
+        },
+        {
+          "text": "word5",
+          "time": 32.88,
+          "end": 33.2
+        }
+      ]
+    },
+    "boundary": 32.76,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "id": "reported-26",
+    "line": {
+      "time": 237.68,
+      "text": "word0 word1 word2 word3 word4",
+      "words": [
+        {
+          "text": "word0",
+          "time": 237.68,
+          "end": 237.92
+        },
+        {
+          "text": "word1",
+          "time": 237.92,
+          "end": 238.44
+        },
+        {
+          "text": "word2",
+          "time": 238.47
+        },
+        {
+          "text": "word3",
+          "time": 239.02,
+          "end": 239.62
+        },
+        {
+          "text": "word4",
+          "time": 239.62,
+          "end": 239.86
+        }
+      ]
+    },
+    "boundary": 239.44,
+    "usable": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "id": "reported-27",
+    "line": {
+      "time": 239.44,
+      "text": "word0 word1 word2 word3",
+      "words": [
+        {
+          "text": "word0",
+          "time": 239.44,
+          "end": 240.54
+        },
+        {
+          "text": "word1",
+          "time": 240.36
+        },
+        {
+          "text": "word2",
+          "time": 241.28,
+          "end": 241.78
+        },
+        {
+          "text": "word3",
+          "time": 241.78,
+          "end": 242.04
+        }
+      ]
+    },
+    "boundary": 241.68,
+    "usable": [
+      0,
+      1,
+      2
+    ]
+  },
+  {
+    "id": "reported-28",
+    "line": {
+      "time": 230.24,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 230.24,
+          "end": 230.6
+        },
+        {
+          "text": "word1",
+          "time": 230.6,
+          "end": 230.94
+        }
+      ]
+    },
+    "boundary": 230.493,
+    "usable": [
+      0
+    ]
+  },
+  {
+    "id": "reported-29",
+    "line": {
+      "time": 0.0,
+      "text": "word0 word1 word2 word3 word4 word5",
+      "words": [
+        {
+          "text": "word0",
+          "time": 0.0,
+          "end": 3.36
+        },
+        {
+          "text": "word1",
+          "time": 3.36,
+          "end": 20.14
+        },
+        {
+          "text": "word2",
+          "time": 20.14,
+          "end": 20.98
+        },
+        {
+          "text": "word3",
+          "time": 20.98,
+          "end": 23.32
+        },
+        {
+          "text": "word4",
+          "time": 23.32,
+          "end": 23.86
+        },
+        {
+          "text": "word5",
+          "time": 23.86,
+          "end": 25.68
+        }
+      ]
+    },
+    "boundary": 27.48,
+    "usable": [
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "id": "reported-30",
+    "line": {
+      "time": 178.1,
+      "text": "word0",
+      "words": [
+        {
+          "text": "word0",
+          "time": 178.1,
+          "end": 198.1
+        }
+      ]
+    },
+    "boundary": 203.72,
+    "usable": []
+  },
+  {
+    "id": "reported-31",
+    "line": {
+      "time": 65.24,
+      "text": "word0 word1 word2 word3 word4 word5 word6",
+      "words": [
+        {
+          "text": "word0",
+          "time": 65.24,
+          "end": 65.54
+        },
+        {
+          "text": "word1",
+          "time": 65.54,
+          "end": 66.0
+        },
+        {
+          "text": "word2",
+          "time": 66.0,
+          "end": 66.36
+        },
+        {
+          "text": "word3",
+          "time": 66.36,
+          "end": 66.66
+        },
+        {
+          "text": "word4",
+          "time": 66.66,
+          "end": 66.84
+        },
+        {
+          "text": "word5",
+          "time": 66.84,
+          "end": 67.22
+        },
+        {
+          "text": "word6",
+          "time": 66.8,
+          "end": 67.44
+        }
+      ]
+    },
+    "boundary": 67.44,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "id": "reported-32",
+    "line": {
+      "time": 71.1,
+      "text": "word0 word1 word2 word3 word4 word5 word6",
+      "words": [
+        {
+          "text": "word0",
+          "time": 71.1,
+          "end": 71.44
+        },
+        {
+          "text": "word1",
+          "time": 71.44,
+          "end": 71.72
+        },
+        {
+          "text": "word2",
+          "time": 71.72,
+          "end": 72.14
+        },
+        {
+          "text": "word3",
+          "time": 72.14,
+          "end": 72.44
+        },
+        {
+          "text": "word4",
+          "time": 72.44,
+          "end": 72.96
+        },
+        {
+          "text": "word5",
+          "time": 72.96,
+          "end": 73.12
+        },
+        {
+          "text": "word6",
+          "time": 72.72,
+          "end": 73.44
+        }
+      ]
+    },
+    "boundary": 73.44,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "id": "reported-33",
+    "line": {
+      "time": 77.04,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 77.04,
+          "end": 77.34
+        },
+        {
+          "text": "word1",
+          "time": 77.34,
+          "end": 77.52
+        },
+        {
+          "text": "word2",
+          "time": 77.52,
+          "end": 77.84
+        },
+        {
+          "text": "word3",
+          "time": 77.84,
+          "end": 78.1
+        },
+        {
+          "text": "word4",
+          "time": 78.1,
+          "end": 78.44
+        },
+        {
+          "text": "word5",
+          "time": 78.44,
+          "end": 78.7
+        },
+        {
+          "text": "word6",
+          "time": 78.7,
+          "end": 78.88
+        },
+        {
+          "text": "word7",
+          "time": 78.88,
+          "end": 79.18
+        },
+        {
+          "text": "word8",
+          "time": 78.76,
+          "end": 79.42
+        }
+      ]
+    },
+    "boundary": 79.42,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ]
+  },
+  {
+    "id": "reported-34",
+    "line": {
+      "time": 129.86,
+      "text": "word0 word1 word2 word3 word4 word5 word6",
+      "words": [
+        {
+          "text": "word0",
+          "time": 129.86,
+          "end": 130.08
+        },
+        {
+          "text": "word1",
+          "time": 130.08,
+          "end": 130.24
+        },
+        {
+          "text": "word2",
+          "time": 130.24,
+          "end": 130.5
+        },
+        {
+          "text": "word3",
+          "time": 130.5,
+          "end": 130.62
+        },
+        {
+          "text": "word4",
+          "time": 130.62,
+          "end": 130.82
+        },
+        {
+          "text": "word5",
+          "time": 130.82,
+          "end": 130.98
+        },
+        {
+          "text": "word6",
+          "time": 130.98,
+          "end": 131.26
+        }
+      ]
+    },
+    "boundary": 130.72,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "id": "reported-35",
+    "line": {
+      "time": 151.64,
+      "text": "word0 word1 word2 word3 word4 word5",
+      "words": [
+        {
+          "text": "word0",
+          "time": 151.64,
+          "end": 152.02
+        },
+        {
+          "text": "word1",
+          "time": 152.02,
+          "end": 152.2
+        },
+        {
+          "text": "word2",
+          "time": 152.2,
+          "end": 152.44
+        },
+        {
+          "text": "word3",
+          "time": 152.44,
+          "end": 152.62
+        },
+        {
+          "text": "word4",
+          "time": 152.62,
+          "end": 152.92
+        },
+        {
+          "text": "word5",
+          "time": 152.56,
+          "end": 153.32
+        }
+      ]
+    },
+    "boundary": 153.32,
+    "usable": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "id": "reported-36",
+    "line": {
+      "time": 193.88,
+      "text": "word0 word1 word2 word3 word4",
+      "words": [
+        {
+          "text": "word0",
+          "time": 193.88,
+          "end": 194.14
+        },
+        {
+          "text": "word1",
+          "time": 194.14,
+          "end": 195.54
+        },
+        {
+          "text": "word2",
+          "time": 195.54,
+          "end": 197.42
+        },
+        {
+          "text": "word3",
+          "time": 197.42,
+          "end": 197.82
+        },
+        {
+          "text": "word4",
+          "time": 197.32,
+          "end": 198.8
+        }
+      ]
+    },
+    "boundary": 198.8,
+    "usable": [
+      0,
+      1,
+      2
+    ]
+  },
+  {
+    "id": "reported-37",
+    "line": {
+      "time": 82.16,
+      "text": "word0 word1 word2 word3 word4",
+      "words": [
+        {
+          "text": "word0",
+          "time": 82.16,
+          "end": 83.14
+        },
+        {
+          "text": "word1",
+          "time": 83.14,
+          "end": 83.8
+        },
+        {
+          "text": "word2",
+          "time": 83.8,
+          "end": 84.58
+        },
+        {
+          "text": "word3",
+          "time": 84.58,
+          "end": 85.1
+        },
+        {
+          "text": "word4",
+          "time": 84.5,
+          "end": 86.74
+        }
+      ]
+    },
+    "boundary": 86.74,
+    "usable": [
+      0,
+      1,
+      2
+    ]
+  },
+  {
+    "id": "reported-38",
+    "line": {
+      "time": 130.16,
+      "text": "word0 word1 word2 word3 word4 word5",
+      "words": [
+        {
+          "text": "word0",
+          "time": 130.16,
+          "end": 146.0
+        },
+        {
+          "text": "word1",
+          "time": 146.0,
+          "end": 147.0
+        },
+        {
+          "text": "word2",
+          "time": 147.0,
+          "end": 147.82
+        },
+        {
+          "text": "word3",
+          "time": 147.82,
+          "end": 148.58
+        },
+        {
+          "text": "word4",
+          "time": 148.58,
+          "end": 149.18
+        },
+        {
+          "text": "word5",
+          "time": 149.6,
+          "end": 150.76
+        }
+      ]
+    },
+    "boundary": 150.76,
+    "usable": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "id": "reported-39",
+    "line": {
+      "time": 163.78,
+      "text": "word0 word1 word2 word3",
+      "words": [
+        {
+          "text": "word0",
+          "time": 163.78,
+          "end": 164.22
+        },
+        {
+          "text": "word1",
+          "time": 164.22,
+          "end": 174.64
+        },
+        {
+          "text": "word2",
+          "time": 174.64,
+          "end": 175.24
+        },
+        {
+          "text": "word3",
+          "time": 175.24,
+          "end": 176.48
+        }
+      ]
+    },
+    "boundary": 177.12,
+    "usable": [
+      2,
+      3
+    ]
+  },
+  {
+    "id": "reported-40",
+    "line": {
+      "time": 52.3,
+      "text": "word0 word1 word2 word3 word4",
+      "words": [
+        {
+          "text": "word0",
+          "time": 52.3,
+          "end": 52.8
+        },
+        {
+          "text": "word1",
+          "time": 52.8,
+          "end": 53.18
+        },
+        {
+          "text": "word2",
+          "time": 53.18,
+          "end": 53.52
+        },
+        {
+          "text": "word3",
+          "time": 53.52,
+          "end": 53.84
+        },
+        {
+          "text": "word4",
+          "time": 53.5,
+          "end": 54.54
+        }
+      ]
+    },
+    "boundary": 54.54,
+    "usable": [
+      0,
+      1,
+      2
+    ]
+  },
+  {
+    "id": "reported-41",
+    "line": {
+      "time": 237.51,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 237.51,
+          "end": 238.51
+        },
+        {
+          "text": "word1",
+          "time": 238.51,
+          "end": 267.49
+        }
+      ]
+    },
+    "boundary": 245.833,
+    "usable": []
+  },
+  {
+    "id": "reported-42",
+    "line": {
+      "time": 79.24,
+      "text": "word0 word1 word2 word3",
+      "words": [
+        {
+          "text": "word0",
+          "time": 79.24,
+          "end": 79.7
+        },
+        {
+          "text": "word1",
+          "time": 79.7,
+          "end": 80.92
+        },
+        {
+          "text": "word2",
+          "time": 80.92,
+          "end": 81.32
+        },
+        {
+          "text": "word3",
+          "time": 80.86,
+          "end": 82.02
+        }
+      ]
+    },
+    "boundary": 82.02,
+    "usable": [
+      0,
+      1
+    ]
+  },
+  {
+    "id": "reported-43",
+    "line": {
+      "time": 147.9,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7",
+      "words": [
+        {
+          "text": "word0",
+          "time": 147.9,
+          "end": 148.58
+        },
+        {
+          "text": "word1",
+          "time": 148.58,
+          "end": 150.46
+        },
+        {
+          "text": "word2",
+          "time": 150.46,
+          "end": 150.48
+        },
+        {
+          "text": "word3",
+          "time": 150.48,
+          "end": 150.92
+        },
+        {
+          "text": "word4",
+          "time": 150.92,
+          "end": 151.44
+        },
+        {
+          "text": "word5",
+          "time": 151.44,
+          "end": 152.6
+        },
+        {
+          "text": "word6",
+          "time": 152.6,
+          "end": 153.04
+        },
+        {
+          "text": "word7",
+          "time": 152.58,
+          "end": 153.72
+        }
+      ]
+    },
+    "boundary": 153.72,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "id": "reported-44",
+    "line": {
+      "time": 155.56,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 155.56,
+          "end": 164.4
+        },
+        {
+          "text": "word1",
+          "time": 164.4,
+          "end": 164.8
+        }
+      ]
+    },
+    "boundary": 156.03,
+    "usable": []
+  },
+  {
+    "id": "reported-45",
+    "line": {
+      "time": 205.73,
+      "text": "word0 word1 word2 word3 word4 word5",
+      "words": [
+        {
+          "text": "word0",
+          "time": 205.73,
+          "end": 206.19
+        },
+        {
+          "text": "word1",
+          "time": 206.19,
+          "end": 206.27
+        },
+        {
+          "text": "word2",
+          "time": 206.27,
+          "end": 206.87
+        },
+        {
+          "text": "word3",
+          "time": 206.87,
+          "end": 208.03
+        },
+        {
+          "text": "word4",
+          "time": 208.03,
+          "end": 208.61
+        },
+        {
+          "text": "word5",
+          "time": 207.95,
+          "end": 209.73
+        }
+      ]
+    },
+    "boundary": 209.73,
+    "usable": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "id": "reported-46",
+    "line": {
+      "time": 291.17,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 291.17,
+          "end": 294.35
+        },
+        {
+          "text": "word1",
+          "time": 294.35,
+          "end": 321.15
+        }
+      ]
+    },
+    "boundary": 318.534,
+    "usable": []
+  },
+  {
+    "id": "reported-47",
+    "line": {
+      "time": 0.0,
+      "text": "word0 word1 word2 word3 word4",
+      "words": [
+        {
+          "text": "word0",
+          "time": 0.0,
+          "end": 0.84
+        },
+        {
+          "text": "word1",
+          "time": 0.84,
+          "end": 16.06
+        },
+        {
+          "text": "word2",
+          "time": 16.06,
+          "end": 18.16
+        },
+        {
+          "text": "word3",
+          "time": 18.16,
+          "end": 18.4
+        },
+        {
+          "text": "word4",
+          "time": 18.4,
+          "end": 18.98
+        }
+      ]
+    },
+    "boundary": 19.62,
+    "usable": [
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "id": "reported-48",
+    "line": {
+      "time": 159.21,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 159.21,
+          "end": 161.11
+        },
+        {
+          "text": "word1",
+          "time": 161.11,
+          "end": 161.45
+        },
+        {
+          "text": "word2",
+          "time": 161.45,
+          "end": 161.67
+        },
+        {
+          "text": "word3",
+          "time": 161.67,
+          "end": 163.35
+        },
+        {
+          "text": "word4",
+          "time": 163.35,
+          "end": 163.91
+        },
+        {
+          "text": "word5",
+          "time": 163.91,
+          "end": 164.57
+        },
+        {
+          "text": "word6",
+          "time": 164.57,
+          "end": 165.23
+        },
+        {
+          "text": "word7",
+          "time": 165.23,
+          "end": 165.79
+        },
+        {
+          "text": "word8",
+          "time": 165.79,
+          "end": 166.09
+        }
+      ]
+    },
+    "boundary": 165.79,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  {
+    "id": "reported-49",
+    "line": {
+      "time": 203.91,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 203.91,
+          "end": 204.25
+        },
+        {
+          "text": "word1",
+          "time": 204.25,
+          "end": 204.27
+        }
+      ]
+    },
+    "boundary": 204.162,
+    "usable": [
+      0
+    ]
+  },
+  {
+    "id": "reported-50",
+    "line": {
+      "time": 80.42,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 80.42,
+          "end": 80.7
+        },
+        {
+          "text": "word1",
+          "time": 80.7,
+          "end": 81.1
+        },
+        {
+          "text": "word2",
+          "time": 81.1,
+          "end": 81.76
+        },
+        {
+          "text": "word3",
+          "time": 81.76,
+          "end": 82.1
+        },
+        {
+          "text": "word4",
+          "time": 82.1,
+          "end": 82.42
+        },
+        {
+          "text": "word5",
+          "time": 82.42,
+          "end": 82.84
+        },
+        {
+          "text": "word6",
+          "time": 82.84,
+          "end": 83.12
+        },
+        {
+          "text": "word7",
+          "time": 83.12,
+          "end": 83.38
+        },
+        {
+          "text": "word8",
+          "time": 83.38,
+          "end": 83.72
+        }
+      ]
+    },
+    "boundary": 83.34,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  {
+    "id": "reported-51",
+    "line": {
+      "time": 120.54,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 120.54,
+          "end": 120.72
+        },
+        {
+          "text": "word1",
+          "time": 114.23,
+          "end": 121.37
+        },
+        {
+          "text": "word2",
+          "time": 121.37,
+          "end": 121.63
+        },
+        {
+          "text": "word3",
+          "time": 121.63,
+          "end": 121.97
+        },
+        {
+          "text": "word4",
+          "time": 121.97,
+          "end": 122.81
+        },
+        {
+          "text": "word5",
+          "time": 122.81,
+          "end": 124.53
+        },
+        {
+          "text": "word6",
+          "time": 124.53,
+          "end": 125.11
+        },
+        {
+          "text": "word7",
+          "time": 125.11,
+          "end": 125.61
+        },
+        {
+          "text": "word8",
+          "time": 125.61,
+          "end": 125.89
+        }
+      ]
+    },
+    "boundary": 125.89,
+    "usable": [
+      0,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  {
+    "id": "reported-52",
+    "line": {
+      "time": 192.77,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 192.77,
+          "end": 198.39
+        },
+        {
+          "text": "word1",
+          "time": 198.39,
+          "end": 222.75
+        }
+      ]
+    },
+    "boundary": 222.77,
+    "usable": []
+  },
+  {
+    "id": "reported-53",
+    "line": {
+      "time": 120.44,
+      "text": "word0 word1 word2 word3 word4 word5 word6",
+      "words": [
+        {
+          "text": "word0",
+          "time": 120.44,
+          "end": 120.74
+        },
+        {
+          "text": "word1",
+          "time": 120.74,
+          "end": 120.9
+        },
+        {
+          "text": "word2",
+          "time": 120.9,
+          "end": 121.32
+        },
+        {
+          "text": "word3",
+          "time": 121.32,
+          "end": 121.74
+        },
+        {
+          "text": "word4",
+          "time": 121.74,
+          "end": 122.12
+        },
+        {
+          "text": "word5",
+          "time": 122.12,
+          "end": 122.58
+        },
+        {
+          "text": "word6",
+          "time": 122.58,
+          "end": 122.88
+        }
+      ]
+    },
+    "boundary": 122.54,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "id": "reported-54",
+    "line": {
+      "time": 124.73,
+      "text": "word0 word1 word2 word3 word4 word5",
+      "words": [
+        {
+          "text": "word0",
+          "time": 124.73
+        },
+        {
+          "text": "word1",
+          "time": 139.72,
+          "end": 140.06
+        },
+        {
+          "text": "word2",
+          "time": 140.06,
+          "end": 140.88
+        },
+        {
+          "text": "word3",
+          "time": 140.88,
+          "end": 141.12
+        },
+        {
+          "text": "word4",
+          "time": 141.12,
+          "end": 141.64
+        },
+        {
+          "text": "word5",
+          "time": 141.64,
+          "end": 141.96
+        }
+      ]
+    },
+    "boundary": 141.62,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "id": "reported-55",
+    "line": {
+      "time": 125.6,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 125.6,
+          "end": 126.02
+        },
+        {
+          "text": "word1",
+          "time": 126.02,
+          "end": 126.4
+        },
+        {
+          "text": "word2",
+          "time": 126.41,
+          "end": 126.79
+        },
+        {
+          "text": "word3",
+          "time": 126.79,
+          "end": 127.09
+        },
+        {
+          "text": "word4",
+          "time": 127.09,
+          "end": 127.43
+        },
+        {
+          "text": "word5",
+          "time": 127.43,
+          "end": 127.79
+        },
+        {
+          "text": "word6",
+          "time": 127.41,
+          "end": 132.45
+        },
+        {
+          "text": "word7",
+          "time": 132.45,
+          "end": 132.59
+        },
+        {
+          "text": "word8",
+          "time": 132.59,
+          "end": 132.85
+        }
+      ]
+    },
+    "boundary": 132.85,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      7,
+      8
+    ]
+  },
+  {
+    "id": "reported-56",
+    "line": {
+      "time": 161.45,
+      "text": "word0 word1 word2 word3 word4 word5 word6",
+      "words": [
+        {
+          "text": "word0",
+          "time": 161.45,
+          "end": 161.71
+        },
+        {
+          "text": "word1",
+          "time": 161.71,
+          "end": 162.13
+        },
+        {
+          "text": "word2",
+          "time": 162.13,
+          "end": 162.35
+        },
+        {
+          "text": "word3",
+          "time": 162.35,
+          "end": 162.93
+        },
+        {
+          "text": "word4",
+          "time": 162.93,
+          "end": 163.53
+        },
+        {
+          "text": "word5",
+          "time": 163.53,
+          "end": 163.89
+        },
+        {
+          "text": "word6",
+          "time": 163.49,
+          "end": 164.29
+        }
+      ]
+    },
+    "boundary": 164.29,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "id": "reported-57",
+    "line": {
+      "time": 164.29,
+      "text": "word0 word1 word2 word3",
+      "words": [
+        {
+          "text": "word0",
+          "time": 164.29,
+          "end": 164.67
+        },
+        {
+          "text": "word1",
+          "time": 164.67,
+          "end": 165.13
+        },
+        {
+          "text": "word2",
+          "time": 165.13,
+          "end": 165.53
+        },
+        {
+          "text": "word3",
+          "time": 165.03,
+          "end": 168.55
+        }
+      ]
+    },
+    "boundary": 168.55,
+    "usable": [
+      0,
+      1
+    ]
+  },
+  {
+    "id": "reported-58",
+    "line": {
+      "time": 184.35,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 184.35,
+          "end": 184.79
+        },
+        {
+          "text": "word1",
+          "time": 184.79,
+          "end": 185.25
+        },
+        {
+          "text": "word2",
+          "time": 185.25,
+          "end": 185.75
+        },
+        {
+          "text": "word3",
+          "time": 185.75,
+          "end": 186.01
+        },
+        {
+          "text": "word4",
+          "time": 185.55,
+          "end": 188.61
+        },
+        {
+          "text": "word5",
+          "time": 188.61,
+          "end": 191.71
+        },
+        {
+          "text": "word6",
+          "time": 191.71,
+          "end": 192.09
+        },
+        {
+          "text": "word7",
+          "time": 192.09,
+          "end": 192.61
+        },
+        {
+          "text": "word8",
+          "time": 192.61,
+          "end": 192.91
+        }
+      ]
+    },
+    "boundary": 193.47,
+    "usable": [
+      0,
+      1,
+      2,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  {
+    "id": "reported-59",
+    "line": {
+      "time": 193.47,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 193.47,
+          "end": 193.75
+        },
+        {
+          "text": "word1",
+          "time": 193.75,
+          "end": 194.15
+        },
+        {
+          "text": "word2",
+          "time": 194.15,
+          "end": 194.53
+        },
+        {
+          "text": "word3",
+          "time": 194.71,
+          "end": 195.43
+        },
+        {
+          "text": "word4",
+          "time": 195.43,
+          "end": 195.81
+        },
+        {
+          "text": "word5",
+          "time": 195.81,
+          "end": 196.17
+        },
+        {
+          "text": "word6",
+          "time": 185.87,
+          "end": 186.89
+        },
+        {
+          "text": "word7",
+          "time": 186.89,
+          "end": 187.25
+        },
+        {
+          "text": "word8",
+          "time": 187.25,
+          "end": 187.69
+        }
+      ]
+    },
+    "boundary": 215.87,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "id": "reported-60",
+    "line": {
+      "time": 160.66,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7",
+      "words": [
+        {
+          "text": "word0",
+          "time": 160.66,
+          "end": 161.0
+        },
+        {
+          "text": "word1",
+          "time": 161.0,
+          "end": 161.12
+        },
+        {
+          "text": "word2",
+          "time": 161.12,
+          "end": 161.38
+        },
+        {
+          "text": "word3",
+          "time": 161.38,
+          "end": 161.74
+        },
+        {
+          "text": "word4",
+          "time": 161.74,
+          "end": 162.46
+        },
+        {
+          "text": "word5",
+          "time": 162.46,
+          "end": 162.74
+        },
+        {
+          "text": "word6",
+          "time": 162.74,
+          "end": 163.02
+        },
+        {
+          "text": "word7",
+          "time": 163.02,
+          "end": 163.32
+        }
+      ]
+    },
+    "boundary": 162.86,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ]
+  },
+  {
+    "id": "reported-61",
+    "line": {
+      "time": 175.38,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 175.38,
+          "end": 179.04
+        },
+        {
+          "text": "word1",
+          "time": 179.04,
+          "end": 205.36
+        }
+      ]
+    },
+    "boundary": 191.055,
+    "usable": []
+  },
+  {
+    "id": "reported-62",
+    "line": {
+      "time": 105.44,
+      "text": "word0 word1 word2 word3",
+      "words": [
+        {
+          "text": "word0",
+          "time": 105.44,
+          "end": 105.9
+        },
+        {
+          "text": "word1",
+          "time": 105.9,
+          "end": 106.62
+        },
+        {
+          "text": "word2",
+          "time": 113.02,
+          "end": 113.2
+        },
+        {
+          "text": "word3",
+          "time": 114.39
+        }
+      ]
+    },
+    "boundary": 112.775,
+    "usable": [
+      0,
+      1
+    ]
+  },
+  {
+    "id": "reported-63",
+    "line": {
+      "time": 187.31,
+      "text": "word0 word1 word2 word3",
+      "words": [
+        {
+          "text": "word0",
+          "time": 187.31
+        },
+        {
+          "text": "word1",
+          "time": 191.39
+        },
+        {
+          "text": "word2",
+          "time": 195.47
+        },
+        {
+          "text": "word3",
+          "time": 199.55
+        }
+      ]
+    },
+    "boundary": 199.505,
+    "usable": [
+      0,
+      1,
+      2
+    ]
+  },
+  {
+    "id": "reported-64",
+    "line": {
+      "time": 114.9,
+      "text": "word0 word1 word2",
+      "words": [
+        {
+          "text": "word0",
+          "time": 114.9,
+          "end": 117.2
+        },
+        {
+          "text": "word1",
+          "time": 117.2,
+          "end": 117.22
+        },
+        {
+          "text": "word2",
+          "time": 110.24,
+          "end": 111.02
+        }
+      ]
+    },
+    "boundary": 140.86,
+    "usable": [
+      0,
+      1
+    ]
+  },
+  {
+    "id": "reported-65",
+    "line": {
+      "time": 180.76,
+      "text": "word0 word1 word2 word3",
+      "words": [
+        {
+          "text": "word0",
+          "time": 180.76,
+          "end": 180.92
+        },
+        {
+          "text": "word1",
+          "time": 180.92,
+          "end": 181.36
+        },
+        {
+          "text": "word2",
+          "time": 181.36,
+          "end": 181.7
+        },
+        {
+          "text": "word3",
+          "time": 181.7,
+          "end": 182.06
+        }
+      ]
+    },
+    "boundary": 180.82,
+    "usable": [
+      0
+    ]
+  },
+  {
+    "id": "reported-66",
+    "line": {
+      "time": 58.26,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8 word9",
+      "words": [
+        {
+          "text": "word0",
+          "time": 58.26,
+          "end": 59.34
+        },
+        {
+          "text": "word1",
+          "time": 59.34,
+          "end": 59.54
+        },
+        {
+          "text": "word2",
+          "time": 59.54,
+          "end": 59.64
+        },
+        {
+          "text": "word3",
+          "time": 59.64,
+          "end": 60.1
+        },
+        {
+          "text": "word4",
+          "time": 60.18
+        },
+        {
+          "text": "word5",
+          "time": 60.72
+        },
+        {
+          "text": "word6",
+          "time": 61.26,
+          "end": 61.38
+        },
+        {
+          "text": "word7",
+          "time": 61.38,
+          "end": 61.7
+        },
+        {
+          "text": "word8",
+          "time": 61.7,
+          "end": 61.98
+        },
+        {
+          "text": "word9",
+          "time": 61.98,
+          "end": 62.14
+        }
+      ]
+    },
+    "boundary": 61.84,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  {
+    "id": "reported-67",
+    "line": {
+      "time": 203.11,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10",
+      "words": [
+        {
+          "text": "word0",
+          "time": 203.11,
+          "end": 203.25
+        },
+        {
+          "text": "word1",
+          "time": 203.25,
+          "end": 203.39
+        },
+        {
+          "text": "word2",
+          "time": 203.39,
+          "end": 203.63
+        },
+        {
+          "text": "word3",
+          "time": 203.63,
+          "end": 203.77
+        },
+        {
+          "text": "word4",
+          "time": 203.74
+        },
+        {
+          "text": "word5",
+          "time": 203.85
+        },
+        {
+          "text": "word6",
+          "time": 203.95,
+          "end": 204.11
+        },
+        {
+          "text": "word7",
+          "time": 204.11,
+          "end": 204.35
+        },
+        {
+          "text": "word8",
+          "time": 204.35,
+          "end": 204.61
+        },
+        {
+          "text": "word9",
+          "time": 204.61,
+          "end": 204.73
+        },
+        {
+          "text": "word10",
+          "time": 204.73,
+          "end": 205.01
+        }
+      ]
+    },
+    "boundary": 204.61,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  {
+    "id": "reported-68",
+    "line": {
+      "time": 88.01,
+      "text": "word0 word1 word2 word3 word4 word5",
+      "words": [
+        {
+          "text": "word0",
+          "time": 88.01,
+          "end": 90.39
+        },
+        {
+          "text": "word1",
+          "time": 90.39,
+          "end": 116.37
+        },
+        {
+          "text": "word2",
+          "time": 116.37,
+          "end": 116.91
+        },
+        {
+          "text": "word3",
+          "time": 116.91,
+          "end": 117.45
+        },
+        {
+          "text": "word4",
+          "time": 117.45,
+          "end": 117.89
+        },
+        {
+          "text": "word5",
+          "time": 117.99,
+          "end": 118.21
+        }
+      ]
+    },
+    "boundary": 118.21,
+    "usable": [
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "id": "reported-69",
+    "line": {
+      "time": 167.87,
+      "text": "word0 word1 word2 word3 word4",
+      "words": [
+        {
+          "text": "word0",
+          "time": 167.87,
+          "end": 172.97
+        },
+        {
+          "text": "word1",
+          "time": 172.97,
+          "end": 173.41
+        },
+        {
+          "text": "word2",
+          "time": 173.41,
+          "end": 173.89
+        },
+        {
+          "text": "word3",
+          "time": 173.89,
+          "end": 175.07
+        },
+        {
+          "text": "word4",
+          "time": 175.43,
+          "end": 192.99
+        }
+      ]
+    },
+    "boundary": 184.02,
+    "usable": []
+  },
+  {
+    "id": "reported-70",
+    "line": {
+      "time": 244.04,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 244.04,
+          "end": 245.42
+        },
+        {
+          "text": "word1",
+          "time": 245.42,
+          "end": 274.0
+        }
+      ]
+    },
+    "boundary": 252.052,
+    "usable": []
+  },
+  {
+    "id": "reported-71",
+    "line": {
+      "time": 0.0,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7",
+      "words": [
+        {
+          "text": "word0",
+          "time": 0.0,
+          "end": 19.12
+        },
+        {
+          "text": "word1",
+          "time": 19.12,
+          "end": 19.42
+        },
+        {
+          "text": "word2",
+          "time": 19.42,
+          "end": 19.7
+        },
+        {
+          "text": "word3",
+          "time": 19.7,
+          "end": 20.16
+        },
+        {
+          "text": "word4",
+          "time": 20.16,
+          "end": 24.5
+        },
+        {
+          "text": "word5",
+          "time": 24.5,
+          "end": 26.34
+        },
+        {
+          "text": "word6",
+          "time": 26.34,
+          "end": 26.94
+        },
+        {
+          "text": "word7",
+          "time": 27.1,
+          "end": 28.02
+        }
+      ]
+    },
+    "boundary": 28.02,
+    "usable": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  {
+    "id": "reported-72",
+    "line": {
+      "time": 56.56,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 56.56,
+          "end": 56.78
+        },
+        {
+          "text": "word1",
+          "time": 56.78,
+          "end": 57.66
+        },
+        {
+          "text": "word2",
+          "time": 57.66,
+          "end": 58.72
+        },
+        {
+          "text": "word3",
+          "time": 58.72,
+          "end": 59.18
+        },
+        {
+          "text": "word4",
+          "time": 59.18,
+          "end": 59.68
+        },
+        {
+          "text": "word5",
+          "time": 59.68,
+          "end": 60.14
+        },
+        {
+          "text": "word6",
+          "time": 60.14,
+          "end": 60.56
+        },
+        {
+          "text": "word7",
+          "time": 60.56,
+          "end": 60.78
+        },
+        {
+          "text": "word8",
+          "time": 60.36,
+          "end": 61.92
+        }
+      ]
+    },
+    "boundary": 61.92,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ]
+  },
+  {
+    "id": "reported-73",
+    "line": {
+      "time": 66.02,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7",
+      "words": [
+        {
+          "text": "word0",
+          "time": 66.02,
+          "end": 66.64
+        },
+        {
+          "text": "word1",
+          "time": 66.64,
+          "end": 67.06
+        },
+        {
+          "text": "word2",
+          "time": 67.06,
+          "end": 68.0
+        },
+        {
+          "text": "word3",
+          "time": 68.0,
+          "end": 68.66
+        },
+        {
+          "text": "word4",
+          "time": 68.66,
+          "end": 69.4
+        },
+        {
+          "text": "word5",
+          "time": 69.4,
+          "end": 69.72
+        },
+        {
+          "text": "word6",
+          "time": 69.72,
+          "end": 69.86
+        },
+        {
+          "text": "word7",
+          "time": 69.68,
+          "end": 70.82
+        }
+      ]
+    },
+    "boundary": 70.82,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "id": "reported-74",
+    "line": {
+      "time": 100.74,
+      "text": "word0 word1 word2 word3 word4 word5 word6",
+      "words": [
+        {
+          "text": "word0",
+          "time": 100.74,
+          "end": 101.94
+        },
+        {
+          "text": "word1",
+          "time": 91.52,
+          "end": 95.64
+        },
+        {
+          "text": "word2",
+          "time": 95.64,
+          "end": 110.86
+        },
+        {
+          "text": "word3",
+          "time": 110.86,
+          "end": 111.54
+        },
+        {
+          "text": "word4",
+          "time": 111.54,
+          "end": 115.86
+        },
+        {
+          "text": "word5",
+          "time": 115.86,
+          "end": 117.66
+        },
+        {
+          "text": "word6",
+          "time": 117.66,
+          "end": 118.3
+        }
+      ]
+    },
+    "boundary": 118.82,
+    "usable": [
+      3,
+      4,
+      5,
+      6
+    ]
+  },
+  {
+    "id": "reported-75",
+    "line": {
+      "time": 148.54,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 148.54,
+          "end": 162.24
+        },
+        {
+          "text": "word1",
+          "time": 162.24,
+          "end": 178.52
+        }
+      ]
+    },
+    "boundary": 178.54,
+    "usable": []
+  },
+  {
+    "id": "reported-76",
+    "line": {
+      "time": 89.14,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 89.14,
+          "end": 109.06
+        },
+        {
+          "text": "word1",
+          "time": 109.06,
+          "end": 110.08
+        },
+        {
+          "text": "word2",
+          "time": 110.08,
+          "end": 110.78
+        },
+        {
+          "text": "word3",
+          "time": 111.9,
+          "end": 112.24
+        },
+        {
+          "text": "word4",
+          "time": 112.24,
+          "end": 112.94
+        },
+        {
+          "text": "word5",
+          "time": 112.94,
+          "end": 113.52
+        },
+        {
+          "text": "word6",
+          "time": 113.52,
+          "end": 114.38
+        },
+        {
+          "text": "word7",
+          "time": 117.94,
+          "end": 118.66
+        },
+        {
+          "text": "word8",
+          "time": 118.66,
+          "end": 119.82
+        }
+      ]
+    },
+    "boundary": 119.82,
+    "usable": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  {
+    "id": "reported-77",
+    "line": {
+      "time": 187.22,
+      "text": "word0 word1 word2",
+      "words": [
+        {
+          "text": "word0",
+          "time": 187.22,
+          "end": 187.76
+        },
+        {
+          "text": "word1",
+          "time": 187.76,
+          "end": 187.98
+        },
+        {
+          "text": "word2",
+          "time": 187.54,
+          "end": 191.16
+        }
+      ]
+    },
+    "boundary": 191.16,
+    "usable": [
+      0
+    ]
+  },
+  {
+    "id": "reported-78",
+    "line": {
+      "time": 195.9,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 195.9,
+          "end": 196.86
+        },
+        {
+          "text": "word1",
+          "time": 196.86,
+          "end": 211.96
+        }
+      ]
+    },
+    "boundary": 221.829,
+    "usable": []
+  },
+  {
+    "id": "reported-79",
+    "line": {
+      "time": 0.0,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 0.0,
+          "end": 2.72
+        },
+        {
+          "text": "word1",
+          "time": 2.72,
+          "end": 20.92
+        },
+        {
+          "text": "word2",
+          "time": 20.92,
+          "end": 21.2
+        },
+        {
+          "text": "word3",
+          "time": 21.2,
+          "end": 21.46
+        },
+        {
+          "text": "word4",
+          "time": 21.46,
+          "end": 21.9
+        },
+        {
+          "text": "word5",
+          "time": 21.9,
+          "end": 22.5
+        },
+        {
+          "text": "word6",
+          "time": 22.5,
+          "end": 22.66
+        },
+        {
+          "text": "word7",
+          "time": 22.66,
+          "end": 23.12
+        },
+        {
+          "text": "word8",
+          "time": 23.12,
+          "end": 23.72
+        }
+      ]
+    },
+    "boundary": 23.72,
+    "usable": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  {
+    "id": "reported-80",
+    "line": {
+      "time": 135.41,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 135.41,
+          "end": 148.63
+        },
+        {
+          "text": "word1",
+          "time": 148.63,
+          "end": 165.39
+        }
+      ]
+    },
+    "boundary": 165.41,
+    "usable": []
+  },
+  {
+    "id": "reported-81",
+    "line": {
+      "time": 195.41,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 195.41,
+          "end": 198.51
+        },
+        {
+          "text": "word1",
+          "time": 198.51,
+          "end": 225.39
+        }
+      ]
+    },
+    "boundary": 219.734,
+    "usable": []
+  },
+  {
+    "id": "reported-82",
+    "line": {
+      "time": 363.28,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 363.28,
+          "end": 363.68
+        },
+        {
+          "text": "word1",
+          "time": 363.68,
+          "end": 364.58
+        },
+        {
+          "text": "word2",
+          "time": 364.58,
+          "end": 368.2
+        },
+        {
+          "text": "word3",
+          "time": 368.2,
+          "end": 368.72
+        },
+        {
+          "text": "word4",
+          "time": 368.72,
+          "end": 369.4
+        },
+        {
+          "text": "word5",
+          "time": 369.4,
+          "end": 369.94
+        },
+        {
+          "text": "word6",
+          "time": 369.94,
+          "end": 371.14
+        },
+        {
+          "text": "word7",
+          "time": 364.23,
+          "end": 365.13
+        },
+        {
+          "text": "word8",
+          "time": 365.13,
+          "end": 368.23
+        }
+      ]
+    },
+    "boundary": 368.23,
+    "usable": [
+      0,
+      1
+    ]
+  },
+  {
+    "id": "reported-83",
+    "line": {
+      "time": 424.21,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 424.21,
+          "end": 425.33
+        },
+        {
+          "text": "word1",
+          "time": 425.33,
+          "end": 454.19
+        }
+      ]
+    },
+    "boundary": 458.11,
+    "usable": []
+  },
+  {
+    "id": "reported-84",
+    "line": {
+      "time": 461.39,
+      "text": "word0 word1 word2 word3 word4",
+      "words": [
+        {
+          "text": "word0",
+          "time": 461.39,
+          "end": 462.89
+        },
+        {
+          "text": "word1",
+          "time": 462.89,
+          "end": 463.21
+        },
+        {
+          "text": "word2",
+          "time": 463.21,
+          "end": 463.69
+        },
+        {
+          "text": "word3",
+          "time": 463.69,
+          "end": 464.05
+        },
+        {
+          "text": "word4",
+          "time": 463.63,
+          "end": 464.75
+        }
+      ]
+    },
+    "boundary": 464.75,
+    "usable": [
+      0,
+      1,
+      2
+    ]
+  },
+  {
+    "id": "reported-85",
+    "line": {
+      "time": 470.07,
+      "text": "word0 word1 word2 word3 word4 word5 word6",
+      "words": [
+        {
+          "text": "word0",
+          "time": 470.07,
+          "end": 470.55
+        },
+        {
+          "text": "word1",
+          "time": 470.55,
+          "end": 470.81
+        },
+        {
+          "text": "word2",
+          "time": 470.81,
+          "end": 471.41
+        },
+        {
+          "text": "word3",
+          "time": 471.41,
+          "end": 471.95
+        },
+        {
+          "text": "word4",
+          "time": 471.95,
+          "end": 472.25
+        },
+        {
+          "text": "word5",
+          "time": 472.25,
+          "end": 472.67
+        },
+        {
+          "text": "word6",
+          "time": 472.21,
+          "end": 473.51
+        }
+      ]
+    },
+    "boundary": 473.51,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "id": "reported-86",
+    "line": {
+      "time": 482.11,
+      "text": "word0 word1 word2",
+      "words": [
+        {
+          "text": "word0",
+          "time": 482.11,
+          "end": 482.35
+        },
+        {
+          "text": "word1",
+          "time": 482.35,
+          "end": 483.87
+        },
+        {
+          "text": "word2",
+          "time": 483.87,
+          "end": 483.89
+        }
+      ]
+    },
+    "boundary": 483.87,
+    "usable": [
+      0,
+      1
+    ]
+  },
+  {
+    "id": "reported-87",
+    "line": {
+      "time": 46.4,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7",
+      "words": [
+        {
+          "text": "word0",
+          "time": 46.4,
+          "end": 46.74
+        },
+        {
+          "text": "word1",
+          "time": 46.74,
+          "end": 47.26
+        },
+        {
+          "text": "word2",
+          "time": 47.26,
+          "end": 47.7
+        },
+        {
+          "text": "word3",
+          "time": 47.7,
+          "end": 47.92
+        },
+        {
+          "text": "word4",
+          "time": 47.92,
+          "end": 48.22
+        },
+        {
+          "text": "word5",
+          "time": 48.22,
+          "end": 48.54
+        },
+        {
+          "text": "word6",
+          "time": 48.54,
+          "end": 48.82
+        },
+        {
+          "text": "word7",
+          "time": 48.5,
+          "end": 49.26
+        }
+      ]
+    },
+    "boundary": 49.26,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "id": "reported-88",
+    "line": {
+      "time": 72.94,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7",
+      "words": [
+        {
+          "text": "word0",
+          "time": 72.94,
+          "end": 73.38
+        },
+        {
+          "text": "word1",
+          "time": 73.38,
+          "end": 73.5
+        },
+        {
+          "text": "word2",
+          "time": 73.5,
+          "end": 74.22
+        },
+        {
+          "text": "word3",
+          "time": 74.22,
+          "end": 74.34
+        },
+        {
+          "text": "word4",
+          "time": 74.34,
+          "end": 74.72
+        },
+        {
+          "text": "word5",
+          "time": 74.72,
+          "end": 74.86
+        },
+        {
+          "text": "word6",
+          "time": 74.86,
+          "end": 75.22
+        },
+        {
+          "text": "word7",
+          "time": 75.48,
+          "end": 84.96
+        }
+      ]
+    },
+    "boundary": 84.96,
+    "usable": []
+  },
+  {
+    "id": "reported-89",
+    "line": {
+      "time": 165.32,
+      "text": "word0 word1 word2 word3 word4 word5",
+      "words": [
+        {
+          "text": "word0",
+          "time": 165.32,
+          "end": 165.78
+        },
+        {
+          "text": "word1",
+          "time": 165.78,
+          "end": 166.08
+        },
+        {
+          "text": "word2",
+          "time": 166.08,
+          "end": 166.4
+        },
+        {
+          "text": "word3",
+          "time": 166.4,
+          "end": 166.62
+        },
+        {
+          "text": "word4",
+          "time": 166.62,
+          "end": 166.88
+        },
+        {
+          "text": "word5",
+          "time": 166.46,
+          "end": 167.9
+        }
+      ]
+    },
+    "boundary": 167.9,
+    "usable": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "id": "reported-90",
+    "line": {
+      "time": 181.02,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 181.02,
+          "end": 183.94
+        },
+        {
+          "text": "word1",
+          "time": 183.94,
+          "end": 211.0
+        }
+      ]
+    },
+    "boundary": 198.051,
+    "usable": []
+  },
+  {
+    "id": "reported-91",
+    "line": {
+      "time": 156.58,
+      "text": "word0 word1 word2 word3 word4 word5",
+      "words": [
+        {
+          "text": "word0",
+          "time": 156.58
+        },
+        {
+          "text": "word1",
+          "time": 157.02,
+          "end": 157.4
+        },
+        {
+          "text": "word2",
+          "time": 157.4,
+          "end": 157.7
+        },
+        {
+          "text": "word3",
+          "time": 157.71
+        },
+        {
+          "text": "word4",
+          "time": 158.02,
+          "end": 158.32
+        },
+        {
+          "text": "word5",
+          "time": 158.32,
+          "end": 158.72
+        }
+      ]
+    },
+    "boundary": 158.3,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "id": "reported-92",
+    "line": {
+      "time": 15.08,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 15.08,
+          "end": 15.54
+        },
+        {
+          "text": "word1",
+          "time": 15.54,
+          "end": 29.22
+        }
+      ]
+    },
+    "boundary": 30.0,
+    "usable": []
+  },
+  {
+    "id": "reported-93",
+    "line": {
+      "time": 45.14,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 45.14,
+          "end": 45.44
+        },
+        {
+          "text": "word1",
+          "time": 45.44,
+          "end": 45.6
+        },
+        {
+          "text": "word2",
+          "time": 45.6,
+          "end": 45.86
+        },
+        {
+          "text": "word3",
+          "time": 45.86,
+          "end": 46.18
+        },
+        {
+          "text": "word4",
+          "time": 46.18,
+          "end": 46.44
+        },
+        {
+          "text": "word5",
+          "time": 46.44,
+          "end": 46.78
+        },
+        {
+          "text": "word6",
+          "time": 46.78,
+          "end": 47.14
+        },
+        {
+          "text": "word7",
+          "time": 47.14,
+          "end": 47.4
+        },
+        {
+          "text": "word8",
+          "time": 47.4,
+          "end": 47.64
+        }
+      ]
+    },
+    "boundary": 47.22,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  {
+    "id": "reported-94",
+    "line": {
+      "time": 52.6,
+      "text": "word0 word1 word2 word3 word4 word5",
+      "words": [
+        {
+          "text": "word0",
+          "time": 52.6,
+          "end": 52.82
+        },
+        {
+          "text": "word1",
+          "time": 52.82,
+          "end": 53.2
+        },
+        {
+          "text": "word2",
+          "time": 53.2,
+          "end": 53.74
+        },
+        {
+          "text": "word3",
+          "time": 53.74,
+          "end": 54.0
+        },
+        {
+          "text": "word4",
+          "time": 54.0,
+          "end": 54.32
+        },
+        {
+          "text": "word5",
+          "time": 53.92,
+          "end": 54.88
+        }
+      ]
+    },
+    "boundary": 54.88,
+    "usable": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "id": "reported-95",
+    "line": {
+      "time": 0.0,
+      "text": "word0 word1 word2",
+      "words": [
+        {
+          "text": "word0",
+          "time": 0.0,
+          "end": 9.66
+        },
+        {
+          "text": "word1",
+          "time": 9.66,
+          "end": 27.78
+        },
+        {
+          "text": "word2",
+          "time": 27.78,
+          "end": 28.96
+        }
+      ]
+    },
+    "boundary": 31.18,
+    "usable": [
+      2
+    ]
+  },
+  {
+    "id": "reported-96",
+    "line": {
+      "time": 80.88,
+      "text": "word0 word1 word2",
+      "words": [
+        {
+          "text": "word0",
+          "time": 80.88,
+          "end": 81.74
+        },
+        {
+          "text": "word1",
+          "time": 81.74,
+          "end": 82.82
+        },
+        {
+          "text": "word2",
+          "time": 82.82,
+          "end": 83.98
+        }
+      ]
+    },
+    "boundary": 81.12,
+    "usable": [
+      0
+    ]
+  },
+  {
+    "id": "reported-97",
+    "line": {
+      "time": 130.76,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 130.76,
+          "end": 143.78
+        },
+        {
+          "text": "word1",
+          "time": 143.78,
+          "end": 160.74
+        }
+      ]
+    },
+    "boundary": 159.13,
+    "usable": []
+  },
+  {
+    "id": "reported-98",
+    "line": {
+      "time": 136.06,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 136.06,
+          "end": 138.6
+        },
+        {
+          "text": "word1",
+          "time": 138.6,
+          "end": 165.74
+        }
+      ]
+    },
+    "boundary": 166.06,
+    "usable": []
+  },
+  {
+    "id": "reported-99",
+    "line": {
+      "time": 43.52,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10",
+      "words": [
+        {
+          "text": "word0",
+          "time": 43.52,
+          "end": 43.76
+        },
+        {
+          "text": "word1",
+          "time": 43.76,
+          "end": 44.08
+        },
+        {
+          "text": "word2",
+          "time": 44.08,
+          "end": 44.2
+        },
+        {
+          "text": "word3",
+          "time": 44.2,
+          "end": 44.36
+        },
+        {
+          "text": "word4",
+          "time": 44.36,
+          "end": 44.6
+        },
+        {
+          "text": "word5",
+          "time": 44.6,
+          "end": 44.82
+        },
+        {
+          "text": "word6",
+          "time": 44.82,
+          "end": 44.9
+        },
+        {
+          "text": "word7",
+          "time": 44.9,
+          "end": 45.2
+        },
+        {
+          "text": "word8",
+          "time": 45.2,
+          "end": 45.42
+        },
+        {
+          "text": "word9",
+          "time": 45.42,
+          "end": 45.66
+        },
+        {
+          "text": "word10",
+          "time": 45.66,
+          "end": 45.94
+        }
+      ]
+    },
+    "boundary": 45.48,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ]
+  },
+  {
+    "id": "reported-100",
+    "line": {
+      "time": 0.0,
+      "text": "word0 word1 word2 word3 word4 word5 word6",
+      "words": [
+        {
+          "text": "word0",
+          "time": 0.0,
+          "end": 19.24
+        },
+        {
+          "text": "word1",
+          "time": 19.24,
+          "end": 19.9
+        },
+        {
+          "text": "word2",
+          "time": 19.9,
+          "end": 20.2
+        },
+        {
+          "text": "word3",
+          "time": 20.2,
+          "end": 20.44
+        },
+        {
+          "text": "word4",
+          "time": 20.44,
+          "end": 20.9
+        },
+        {
+          "text": "word5",
+          "time": 20.9,
+          "end": 21.2
+        },
+        {
+          "text": "word6",
+          "time": 21.2,
+          "end": 21.74
+        }
+      ]
+    },
+    "boundary": 23.0,
+    "usable": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ]
+  },
+  {
+    "id": "reported-101",
+    "line": {
+      "time": 60.16,
+      "text": "word0 word1 word2 word3",
+      "words": [
+        {
+          "text": "word0",
+          "time": 60.16,
+          "end": 60.82
+        },
+        {
+          "text": "word1",
+          "time": 60.82,
+          "end": 61.22
+        },
+        {
+          "text": "word2",
+          "time": 61.22,
+          "end": 61.74
+        },
+        {
+          "text": "word3",
+          "time": 61.2,
+          "end": 62.04
+        }
+      ]
+    },
+    "boundary": 62.04,
+    "usable": [
+      0,
+      1
+    ]
+  },
+  {
+    "id": "reported-102",
+    "line": {
+      "time": 207.8,
+      "text": "word0 word1 word2 word3 word4 word5",
+      "words": [
+        {
+          "text": "word0",
+          "time": 207.8,
+          "end": 208.0
+        },
+        {
+          "text": "word1",
+          "time": 208.0,
+          "end": 208.64
+        },
+        {
+          "text": "word2",
+          "time": 208.64,
+          "end": 209.28
+        },
+        {
+          "text": "word3",
+          "time": 209.28,
+          "end": 210.32
+        },
+        {
+          "text": "word4",
+          "time": 210.32,
+          "end": 210.52
+        },
+        {
+          "text": "word5",
+          "time": 210.26,
+          "end": 211.9
+        }
+      ]
+    },
+    "boundary": 211.9,
+    "usable": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "id": "reported-103",
+    "line": {
+      "time": 138.14,
+      "text": "word0 word1 word2 word3 word4",
+      "words": [
+        {
+          "text": "word0",
+          "time": 138.14,
+          "end": 148.2
+        },
+        {
+          "text": "word1",
+          "time": 148.2,
+          "end": 149.06
+        },
+        {
+          "text": "word2",
+          "time": 149.06,
+          "end": 150.34
+        },
+        {
+          "text": "word3",
+          "time": 150.34,
+          "end": 150.74
+        },
+        {
+          "text": "word4",
+          "time": 150.74,
+          "end": 151.18
+        }
+      ]
+    },
+    "boundary": 152.56,
+    "usable": [
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "id": "reported-104",
+    "line": {
+      "time": 50.68,
+      "text": "word0 word1 word2 word3 word4 word5 word6",
+      "words": [
+        {
+          "text": "word0",
+          "time": 50.68,
+          "end": 50.88
+        },
+        {
+          "text": "word1",
+          "time": 50.88,
+          "end": 51.32
+        },
+        {
+          "text": "word2",
+          "time": 51.32,
+          "end": 51.54
+        },
+        {
+          "text": "word3",
+          "time": 51.54,
+          "end": 52.02
+        },
+        {
+          "text": "word4",
+          "time": 52.02,
+          "end": 52.3
+        },
+        {
+          "text": "word5",
+          "time": 52.3,
+          "end": 53.08
+        },
+        {
+          "text": "word6",
+          "time": 53.08,
+          "end": 53.5
+        }
+      ]
+    },
+    "boundary": 53.04,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "id": "reported-105",
+    "line": {
+      "time": 130.52,
+      "text": "word0 word1 word2 word3 word4",
+      "words": [
+        {
+          "text": "word0",
+          "time": 130.52,
+          "end": 130.66
+        },
+        {
+          "text": "word1",
+          "time": 130.66,
+          "end": 131.14
+        },
+        {
+          "text": "word2",
+          "time": 131.14,
+          "end": 131.58
+        },
+        {
+          "text": "word3",
+          "time": 131.58,
+          "end": 131.82
+        },
+        {
+          "text": "word4",
+          "time": 131.82,
+          "end": 132.2
+        }
+      ]
+    },
+    "boundary": 131.76,
+    "usable": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "id": "reported-106",
+    "line": {
+      "time": 78.46,
+      "text": "word0 word1 word2 word3 word4 word5 word6",
+      "words": [
+        {
+          "text": "word0",
+          "time": 78.46,
+          "end": 78.72
+        },
+        {
+          "text": "word1",
+          "time": 78.72,
+          "end": 78.92
+        },
+        {
+          "text": "word2",
+          "time": 78.92,
+          "end": 79.18
+        },
+        {
+          "text": "word3",
+          "time": 79.18,
+          "end": 79.42
+        },
+        {
+          "text": "word4",
+          "time": 79.42,
+          "end": 79.6
+        },
+        {
+          "text": "word5",
+          "time": 79.6,
+          "end": 80.02
+        },
+        {
+          "text": "word6",
+          "time": 79.52,
+          "end": 80.86
+        }
+      ]
+    },
+    "boundary": 80.86,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "id": "reported-107",
+    "line": {
+      "time": 154.7,
+      "text": "word0 word1 word2 word3 word4 word5 word6",
+      "words": [
+        {
+          "text": "word0",
+          "time": 154.7,
+          "end": 155.14
+        },
+        {
+          "text": "word1",
+          "time": 155.14,
+          "end": 155.56
+        },
+        {
+          "text": "word2",
+          "time": 155.56,
+          "end": 177.08
+        },
+        {
+          "text": "word3",
+          "time": 177.08,
+          "end": 177.32
+        },
+        {
+          "text": "word4",
+          "time": 177.32,
+          "end": 177.5
+        },
+        {
+          "text": "word5",
+          "time": 177.5,
+          "end": 177.98
+        },
+        {
+          "text": "word6",
+          "time": 177.52,
+          "end": 178.8
+        }
+      ]
+    },
+    "boundary": 178.8,
+    "usable": [
+      3,
+      4,
+      5,
+      6
+    ]
+  },
+  {
+    "id": "reported-108",
+    "line": {
+      "time": 186.24,
+      "text": "word0 word1 word2 word3 word4 word5 word6",
+      "words": [
+        {
+          "text": "word0",
+          "time": 186.24,
+          "end": 186.5
+        },
+        {
+          "text": "word1",
+          "time": 186.5,
+          "end": 186.72
+        },
+        {
+          "text": "word2",
+          "time": 186.72,
+          "end": 187.1
+        },
+        {
+          "text": "word3",
+          "time": 187.1,
+          "end": 187.26
+        },
+        {
+          "text": "word4",
+          "time": 187.26,
+          "end": 187.68
+        },
+        {
+          "text": "word5",
+          "time": 187.68,
+          "end": 187.94
+        },
+        {
+          "text": "word6",
+          "time": 187.52,
+          "end": 188.64
+        }
+      ]
+    },
+    "boundary": 188.64,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "id": "reported-109",
+    "line": {
+      "time": 17.54,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10",
+      "words": [
+        {
+          "text": "word0",
+          "time": 17.54,
+          "end": 17.88
+        },
+        {
+          "text": "word1",
+          "time": 17.88,
+          "end": 18.44
+        },
+        {
+          "text": "word2",
+          "time": 18.44,
+          "end": 18.5
+        },
+        {
+          "text": "word3",
+          "time": 18.5,
+          "end": 19.4
+        },
+        {
+          "text": "word4",
+          "time": 19.4,
+          "end": 19.74
+        },
+        {
+          "text": "word5",
+          "time": 19.74,
+          "end": 19.94
+        },
+        {
+          "text": "word6",
+          "time": 19.94,
+          "end": 20.14
+        },
+        {
+          "text": "word7",
+          "time": 20.14,
+          "end": 20.56
+        },
+        {
+          "text": "word8",
+          "time": 20.56,
+          "end": 20.78
+        },
+        {
+          "text": "word9",
+          "time": 20.78,
+          "end": 21.0
+        },
+        {
+          "text": "word10",
+          "time": 21.0,
+          "end": 21.4
+        }
+      ]
+    },
+    "boundary": 21.0,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ]
+  },
+  {
+    "id": "reported-110",
+    "line": {
+      "time": 192.81,
+      "text": "word0 word1 word2 word3 word4",
+      "words": [
+        {
+          "text": "word0",
+          "time": 192.81,
+          "end": 193.25
+        },
+        {
+          "text": "word1",
+          "time": 193.25,
+          "end": 193.51
+        },
+        {
+          "text": "word2",
+          "time": 193.51,
+          "end": 193.83
+        },
+        {
+          "text": "word3",
+          "time": 193.83,
+          "end": 194.03
+        },
+        {
+          "text": "word4",
+          "time": 194.03,
+          "end": 194.41
+        }
+      ]
+    },
+    "boundary": 193.97,
+    "usable": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "id": "reported-111",
+    "line": {
+      "time": 127.63,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 127.63,
+          "end": 143.63
+        },
+        {
+          "text": "word1",
+          "time": 143.63,
+          "end": 145.19
+        },
+        {
+          "text": "word2",
+          "time": 145.19,
+          "end": 146.75
+        },
+        {
+          "text": "word3",
+          "time": 146.83,
+          "end": 149.27
+        },
+        {
+          "text": "word4",
+          "time": 149.27,
+          "end": 149.61
+        },
+        {
+          "text": "word5",
+          "time": 149.61,
+          "end": 150.57
+        },
+        {
+          "text": "word6",
+          "time": 150.56,
+          "end": 152.04
+        },
+        {
+          "text": "word7",
+          "time": 156.94,
+          "end": 157.52
+        },
+        {
+          "text": "word8",
+          "time": 157.52,
+          "end": 158.32
+        }
+      ]
+    },
+    "boundary": 158.32,
+    "usable": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  {
+    "id": "reported-112",
+    "line": {
+      "time": 196.94,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7",
+      "words": [
+        {
+          "text": "word0",
+          "time": 196.94,
+          "end": 199.96
+        },
+        {
+          "text": "word1",
+          "time": 225.14,
+          "end": 230.2
+        },
+        {
+          "text": "word2",
+          "time": 230.2,
+          "end": 230.22
+        },
+        {
+          "text": "word3",
+          "time": 220.75,
+          "end": 228.81
+        },
+        {
+          "text": "word4",
+          "time": 228.81,
+          "end": 239.81
+        },
+        {
+          "text": "word5",
+          "time": 239.81,
+          "end": 239.83
+        },
+        {
+          "text": "word6",
+          "time": 239.83,
+          "end": 249.89
+        },
+        {
+          "text": "word7",
+          "time": 249.89,
+          "end": 249.91
+        }
+      ]
+    },
+    "boundary": 250.75,
+    "usable": [
+      7
+    ]
+  },
+  {
+    "id": "reported-113",
+    "line": {
+      "time": 280.75,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 280.75,
+          "end": 281.21
+        },
+        {
+          "text": "word1",
+          "time": 281.21,
+          "end": 310.73
+        }
+      ]
+    },
+    "boundary": 301.0,
+    "usable": []
+  },
+  {
+    "id": "reported-114",
+    "line": {
+      "time": 203.72,
+      "text": "word0 word1 word2",
+      "words": [
+        {
+          "text": "word0",
+          "time": 203.72,
+          "end": 211.12
+        },
+        {
+          "text": "word1",
+          "time": 211.12,
+          "end": 227.66
+        },
+        {
+          "text": "word2",
+          "time": 218.09,
+          "end": 218.93
+        }
+      ]
+    },
+    "boundary": 248.09,
+    "usable": [
+      2
+    ]
+  },
+  {
+    "id": "reported-115",
+    "line": {
+      "time": 278.09,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 278.09,
+          "end": 278.87
+        },
+        {
+          "text": "word1",
+          "time": 278.87,
+          "end": 296.17
+        }
+      ]
+    },
+    "boundary": 297.44,
+    "usable": []
+  },
+  {
+    "id": "reported-116",
+    "line": {
+      "time": 51.8,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 51.8,
+          "end": 70.38
+        },
+        {
+          "text": "word1",
+          "time": 70.38,
+          "end": 71.52
+        },
+        {
+          "text": "word2",
+          "time": 61.08,
+          "end": 69.96
+        },
+        {
+          "text": "word3",
+          "time": 69.96,
+          "end": 72.64
+        },
+        {
+          "text": "word4",
+          "time": 72.64,
+          "end": 73.24
+        },
+        {
+          "text": "word5",
+          "time": 73.24,
+          "end": 74.52
+        },
+        {
+          "text": "word6",
+          "time": 74.52,
+          "end": 75.34
+        },
+        {
+          "text": "word7",
+          "time": 75.34,
+          "end": 75.78
+        },
+        {
+          "text": "word8",
+          "time": 75.78,
+          "end": 76.66
+        }
+      ]
+    },
+    "boundary": 76.66,
+    "usable": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  {
+    "id": "reported-117",
+    "line": {
+      "time": 0.0,
+      "text": "word0",
+      "words": [
+        {
+          "text": "word0",
+          "time": 0.0,
+          "end": 29.98
+        }
+      ]
+    },
+    "boundary": 30.0,
+    "usable": []
+  },
+  {
+    "id": "reported-118",
+    "line": {
+      "time": 30.0,
+      "text": "word0 word1 word2",
+      "words": [
+        {
+          "text": "word0",
+          "time": 30.0,
+          "end": 43.26
+        },
+        {
+          "text": "word1",
+          "time": 43.26,
+          "end": 43.28
+        },
+        {
+          "text": "word2",
+          "time": 43.28,
+          "end": 43.3
+        }
+      ]
+    },
+    "boundary": 60.0,
+    "usable": [
+      1,
+      2
+    ]
+  },
+  {
+    "id": "reported-119",
+    "line": {
+      "time": 60.0,
+      "text": "word0 word1 word2",
+      "words": [
+        {
+          "text": "word0",
+          "time": 60.0,
+          "end": 72.32
+        },
+        {
+          "text": "word1",
+          "time": 72.32,
+          "end": 72.34
+        },
+        {
+          "text": "word2",
+          "time": 72.34,
+          "end": 72.36
+        }
+      ]
+    },
+    "boundary": 90.0,
+    "usable": [
+      1,
+      2
+    ]
+  },
+  {
+    "id": "reported-120",
+    "line": {
+      "time": 90.0,
+      "text": "word0 word1 word2",
+      "words": [
+        {
+          "text": "word0",
+          "time": 90.0,
+          "end": 100.56
+        },
+        {
+          "text": "word1",
+          "time": 100.56,
+          "end": 100.58
+        },
+        {
+          "text": "word2",
+          "time": 100.58,
+          "end": 100.6
+        }
+      ]
+    },
+    "boundary": 113.4,
+    "usable": [
+      1,
+      2
+    ]
+  },
+  {
+    "id": "reported-121",
+    "line": {
+      "time": 143.4,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 143.4,
+          "end": 145.68
+        },
+        {
+          "text": "word1",
+          "time": 145.68,
+          "end": 173.38
+        }
+      ]
+    },
+    "boundary": 173.4,
+    "usable": []
+  },
+  {
+    "id": "reported-122",
+    "line": {
+      "time": 203.4,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 203.4,
+          "end": 206.48
+        },
+        {
+          "text": "word1",
+          "time": 206.48,
+          "end": 233.38
+        }
+      ]
+    },
+    "boundary": 233.4,
+    "usable": []
+  },
+  {
+    "id": "reported-123",
+    "line": {
+      "time": 126.08,
+      "text": "word0 word1 word2 word3",
+      "words": [
+        {
+          "text": "word0",
+          "time": 126.08,
+          "end": 127.4
+        },
+        {
+          "text": "word1",
+          "time": 127.4,
+          "end": 127.5
+        },
+        {
+          "text": "word2",
+          "time": 127.5,
+          "end": 127.76
+        },
+        {
+          "text": "word3",
+          "time": 127.34,
+          "end": 132.48
+        }
+      ]
+    },
+    "boundary": 132.48,
+    "usable": [
+      0
+    ]
+  },
+  {
+    "id": "reported-124",
+    "line": {
+      "time": 149.38,
+      "text": "word0 word1 word2 word3 word4 word5 word6",
+      "words": [
+        {
+          "text": "word0",
+          "time": 149.38,
+          "end": 160.74
+        },
+        {
+          "text": "word1",
+          "time": 160.74,
+          "end": 161.32
+        },
+        {
+          "text": "word2",
+          "time": 161.32,
+          "end": 161.78
+        },
+        {
+          "text": "word3",
+          "time": 161.78,
+          "end": 162.1
+        },
+        {
+          "text": "word4",
+          "time": 162.1,
+          "end": 162.5
+        },
+        {
+          "text": "word5",
+          "time": 162.5,
+          "end": 162.76
+        },
+        {
+          "text": "word6",
+          "time": 162.76,
+          "end": 163.14
+        }
+      ]
+    },
+    "boundary": 164.4,
+    "usable": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ]
+  },
+  {
+    "id": "healthy-1",
+    "line": {
+      "time": 10,
+      "text": "word0",
+      "words": [
+        {
+          "text": "word0",
+          "time": 10,
+          "end": 10.4
+        }
+      ]
+    },
+    "boundary": 12,
+    "usable": [
+      0
+    ]
+  },
+  {
+    "id": "healthy-2",
+    "line": {
+      "time": 10,
+      "text": "word0 word1",
+      "words": [
+        {
+          "text": "word0",
+          "time": 10,
+          "end": 10.4
+        },
+        {
+          "text": "word1",
+          "time": 12,
+          "end": 12.4
+        }
+      ]
+    },
+    "boundary": 14,
+    "usable": [
+      0,
+      1
+    ]
+  },
+  {
+    "id": "healthy-3",
+    "line": {
+      "time": 10,
+      "text": "word0 word1 word2 word3 word4 word5",
+      "words": [
+        {
+          "text": "word0",
+          "time": 10,
+          "end": 10.4
+        },
+        {
+          "text": "word1",
+          "time": 12,
+          "end": 12.4
+        },
+        {
+          "text": "word2",
+          "time": 14,
+          "end": 14.4
+        },
+        {
+          "text": "word3",
+          "time": 16,
+          "end": 16.4
+        },
+        {
+          "text": "word4",
+          "time": 18,
+          "end": 18.4
+        },
+        {
+          "text": "word5",
+          "time": 20,
+          "end": 20.4
+        }
+      ]
+    },
+    "boundary": 22,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "id": "healthy-4",
+    "line": {
+      "time": 10,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8",
+      "words": [
+        {
+          "text": "word0",
+          "time": 10,
+          "end": 10.4
+        },
+        {
+          "text": "word1",
+          "time": 12,
+          "end": 12.4
+        },
+        {
+          "text": "word2",
+          "time": 14,
+          "end": 14.4
+        },
+        {
+          "text": "word3",
+          "time": 16,
+          "end": 16.4
+        },
+        {
+          "text": "word4",
+          "time": 18,
+          "end": 18.4
+        },
+        {
+          "text": "word5",
+          "time": 20,
+          "end": 20.4
+        },
+        {
+          "text": "word6",
+          "time": 22,
+          "end": 22.4
+        },
+        {
+          "text": "word7",
+          "time": 24,
+          "end": 24.4
+        },
+        {
+          "text": "word8",
+          "time": 26,
+          "end": 26.4
+        }
+      ]
+    },
+    "boundary": 28,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  {
+    "id": "healthy-5",
+    "line": {
+      "time": 10,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19",
+      "words": [
+        {
+          "text": "word0",
+          "time": 10,
+          "end": 10.4
+        },
+        {
+          "text": "word1",
+          "time": 12,
+          "end": 12.4
+        },
+        {
+          "text": "word2",
+          "time": 14,
+          "end": 14.4
+        },
+        {
+          "text": "word3",
+          "time": 16,
+          "end": 16.4
+        },
+        {
+          "text": "word4",
+          "time": 18,
+          "end": 18.4
+        },
+        {
+          "text": "word5",
+          "time": 20,
+          "end": 20.4
+        },
+        {
+          "text": "word6",
+          "time": 22,
+          "end": 22.4
+        },
+        {
+          "text": "word7",
+          "time": 24,
+          "end": 24.4
+        },
+        {
+          "text": "word8",
+          "time": 26,
+          "end": 26.4
+        },
+        {
+          "text": "word9",
+          "time": 28,
+          "end": 28.4
+        },
+        {
+          "text": "word10",
+          "time": 30,
+          "end": 30.4
+        },
+        {
+          "text": "word11",
+          "time": 32,
+          "end": 32.4
+        },
+        {
+          "text": "word12",
+          "time": 34,
+          "end": 34.4
+        },
+        {
+          "text": "word13",
+          "time": 36,
+          "end": 36.4
+        },
+        {
+          "text": "word14",
+          "time": 38,
+          "end": 38.4
+        },
+        {
+          "text": "word15",
+          "time": 40,
+          "end": 40.4
+        },
+        {
+          "text": "word16",
+          "time": 42,
+          "end": 42.4
+        },
+        {
+          "text": "word17",
+          "time": 44,
+          "end": 44.4
+        },
+        {
+          "text": "word18",
+          "time": 46,
+          "end": 46.4
+        },
+        {
+          "text": "word19",
+          "time": 48,
+          "end": 48.4
+        }
+      ]
+    },
+    "boundary": 50,
+    "usable": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19
+    ]
+  }
+]

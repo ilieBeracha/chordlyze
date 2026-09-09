@@ -1,155 +1,128 @@
-# Chord/word alignment correction — verification, 2026-09-09
+# Chord and word timing verification — 2026-09-09
 
-Status: **the two reported cases are verified, but all-song acceptance is not
-met.** The confirmed shared display and estimated-rest bugs are corrected on
-`codex/chord-word-alignment`. Both approved production payloads have now been
-inspected, including the missing transcription-only case in The Push. A backend
-deployment and a new TestFlight release remain pending. This is not a claim
-that every recording's acoustic chord or lyric timing is correct.
+The shared display and timing guards are implemented and tested. They preserve
+usable word anchors when other words in the phrase have bad timestamps, and
+keep unsupported positions approximate. This does not establish that every
+saved lyric timestamp is acoustically correct.
 
-## Change
+## Shared behavior
 
-A word-timed row retains each supported chord/word association. Changes between
-words occupy separate cells in chronological order, rather than causing all
-chords to detach. Chord and word cells wrap together, oversized content fits
-the viewport, and the timed chord cursor continues to follow event onsets.
-Word highlighting uses the original word index even after gap cells are added.
+- A chord with a supported word association stays with that word when the row
+  wraps. Changes between words remain separate, chronological cells. Word
+  highlighting retains the original word index.
+- Server and iOS use the same word timing contract: finite timestamps inside
+  the lyric interval, positive supplied durations no longer than eight seconds,
+  and no backward word sequence. Both sides of an inversion are uncertain;
+  sorting lyric tokens cannot resolve the ambiguity.
+- A stretched transcript prefix is uncertain through its last stretched word.
+  Usable suffix stamps survive unchanged. The iOS presentation estimates only
+  uncertain positions and never writes those estimates back as measured data.
+- Estimated positions cannot anchor chords or establish instrumental rests.
+  A partially uncertain phrase receives an approximate-timing explanation even
+  when an older server supplied no note. The final phrase is checked against
+  the recording duration.
+- Catalog onset recovery cannot invalidate a usable word in either neighboring
+  phrase or move past a usable word in the phrase being recovered. Failed word
+  arrays remain available as source evidence; their usable subset is retained.
+- Both worker lyric sources apply the same validation before publication.
+  Existing cached charts receive the same provenance and uncertainty flags on
+  read, without a new chord analysis or a changed chart revision.
 
-The aligner, worker and API preserve estimated-word provenance. Existing mixed
-recording alignments receive the same flags on read. The row builder requires
-measured evidence at both sides before inserting an instrumental rest, and
-requires a measured final word end before splitting a tail. No chord onset,
-duration, label, beat map, calibration, or scoring reference is changed.
+These rules do not select songs by title, artist, or recording identifier.
 
-Malformed transcription prefixes now receive a bounded acoustic retry through
-the bundled local speech model, for either primary transcription provider.
-Exact phrase matching and agreement with healthy following anchors gate the
-repair. Healthy suffix stamps and every other phrase retain their prior values.
-The maintenance command verifies the decoded recording identity, defaults to
-dry run, backs up applied changes, and refuses concurrent chart replacement.
+## Recording-backed recovery
+
+`lyrics_timing.py` retries stretched prefixes and malformed phrase boundaries
+against the analyzed recording. A candidate must have valid spans and sufficient
+recognition confidence, and agree with at least two measured surrounding
+anchors. A complete phrase must be unique in the crop. If recognition omitted
+an otherwise usable word, damaged words may still be recovered only when each
+is uniquely bracketed by agreeing anchors. Existing usable stamps stay exact.
+A correction is rejected if the merged phrase still has invalid timing or would
+invalidate a preceding anchor.
+
+A small inversion across two adjacent phrases is checked jointly under the
+same rules. Both sides of that boundary must be corroborated before either
+changes. A distant stray word cannot make a healthy neighboring phrase
+eligible for retiming.
+
+Crops are at most 30 seconds. The primary transcription path permits at most
+three prefix retries; publication permits at most three boundary retries. The
+single-chart maintenance function shares a three-crop budget across both forms.
+Healthy data does not trigger an extra recognition call. Failed or ambiguous
+recognition leaves evidence intact and explicitly uncertain.
+
+The recording maintenance command verifies the decoded PCM hash before using
+any recognition. Different recordings or encodings cannot silently retime an
+existing chart. The batch application command does not itself establish audio
+accuracy: its input must already have been reviewed against verified audio.
 
 ## Regression evidence
 
-The fix is isolated from the pre-existing uncommitted practice and playback
-work. The review worktree is `/tmp/chordlyze-alignment-review`, based on
-`eb999d0`. The following checks use only this fix on that base:
-
-| Requirement | Evidence |
+| Check | Verified result |
 | --- | --- |
-| Valid anchors survive a mixed row | Actual SwiftUI render checks compare the chord glyph and word glyph positions. |
-| Chords and words wrap together | Render checks at 280, 320, 390 and 464 points, in sheet and live styles. |
-| Every fixture word and change remains visible | Rendered glyph counts and existing model event-preservation checks. |
-| Playback and transposition preserve layout | Render checks at five playback positions and two transpositions; sheet/playback suite. |
-| RTL and oversized content remain usable | Hebrew render checks and manual review; long word/multiple-change fixture stays within the viewport. |
-| Genuine rests still work; estimates do not create rests | Measured/estimated timing matrix, onset-only compatibility, explicit blank lines, malformed timing and phrase-boundary cases. |
-| Old charts and old clients remain compatible | Worker/API field round-trip; both song-read paths; idempotent cache repair with no catalog; unchanged chart revision and cache bytes; client refresh accepts provenance-only updates without reanalysis. |
-| Neighboring features remain operational | Practice, Spotify, collection/search, drill and live recognition suites. |
-| No-catalog recordings receive the repair | Both provider paths exercise acoustic recovery; approved The Push data and verified audio reproduce and correct the missing case. |
-| Healthy timing is not reinterpreted | No crop for healthy data; exact healthy suffix preservation; conflicting text/anchors, invalid candidates and exhausted retries leave original data intact. |
-| Saved timing cannot be applied to the wrong recording | Decoded PCM identity check, dry-run/apply/backup tests, concurrent chart rejection and differing alias preservation. |
+| Shared server/iOS contract | All 124 reported failure geometries, plus healthy controls, use one checked-in numeric fixture with authored words. |
+| Retained anchors | 97 of those 124 faulty arrays retain usable anchors; 27 have none and remain coarse until verified from audio. These are presentation outcomes, not counts of acoustically repaired lines. |
+| Sheet and playback | 2,528 checks pass, including provenance-only refreshes, transposition, event preservation, and normal Spotify playback flows. |
+| Actual SwiftUI rendering | 310 checks and 33 PNGs cover 280–464 point widths, both row styles, playback positions, transposition, RTL, oversized content, repaired intros, and partially damaged phrases. |
+| Full backend suite | 613 passed and 17 existing expected failures, including the adjacent-phrase recovery and all nine batch-application tests. |
+| Entire saved library | The actual Swift row builder preserves all 11,252 events and 22,078 lyric words across 129 charts; every emitted word association refers to a supported word. |
+| iOS compilation | Debug Simulator build passes. |
+| Batch safety | Dry run, complete preflight, stale-data refusal, text/event preservation, alias protection, backups, idempotence, and restoration after a write failure are tested. |
 
-`bash scripts/test_chord_layout.sh` passes **285 checks** and writes **29 PNGs**.
-The standard `test_song_sheet.sh` command now includes this rendered regression
-gate, so its usual invocation covers the views as well as the timing model.
-The same harness, compiled with the previous `ChordRowView` and
-`ChordLyricLine`, fails with the chord detached horizontally from its word.
-This negative control establishes that the test detects the former bug.
-Disabling acoustic recovery also makes both provider regression cases fail
-on their opening timestamp, establishing that those tests detect the missing
-no-catalog repair.
+The original full-suite attempt hit sandbox restrictions on localhost sockets;
+those tests pass with normal localhost access. Likewise, Xcode needs access to
+its existing Swift package and compiler caches. These environment failures are
+not counted as passing runs.
 
-`bash scripts/test_song_sheet.sh` passes **1,494 checks** on the isolated branch.
-The Spotify suite passes **18**; collection/search **28**; drill detector **362**;
-drill worker **43**; input format **6**; live recognition **2,292**. Practice
-persistence, feedback, audio integration, report and metronome suites pass.
+Earlier negative controls established that the old row views fail the rendered
+anchor check and that removing prefix recovery fails both transcription-provider
+regressions. The new neighboring-line regressions also failed before their fix.
 
-The complete isolated backend suite requires the installed model runtimes:
+## Honest audit counts
 
-```sh
-CHORDLYZE_RHYTHM_DIR=/Users/ilieberacha/Desktop/dev/chordlyze/backend \
-CHORDLYZE_REQUIRE_MODELS=1 \
-NUMBA_CACHE_DIR=/tmp/chordlyze-alignment-numba-cache \
-PYTHONPATH=. \
-/Users/ilieberacha/Desktop/dev/chordlyze/backend/.venv/bin/python -m pytest tests/ -q
-```
+The original cache contained 93 charts with source timing flags. The former
+on-read catalog fallback reported 57 remaining after removing malformed word
+arrays. The difference of 36 represented coarse fallback, not verified recovery
+of their word positions. The new code retains that evidence, so those original
+source flags remain visible until recording-backed correction succeeds.
 
-Its final result is **443 passed, 17 expected failures**, recorded in
-`/tmp/chordlyze-alignment-audit-backend.log`.
-The initial isolated run lacked the rhythm runtime path; its three failures
-were installation lookup errors. The main checkout's complete suite passed
-421 tests with 17 expected model/vocabulary failures, but includes unrelated
-local work and is not substituted for the isolated result.
+Do not compare the new evidence-preserving count directly with the old
+array-removing count as if both measured acoustic repairs. Report these
+separately:
 
-Debug iOS Simulator builds pass in both the original and isolated worktrees.
-The only build warning is skipped App Intents metadata extraction. The actual
-song page was inspected with `--song-sheet-preview --mixed-word-timing-preview`.
-This fixture has authored words with the reported Shadows timing geometry.
+1. Charts and words preserved by the display guards.
+2. Words actually changed by accepted recording evidence.
+3. Remaining source timing flags and recognition/recording failures.
+4. Deployed backend revision and processed TestFlight build.
 
-## Reported-song evidence and remaining acceptance
+A timestamp can pass the numeric contract and still be wrong musically. A
+sustained vocal can also exceed a conservative duration threshold. Missing or
+conflicting recognized text is not permission to invent a timestamp, remove the
+lyric, or mark the whole song acoustically verified.
 
-- The saved Shadows chart, passed through the current backend repair and row
-  builder, retains every chord event. Its formerly split four-word phrase
-  stays one model row, from 33.510 to 45.540 seconds. It may wrap naturally at
-  the viewport width. The recovered opening remains at 28.225 seconds.
-- The user approved the production read. The Push's saved data confirms a
-  transcription-only source, no matching cached catalog, and a 16.78-second
-  word span. The production response reproduces all eight changes on a lyric
-  row beginning at 0:00. Using the saved provider recording, decoded on the
-  deployed runtime, produced the exact PCM hash stored with the chart.
-- The new recovery places The Push's opening at 18.600 seconds. Only its first
-  two word stamps change. The other 36 lines, the healthy suffix, every lyric
-  word and all 65 chord events are unchanged. The real row builder places six
-  intro events before the vocal and associates the two vocal changes with word
-  indices 2 and 5. No event is omitted or duplicated in either reported song.
-- Actual SwiftUI rows were rendered from both repaired production payloads at
-  320 and 390 points and inspected. Saved lyrics and recordings remain outside
-  source control; checked-in fixtures use authored words.
-- A dry run using the deployed decoder and bundled speech model also recovered
-  The Push at 18.600 seconds, changed only the two damaged word stamps, and
-  preserved all healthy words and chord data. Its proposal was written under
-  `/tmp`; the shared production chart was not changed.
-- Local release configuration has two backend processes (`app` and `worker`);
-  both need the new worker/API provenance code. The documented iOS release path
-  is the Xcode Cloud workflow after merging into main. Live distribution state
-  has not been verified.
-- No backend deployment, merge, TestFlight upload, or on-device comparison to
-  the source recordings has been performed for this correction.
-- Release acceptance still requires deployment, applying the verified saved
-  transcription correction, and a processed TestFlight build. Passing the
-  covered checks does not prove zero possible regressions or perfect musical
-  alignment across every song.
-
-Temporary visual evidence: `/tmp/chordlyze-alignment-review-renders`,
-`/tmp/chordlyze-alignment-simulator.png`. Saved song lyric payloads are kept
-outside source control.
-
-## All-song acceptance remains open
-
-A read-only aggregate audit of the entire shared song cache found additional
-malformed and out-of-line word timestamps after the proposed on-read repair.
-The numeric production report is retained locally. These flags identify
-structural timing problems, not proof that every flagged song has the exact
-visible failure in the screenshots. They rule out treating the two reported
-examples as evidence that every saved song has been repaired.
-
-The acoustic retry is bounded and requires supporting anchors. The worker
-change does not retroactively transcribe every cached chart. Untimed lines
-remain explicitly separate from lines with verified word timestamps.
-
-The reproducible command is included in the backend image:
+## Reproducing the checks
 
 ```sh
-python scripts/audit_lyrics_timing.py --cache /data/analysis_cache --fail-on-invalid
+bash scripts/test_song_sheet.sh
+bash scripts/verify_library_timing.sh /path/to/private/library-model-fixtures.json
+cd backend
+PYTHONPATH=. python -m pytest tests/test_lyrics_validation.py tests/test_lyrics_boundary_recovery.py tests/test_lyrics_proposals.py
+python scripts/audit_lyrics_timing.py --cache /path/to/cache --fail-on-invalid
+python scripts/apply_lyrics_proposals.py --cache /path/to/cache --proposals /path/to/reviewed-proposals.json
 ```
 
-This check returned a nonzero status on the audited cache, as intended. It
-fails for unresolved invalid timing, incomplete or out-of-range word arrays,
-an empty/unreadable cache, non-lyric mutations, or charts changed during the
-audit. Seven audit tests cover those contracts; the combined lyric suite
-passes 67 tests. This is a manual release check, not an installed CI requirement.
-Passing it establishes structural validity, not acoustic truth.
+The last command is a dry run unless `--apply` is supplied. It checks the entire
+batch before writing, keeps original backups, changes only lyric timing and
+metadata, and refuses lyric-text changes or removed word evidence. Matching ISRC
+aliases are updated only if their original recording and lyrics still agree.
 
-The remaining cases require classification, recording-backed repair where
-possible, a repeat audit, and rendered/recording checks for each distinct
-failure pattern. Add those cases to the regression suite before claiming
-broader coverage. Do not merge this PR under an all-song completion claim.
+The timing audit deliberately exits nonzero while source flags remain. Passing
+rendering or unit tests does not override that result or prove acoustic accuracy.
+
+Private snapshots, exact recordings, recognition evidence, proposal manifests,
+and the recording-level report are retained under
+`backend/backups/lyrics-timing-repair-2026-09-09/`, excluded from source control.
+No saved lyric payloads, audio, credentials, or provider journals belong in this
+public repository. Release state must be checked independently after merge and
+deployment; an implemented fix is not automatically in TestFlight.

@@ -204,17 +204,54 @@ enum SheetModel {
         return rows
     }
 
-    /// Only a complete word array may replace the authoritative lyric text.
-    /// A partial, out-of-range or reordered array falls back to line timing.
+    /// Keep every lyric token and usable anchor. Uncertain tokens receive
+    /// presentation-only estimates; original saved stamps are never changed.
     static func completeWords(_ line: LyricLine, before end: Double) -> [WordStamp]? {
         guard let words = line.words, !words.isEmpty,
-              words.allSatisfy({ word in
-                  word.time.isFinite && word.time >= line.time && word.time < end
-                      && (word.end.map { $0.isFinite && $0 > word.time && $0 - word.time <= 8 } ?? true)
-              }),
-              zip(words, words.dropFirst()).allSatisfy({ $0.time <= $1.time }),
               normalizedLyric(words.map(\.text).joined(separator: " ")) == normalizedLyric(line.text) else { return nil }
-        return words
+        let usable = usableWordIndices(line, before: end)
+        guard !usable.isEmpty else { return nil }
+        if usable.count == words.count { return words }
+        var result = words
+        let anchors = [-1] + usable + [words.count]
+        for (left, right) in zip(anchors, anchors.dropFirst()) where right - left > 1 {
+            let start = left >= 0 ? words[left].time : line.time
+            let finish = right < words.count ? words[right].time : end
+            for index in (left + 1)..<right {
+                let share = Double(index - left) / Double(right - left)
+                result[index] = WordStamp(time: start + (finish - start) * share,
+                                          text: words[index].text, estimated: true)
+            }
+        }
+        return result
+    }
+
+    /// Mirrored by backend lyrics_validation.usable_word_indices. Both sides
+    /// refuse to choose a side of a backward timestamp sequence as precise.
+    static func usableWordIndices(_ line: LyricLine, before end: Double) -> [Int] {
+        guard let words = line.words, line.time.isFinite, end.isFinite, end > line.time else { return [] }
+        let longPrefix = words.indices.last { index in
+            guard let finish = words[index].end else { return false }
+            return words[index].time.isFinite && finish.isFinite && finish - words[index].time > 8
+        } ?? -1
+        let candidates = words.indices.filter { index in
+            let word = words[index]
+            return index > longPrefix && word.time.isFinite && word.time >= line.time && word.time < end
+                && (word.end.map { $0.isFinite && $0 > word.time && $0 - word.time <= 8 } ?? true)
+        }
+        var maximum = -Double.infinity
+        var forward = Set<Int>()
+        for index in candidates {
+            if words[index].time >= maximum { forward.insert(index) }
+            maximum = max(maximum, words[index].time)
+        }
+        var minimum = Double.infinity
+        var result: [Int] = []
+        for index in candidates.reversed() {
+            if forward.contains(index) && words[index].time <= minimum { result.append(index) }
+            minimum = min(minimum, words[index].time)
+        }
+        return result.reversed()
     }
 
     private static func normalizedLyric(_ text: String) -> String {

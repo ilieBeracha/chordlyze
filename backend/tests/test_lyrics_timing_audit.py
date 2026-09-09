@@ -24,10 +24,11 @@ def test_audit_distinguishes_repaired_estimates_from_unresolved_transcriptions(t
     original = {p: p.read_bytes() for p in paths}
     report = audit(tmp_path)
     assert report['totals']['tracks_scanned'] == 2
-    assert report['totals']['read_repair_changed_tracks'] == 1
+    assert report['totals']['read_repair_changed_tracks'] == 2
     assert report['before']['unmarked_estimated_words'] == 1
     assert report['after_read_repair']['unmarked_estimated_words'] == 0
     assert report['totals']['remaining_invalid_tracks'] == 1
+    assert report['after_read_repair']['estimated_words'] == 2, 'flagging a failed stamp does not count as repairing it'
     assert report['totals']['transcribed_tracks_requiring_audio_review'] == 1
     assert has_invalid(report)
     assert all(p.read_bytes() == data for p, data in original.items())
@@ -44,9 +45,10 @@ def test_catalog_repair_is_counted_without_claiming_word_precision(tmp_path):
     (tmp_path / f'lyrics5-{key}.json').write_text(json.dumps({'synced': True, 'lines': [{'time': 19, 'text': 'Sample phrase'}]}))
     report = audit(tmp_path)
     assert report['totals']['initially_invalid_tracks'] == 1
-    assert report['totals']['remaining_invalid_tracks'] == 0
-    assert report['after_read_repair']['line_only_lines'] == 1
-    assert not has_invalid(report)
+    assert report['totals']['remaining_invalid_tracks'] == 1
+    assert report['after_read_repair']['word_timed_lines'] == 1
+    assert report['after_read_repair']['estimated_words'] == 1
+    assert has_invalid(report), 'a coarse catalog onset cannot count as a word timing repair'
 
 
 def test_partial_and_crossing_word_arrays_are_reported():

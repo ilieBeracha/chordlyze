@@ -125,6 +125,28 @@ extension Color { static let spotifyGreen = Color(red: 30 / 255, green: 215 / 25
             assertMixedAnchors(image, name: "RTL \(width)", rtl: true)
             images += 1
         }
+        // Failed middle words must not detach the measured anchors at either
+        // side, including when the row wraps on a narrow phone.
+        let partialLine = LyricLine(time: 0, text: "Alpha bravo charlie delta", words: [
+            WordStamp(time: 0, text: "Alpha", end: 1),
+            WordStamp(time: 4, text: "bravo", end: 4.4),
+            WordStamp(time: 3, text: "charlie", end: 3.4),
+            WordStamp(time: 6, text: "delta", end: 8)])
+        let partialChart = try analysis(starts: [0, 2, 4, 6, 8], labels: ["C:maj", "G:maj", "F:maj", "E:min"])
+        let partialRow = SheetModel.build(analysis: partialChart, lines: [partialLine], duration: 8).first!
+        check(partialRow.chords.map(\.wordIndex) == [0, nil, nil, 3], "Only supported words anchor the partial phrase")
+        for width in [280.0, 320, 390, 464] {
+            let image = try render(partialRow, width: width)
+            let chords = glyphs(image, chords: true), words = glyphs(image, chords: false)
+            check(chords.count == 4 && words.count == 4, "A partial phrase keeps every word and chord")
+            for index in [0, 3] {
+                check(abs(chords[index].minX - words[index].minX) <= 7, "Healthy anchor survives surrounding malformed words")
+                check(chords[index].maxY < words[index].minY && words[index].minY - chords[index].maxY < 42,
+                      "A preserved anchor wraps with its word")
+            }
+            try save(image, to: output.appendingPathComponent("partial-word-timing-\(Int(width)).png"))
+            images += 1
+        }
         let crowded = try analysis(starts: Array(0...12).map(Double.init), labels: Array(repeating: "F#:min7", count: 12))
         let long = LyricLine(time: 0, text: "Supercalifragilisticexpialidocious", words: [WordStamp(time: 0, text: "Supercalifragilisticexpialidocious", end: 8)])
         let dense = SheetModel.build(analysis: crowded, lines: [long], duration: 12).first!

@@ -73,7 +73,9 @@ def test_song_read_repairs_old_intro_without_rewriting_chart(tmp_path, monkeypat
     original = path.read_bytes()
     revision = main.corrections.revision(entry)
     result = main._song_status('song')
-    assert result['lyrics']['lines'][0] == {'time': 17.45, 'text': 'Opening phrase'}
+    assert result['lyrics']['lines'][0]['time'] == 17.45
+    assert all(w['estimated'] for w in result['lyrics']['lines'][0]['words'])
+    assert result['lyrics']['timing_review'] == {'lines': 1, 'words': 2}
     assert result['lyrics']['timing_note']
     assert result['analysis']['chords'] == entry['chords']
     assert result['analysis']['chart_revision'] == revision

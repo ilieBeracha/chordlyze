@@ -26,7 +26,10 @@ def test_stretched_intro_word_uses_catalog_and_consistent_neighbors():
             {'time': t+offset, 'end': t+offset+.3, 'text': 'Phrase'},
             {'time': t+offset+.4, 'end': t+offset+.7, 'text': str(i)}]})
     result, note = lyrics_align.complete_lyrics(catalog, aligned)
-    assert result[0] == {'time': 28.18, 'text': 'The opening phrase'}
+    assert result[0]['time'] == 28.18
+    assert result[0]['words'][2] == aligned[0]['words'][2], 'healthy suffix stays usable'
+    assert all(w['estimated'] for w in result[0]['words'][:2])
+    assert [w['time'] for w in result[0]['words']] == [w['time'] for w in aligned[0]['words']]
     assert result[1:] == aligned[1:] and note
     assert aligned[0]['time'] == 0 and 'words' in aligned[0], 'input is never mutated'
     assert lyrics_align.complete_lyrics(catalog, result)[0] == result, 'repair is stable'
@@ -38,7 +41,47 @@ def test_word_timing_guard_keeps_long_rests_and_declines_broken_spans():
         assert not lyrics_align.reliable_word_times({'words': [{'time': 0, 'end': end}]})
     catalog = {'synced': False, 'lines': [{'time': 30, 'text': 'Keep text'}]}
     result, note = lyrics_align.complete_lyrics(catalog, [{'time': 10, 'text': 'Keep text', 'words': [{'time': 10, 'end': 40, 'text': 'Keep text'}]}])
-    assert result == [{'time': 10, 'text': 'Keep text'}] and note, 'an untimed catalog cannot relocate vocals'
+    assert result[0]['time'] == 10 and note, 'an untimed catalog cannot relocate vocals'
+    assert result[0]['words'][0] == {'time': 10, 'end': 40, 'text': 'Keep text', 'estimated': True}
+
+
+def test_catalog_recovery_cannot_shorten_a_healthy_neighbors_word_interval():
+    """Moving a damaged line used to invalidate every anchor in the prior line."""
+    catalog = {'synced': True, 'lines': [
+        {'time': 10, 'text': 'A fresh morning'}, {'time': 14, 'text': 'New light'},
+        *[{'time': t, 'text': f'Anchor {i}'} for i, t in enumerate((40, 50, 60))]]}
+    aligned = [
+        {'time': 10, 'text': 'A fresh morning', 'words': [
+            {'time': 10, 'end': 10.5, 'text': 'A'}, {'time': 13, 'end': 13.5, 'text': 'fresh'},
+            {'time': 14.5, 'end': 15, 'text': 'morning'}]},
+        {'time': 16, 'text': 'New light', 'words': [
+            {'time': 16, 'end': 36, 'text': 'New'}, {'time': 36, 'end': 36.5, 'text': 'light'}]},
+        *[{'time': t, 'text': f'Anchor {i}', 'words': [
+            {'time': t, 'end': t + .5, 'text': 'Anchor'}, {'time': t + .5, 'end': t + 1, 'text': str(i)}]}
+          for i, t in enumerate((40, 50, 60))]]
+    result, note = lyrics_align.complete_lyrics(catalog, aligned)
+    assert result[0] == aligned[0]
+    assert all(word['time'] < result[1]['time'] for word in result[0]['words'])
+    assert result[1]['time'] == 16, 'conflicting catalog timing is not invented as a replacement'
+    assert note and result[1]['words'][0]['estimated']
+    assert result[1]['words'][1] == aligned[1]['words'][1]
+    assert lyrics_align.complete_lyrics(catalog, result)[0] == result
+
+
+def test_catalog_recovery_cannot_jump_over_a_healthy_following_line():
+    catalog = {'synced': True, 'lines': [
+        {'time': 40, 'text': 'Damaged opening'}, {'time': 42, 'text': 'Healthy neighbor'},
+        *[{'time': t, 'text': f'Anchor {i}'} for i, t in enumerate((50, 60, 70))]]}
+    aligned = [{'time': 0, 'text': 'Damaged opening', 'words': [
+        {'time': 0, 'end': 15, 'text': 'Damaged'}, {'time': 15, 'end': 16, 'text': 'opening'}]},
+        {'time': 20, 'text': 'Healthy neighbor', 'words': [
+            {'time': 20, 'end': 21, 'text': 'Healthy'}, {'time': 21, 'end': 22, 'text': 'neighbor'}]},
+        *[{'time': t, 'text': f'Anchor {i}', 'words': [
+            {'time': t, 'end': t + .5, 'text': 'Anchor'}, {'time': t + .5, 'end': t + 1, 'text': str(i)}]}
+          for i, t in enumerate((50, 60, 70))]]
+    result, _ = lyrics_align.complete_lyrics(catalog, aligned)
+    assert result[0]['time'] < result[1]['time']
+    assert result[1:] == aligned[1:], 'a conflicting recovery must not discard every healthy word array'
 
 
 def words(text: str, start: float, step: float = 0.5) -> list[dict]:

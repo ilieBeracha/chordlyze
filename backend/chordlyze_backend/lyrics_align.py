@@ -18,6 +18,8 @@ import subprocess
 import sys
 import unicodedata
 
+from .lyrics_validation import MAX_WORD_DURATION, mark_unreliable_words, usable_word_indices
+
 WHISPER_MODEL = os.environ.get('CHORDLYZE_WHISPER_MODEL', 'small')
 # "groq": hosted whisper-large-v3-turbo, seconds per song, needs GROQ_API_KEY.
 # "local": faster-whisper in a subprocess, minutes per song on shared CPUs.
@@ -25,13 +27,12 @@ TRANSCRIBER = os.environ.get('CHORDLYZE_TRANSCRIBER', 'local')
 GROQ_MODEL = os.environ.get('CHORDLYZE_GROQ_MODEL', 'whisper-large-v3-turbo')
 GROQ_URL = os.environ.get('CHORDLYZE_GROQ_URL', 'https://api.groq.com/openai/v1/audio/transcriptions')
 ALIGNER = (f'groq-{GROQ_MODEL}+text-match-v1' if TRANSCRIBER == 'groq'
-           else f'faster-whisper-{WHISPER_MODEL}+text-match-v1') + '+bounded-word-repair-v1'
+           else f'faster-whisper-{WHISPER_MODEL}+text-match-v1') + '+bounded-word-repair-v2'
 MIN_MATCHED_WORDS = 0.5   # share of lyric words found in the transcript
 MIN_PLACED_LINES = 0.6    # share of lyric lines that received a time
 MIN_TRANSCRIBED_WORDS = 12       # a transcript kept as the lyrics needs this many words
 MIN_TRANSCRIBED_CONFIDENCE = 0.5  # and this mean word probability
 MAX_TRANSCRIBED_LINE = 9          # words per line when a segment runs long
-MAX_WORD_DURATION = 8.0          # beyond this, retain text but decline word-level precision
 
 
 def reliable_word_times(line: dict) -> bool:
@@ -216,10 +217,10 @@ def complete_lyrics(catalog: dict, aligned: list[dict]) -> tuple[list[dict], str
     invalid = {i for i, j in pairs.items() if not reliable_word_times(aligned[j])}
     if invalid:
         from statistics import median
+        original_aligned = aligned
         aligned = copy.deepcopy(aligned)
-        for i in invalid:
+        for i in sorted(invalid):
             line = aligned[pairs[i]]
-            line.pop('words', None)
             if catalog.get('synced'):
                 neighbors = sorted((k for k in pairs if k not in invalid and aligned[pairs[k]].get('words')),
                                    key=lambda k: abs(k-i))[:5]
@@ -227,7 +228,24 @@ def complete_lyrics(catalog: dict, aligned: list[dict]) -> tuple[list[dict], str
                 offset = median(offsets) if len(offsets) >= 3 else 0.0
                 consistent = [x for x in offsets if abs(x-offset) <= 1.0]
                 offset = median(consistent) if len(consistent) >= 3 else 0.0
-                line['time'] = round(max(0, float(source[i]['time']) + offset), 3)
+                candidate = round(max(0, float(source[i]['time']) + offset), 3)
+                position = pairs[i]
+                previous = original_aligned[position - 1] if position else None
+                following = original_aligned[position + 1] if position + 1 < len(original_aligned) else None
+                lower = float(previous['time']) if previous else -1.0
+                if previous:
+                    preserved = usable_word_indices(previous, line['time'])
+                    lower = max([lower, *[float(previous['words'][k]['time']) for k in preserved]])
+                upper = float(following['time']) if following else math.inf
+                own_boundary = upper if math.isfinite(upper) else max(w['time'] for w in line['words']) + 1
+                own_anchors = usable_word_indices(line, own_boundary)
+                first_anchor = min((line['words'][k]['time'] for k in own_anchors), default=math.inf)
+                # A catalog repair must not make a healthy neighboring word
+                # array fall outside its line, or jump over the next phrase.
+                # Retain coarse original timing when these sources conflict;
+                # only a recording-backed repair may settle the disagreement.
+                if lower < candidate < upper and candidate <= first_anchor:
+                    line['time'] = candidate
     # A different catalog edition must not absorb unrelated transcript text.
     if len(pairs) != len(aligned):
         result = copy.deepcopy(source)
@@ -266,6 +284,10 @@ def complete_lyrics(catalog: dict, aligned: list[dict]) -> tuple[list[dict], str
         for line in result:
             line.pop('words', None)
         return result, 'Approximate lyric timing: complete catalog text retained.'
+    # Preserve malformed stamps as evidence and retain the usable subset.
+    # Removing the whole word array hid healthy anchors and made audits look
+    # repaired even though only a coarse catalog onset had been substituted.
+    mark_unreliable_words(result, None)
     approximate = len(pairs) != len(source) or any(not line.get('words') or
         any(w.get('estimated') for w in line['words']) for line in result)
     return result, 'Some lyric timing is approximate; all catalog lines are included.' if approximate else None

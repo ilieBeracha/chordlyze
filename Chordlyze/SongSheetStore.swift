@@ -319,7 +319,11 @@ final class SongSheetStore: ObservableObject {
             lyricsLoading = false
             lyricsFailed = false
             let incompleteWords = aligned.lines.enumerated().contains { index, line in
-                !line.text.isEmpty && SheetModel.completeWords(line, before: index + 1 < aligned.lines.count ? aligned.lines[index + 1].time : .infinity) == nil
+                guard !line.text.isEmpty else { return false }
+                let boundary = index + 1 < aligned.lines.count ? aligned.lines[index + 1].time :
+                    analysis?.audioDuration ?? song.duration ?? max(line.time, line.words?.map(\.time).max() ?? line.time) + 1
+                guard let words = SheetModel.completeWords(line, before: boundary) else { return true }
+                return words.contains { $0.estimated == true }
             }
             lyricsNote = aligned.timingNote ?? (incompleteWords ? "Some lyric timing is approximate." :
                 aligned.matched == "transcribed" ? "Transcribed from the recording" : "Lyrics timed from the recording")
