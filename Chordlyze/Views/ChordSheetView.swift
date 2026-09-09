@@ -111,7 +111,8 @@ struct AnalysisTabsView: View {
     /// Words and chords use the same calibrated recording clock, with their
     /// own measured intervals determining which element is sounding.
     private func page(playhead: Double?, wordPlayhead: Double?) -> some View {
-        let activeID = wordPlayhead.flatMap { store.followingRow(at: $0)?.id }
+        let activeID = wordPlayhead.flatMap { store.followingRow(at: $0) }
+            .map { SheetModel.readingRowID($0, in: store.rows) }
         return VStack(spacing: 0) {
             // The optional progression belongs to the viewport, not lyric scroll
             // content: it remains available while auto-follow advances the page.
@@ -119,7 +120,7 @@ struct AnalysisTabsView: View {
                 ChordRailView(events: SheetModel.events(store.analysis), position: playhead ?? -1, transposeBy: store.shift,
                               onTap: { selectedChord = SelectedChord(name: $0) })
             }
-            if store.needsChordPlaybackSummary {
+            if store.needsChordPlaybackSummary, playhead != nil {
                 IndependentChordSummary(events: SheetModel.events(store.analysis), position: playhead,
                                         transposeBy: store.shift, onChordTap: { selectedChord = SelectedChord(name: $0) })
                     .padding(.horizontal, 24).padding(.bottom, 8)
@@ -148,7 +149,7 @@ struct AnalysisTabsView: View {
                 .onChange(of: navigationTime) { _, time in
                     guard !store.usesIndependentLyrics, let time,
                           let row = SheetModel.activeRow(store.rows, at: time) else { return }
-                    withAnimation { proxy.scrollTo(row.id, anchor: .top) }
+                    withAnimation { proxy.scrollTo(SheetModel.readingRowID(row, in: store.rows), anchor: .top) }
                 }
                 .refreshable { store.refresh() }
                 .onChange(of: activeID, initial: true) { _, id in
@@ -444,11 +445,11 @@ struct ChordSheetView: View {
     var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
 
     var body: some View {
-        LazyVStack(alignment: .leading, spacing: style == .live ? 22 : 20) {
+        LazyVStack(alignment: .leading, spacing: style == .live ? 16 : 14) {
             if store.usesIndependentLyrics, !store.independentChordTimeline.chords.isEmpty {
                 DisclosureGroup("Chord timeline") {
                     ChordRowView(row: store.independentChordTimeline, transposeBy: store.shift, playhead: playhead,
-                                 style: style, onChordTap: onChordTap, verdict: verdict)
+                                 style: style, showTiming: true, onChordTap: onChordTap, verdict: verdict)
                         .padding(.top, 8)
                 }
                 .font(.subheadline).tint(Palette.secondary)
@@ -456,11 +457,10 @@ struct ChordSheetView: View {
             }
             // A wordless row with no chord change of its own is the previous chord
             // still sounding: nothing to draw, so it takes no space.
-            ForEach(store.usesIndependentLyrics ? store.untimedLyricRows : store.rows.filter(\.hasVisibleContent)) { row in
+            ForEach(store.usesIndependentLyrics ? store.untimedLyricRows : SheetModel.readingRows(store.rows)) { row in
                 ChordRowView(row: row, transposeBy: store.shift, playhead: playhead,
                              style: style, onChordTap: onChordTap,
                              onLyricTap: store.usesIndependentLyrics ? nil : { onRowTap?(row) }, verdict: verdict)
-                    .padding(.vertical, 8)
                     .id(row.id)
                     .accessibilityIdentifier("song-row-\(row.start)")
                     .contextMenu {
