@@ -29,7 +29,9 @@ struct SongSheetPreview: View {
                     Text("Practice").tag("Practice")
                 }.pickerStyle(.segmented).padding(12)
                 }
-                if ProcessInfo.processInfo.arguments.contains("--song-developer-preview") {
+                if ProcessInfo.processInfo.arguments.contains("--spotify-handoff-preview") {
+                    SpotifyHandoffPreview(store: store)
+                } else if ProcessInfo.processInfo.arguments.contains("--song-developer-preview") {
                     SongDeveloperToolsView(store: store)
                         .task {
                             guard ProcessInfo.processInfo.arguments.contains("--song-developer-run") else { return }
@@ -446,6 +448,74 @@ struct SongSheetPreview: View {
             history.append(raw(status.analysis!))
             return publish(segments)
         }))
+    }
+}
+/// Drives the real song page and recovery view through the reported app-return
+/// sequence. The explicit return button keeps UI checks deterministic.
+private struct SpotifyHandoffPreview: View {
+    @StateObject private var fixture: SpotifyHandoffFixture
+
+    init(store: SongSheetStore) {
+        _fixture = StateObject(wrappedValue: SpotifyHandoffFixture(store: store))
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button("Return from Spotify") { fixture.returnFromSpotify() }
+                    .accessibilityIdentifier("handoff-return")
+                Text("Play: \(fixture.plays)")
+                    .accessibilityIdentifier("handoff-play-count").accessibilityValue(String(fixture.plays))
+                Text("Seek: \(fixture.seeks)")
+                    .accessibilityIdentifier("handoff-seek-count").accessibilityValue(String(fixture.seeks))
+            }.font(.caption).padding(8)
+            AnalysisTabsView(song: fixture.store.song, store: fixture.store,
+                             nowPlaying: fixture.player, deviceRecovery: fixture.recovery)
+        }
+        .onAppear { fixture.player.resume() }
+        .onDisappear { fixture.player.stop() }
+    }
+}
+
+@MainActor
+private final class SpotifyHandoffFixture: ObservableObject {
+    let store: SongSheetStore
+    @Published var plays = 0
+    @Published var seeks = 0
+    private var returnedAt: ContinuousClock.Instant?
+    private let wrongTrack = ProcessInfo.processInfo.arguments.contains("--spotify-handoff-wrong-track")
+    private let device = SpotifyAPI.Device(id: String(repeating: "a", count: 40),
+        name: String(repeating: "a", count: 40), type: "Unknown", isActive: true, isRestricted: false)
+
+    init(store: SongSheetStore) { self.store = store }
+
+    lazy var player = SpotifyNowPlaying(service: .init(
+        current: { [weak self] in
+            guard let self, let returnedAt else { return nil }
+            let seconds = 8 + returnedAt.duration(to: .now).seconds
+            let track = Track(id: wrongTrack ? "different-preview-song" : store.song.id,
+                name: store.song.title, artists: [.init(name: store.song.artist)],
+                album: .init(name: "Offline preview", images: nil), externalIds: nil, durationMs: 200_000)
+            return .init(progressMs: Int(seconds * 1000), isPlaying: true, item: track, device: device)
+        },
+        seek: { [weak self] _ in self?.seeks += 1 },
+        play: { [weak self] _, _, _ in self?.plays += 1 },
+        devices: { [weak self] in self.map { [$0.device] } ?? [] },
+        sleep: { _ in try await Task.sleep(for: .milliseconds(100)) }),
+        sheetProvider: { [store] _ in store })
+
+    lazy var recovery = SpotifyDeviceRecovery(checkDevice: { [weak self] in
+        guard let self else { throw SpotifyNowPlaying.PlayError.notConnected }
+        return try await player.checkPracticeDevice(afterAppSwitch: true)
+    })
+
+    func returnFromSpotify() {
+        guard returnedAt == nil else { return }
+        let attempt = recovery.openRequested(expectsAuthorization: true)
+        recovery.openCompleted(true, attempt: attempt)
+        recovery.sceneChanged(active: false)
+        returnedAt = .now
+        recovery.sceneChanged(active: true)
     }
 }
 #endif
