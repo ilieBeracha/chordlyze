@@ -57,16 +57,15 @@ enum SheetModel {
         return min(interval, max(secondsPerWord * Double(words), minimumSungShare * interval))
     }
 
-    /// Chord events on the beat grid when the chart has one: a boundary the
-    /// recognizer put within a third of a beat of a beat moves onto it, so
-    /// chords change where the click lands and where a player expects.
+    /// Preserve the chart's measured chord boundaries for sounding highlights
+    /// and practice feedback. The beat grid guides navigation and metronome
+    /// clicks; it must not move a chord before or after its measured onset.
     static func events(_ analysis: ChordAnalysis?) -> [Event] {
         guard let analysis, !analysis.isPreview else { return [] }
-        let grid = BeatGrid(tempo: analysis.tempo, chords: analysis.chords)
-        let snap: (Double) -> Double = { grid?.snap($0) ?? $0 }
         return analysis.chords.compactMap { segment in
-            let start = snap(segment.start)
-            let end = min(snap(segment.end), analysis.coverageEnd)
+            guard segment.start.isFinite, segment.end.isFinite else { return nil }
+            let start = segment.start
+            let end = min(segment.end, analysis.coverageEnd)
             guard start.isFinite, end.isFinite, start >= 0, end > start else { return nil }
             return Event(start: start, end: end, chord: segment.chord)
         }.sorted { $0.start < $1.start }

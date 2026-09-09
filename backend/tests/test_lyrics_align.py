@@ -254,7 +254,7 @@ def test_worker_times_only_untimed_catalog_lyrics(tmp_path):
     assert song_worker.attach_lyrics(synced, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'aligned'
     assert synced.posted and len(synced.posted[0][1]['lines']) == 2
     worded = Client({'synced': True, 'lines': [{'time': 12, 'text': 'Come up to meet you', 'words': [{'time': 12, 'text': 'Come'}]}]})
-    assert song_worker.attach_lyrics(worded, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'synced'
+    assert song_worker.attach_lyrics(worded, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'synced unaligned matched_words=1 lyric_words=9'
     instrumental = Client({'synced': True, 'instrumental': True, 'lines': []})
     assert song_worker.attach_lyrics(instrumental, SONG, tmp_path / 'a.mp3', 'gen', align=align) == 'instrumental'
     missing = Client(urllib.error.HTTPError('u', 404, 'not found', {}, None))
@@ -386,6 +386,7 @@ def test_lyrics_job_times_words_without_re_analyzing(monkeypatch, tmp_path, caps
     audio = tmp_path / 'song.mp3'; audio.write_bytes(b'x')
     monkeypatch.setattr(song_worker, 'fetch_full_track', lambda *a, **kw: audio)
     monkeypatch.setattr(song_worker, 'recognize_audio', lambda *a, **kw: (_ for _ in ()).throw(AssertionError('no recognition')))
+    monkeypatch.setattr(song_worker, 'audio_identity', lambda audio: (200, 'a' * 64))
     posted = []
     class Client:
         def post(self, path, payload=None):
@@ -393,17 +394,18 @@ def test_lyrics_job_times_words_without_re_analyzing(monkeypatch, tmp_path, caps
         def get(self, path, params):
             return {'synced': False, 'lines': [{'time': 1, 'text': 'Some words'}]}
     monkeypatch.setattr(song_worker, 'align_lyrics', lambda audio, lines, stats=None: [{'time': 1.2, 'text': 'Some words',
-                                                                                        'words': [{'time': 1.2, 'text': 'Some'}, {'time': 1.7, 'text': 'words'}]}])
-    job = {'id': 'job', 'lease': 'lease', 'generation': 'gen', 'kind': 'lyrics', 'song': dict(SONG)}
+                                                                                        'words': [{'time': 1.2, 'end': 1.6, 'text': 'Some'}, {'time': 1.7, 'end': 2.1, 'text': 'words'}]}])
+    job = {'id': 'job', 'lease': 'lease', 'generation': 'gen', 'kind': 'lyrics', 'song': dict(SONG),
+           'expected_audio_sha256': 'a' * 64, 'expected_lyrics_sha256': 'b' * 64}
     assert song_worker.process_job(Client(), job) == 'ready'
     lyrics = [p for path, p in posted if path == '/internal/jobs/lyrics']
     assert len(lyrics) == 1 and lyrics[0]['lines'][0]['words'][1]['text'] == 'words'
     finish = [p for path, p in posted if path == '/internal/jobs/finish']
-    assert finish == [{'track_id': 'song', 'job_id': 'job', 'lease': 'lease', 'library_generation': 'gen',
-                       'state': 'ready', 'message': 'Lyrics aligned'}]
+    assert not finish, 'the guarded attachment atomically completes the lyric lease'
+    assert lyrics[0]['expected_audio_sha256'] == 'a' * 64 and lyrics[0]['lease'] == 'lease'
     assert not any(path == '/analysis/submit' for path, _ in posted), 'the chart is not re-published'
     assert not audio.exists()
-    assert 'Lyrics job aligned' in capsys.readouterr().out
+    assert 'Lyrics job ready' in capsys.readouterr().out
 
 
 def test_lyrics_lookup_retries_a_503_and_lines_are_made_publishable(tmp_path):

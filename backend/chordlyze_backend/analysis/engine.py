@@ -63,6 +63,26 @@ def _decode_to_wav(src: Path, dst: Path) -> None:
         raise AudioDecodeError(f"ffmpeg failed to decode {src.name}")
 
 
+def _wav_identity(wav: Path) -> tuple[float, str]:
+    """Canonical sample identity shared by recognition and lyric recovery."""
+    with wave.open(str(wav), 'rb') as pcm:
+        duration = pcm.getnframes() / pcm.getframerate()
+        if duration <= 0:
+            raise AudioDecodeError('audio contains no samples')
+        digest = hashlib.sha256()
+        while chunk := pcm.readframes(65536):
+            digest.update(chunk)
+    return duration, digest.hexdigest()
+
+
+def audio_identity(audio_path: str | Path) -> tuple[float, str]:
+    """Decode exactly as recognition does, without running chord inference."""
+    with tempfile.TemporaryDirectory(prefix='chordlyze-recording-identity-') as temporary:
+        wav = Path(temporary) / 'audio.wav'
+        _decode_to_wav(Path(audio_path), wav)
+        return _wav_identity(wav)
+
+
 @lru_cache(maxsize=1)
 def _processors():
     # Imported lazily: madmom loads model weights at construction time.
@@ -89,15 +109,9 @@ def recognize_audio(audio_path: str | Path, model: str = "ismir2019", *,
             _decode_to_wav(src, wav)
         except subprocess.TimeoutExpired as exc:
             raise AudioDecodeError("audio decoding timed out") from exc
-        with wave.open(str(wav), "rb") as pcm:
-            duration = pcm.getnframes() / pcm.getframerate()
-            if duration <= 0:
-                raise AudioDecodeError("audio contains no samples")
-            if max_duration is not None and duration > max_duration + DECODE_PADDING_TOLERANCE:
-                raise AudioDecodeError(f"recording exceeds {max_duration:g} seconds")
-            digest = hashlib.sha256()
-            while chunk := pcm.readframes(65536):
-                digest.update(chunk)
+        duration, audio_sha256 = _wav_identity(wav)
+        if max_duration is not None and duration > max_duration + DECODE_PADDING_TOLERANCE:
+            raise AudioDecodeError(f"recording exceeds {max_duration:g} seconds")
         if model == "ismir2019":
             from .ismir import recognize
             if review:
@@ -116,7 +130,7 @@ def recognize_audio(audio_path: str | Path, model: str = "ismir2019", *,
         # Decoder's final frame can extend slightly past the decoded audio.
         evidence = [{**item, 'end': min(item['end'], duration)} for item in evidence if item['start'] < duration]
         evidence = matching_review(evidence, [s.to_dict() for s in segments])
-    return Recognition(segments, duration, digest.hexdigest(), model, evidence)
+    return Recognition(segments, duration, audio_sha256, model, evidence)
 
 
 def validated_segments(raw, duration: float) -> list[ChordSegment]:

@@ -17,54 +17,11 @@ struct ChordLyricLine: View {
     var transposeBy = 0
     var playhead: Double? = nil
     var style: ChordRowView.Style = .live
-    /// Live: this is the line being sung.
-    var active = false
     var onChordTap: ((String) -> Void)? = nil
     var onLyricTap: (() -> Void)? = nil
     var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
-    /// The row's span in song time, for the runner in Live.
-    var rowStart: Double = 0
-    var rowEnd: Double = 0
-    /// Onset of each word when the lyrics are word-timed (same order as
-    /// `words`); the runner and the word highlight then follow the voice.
+    /// Word onsets position independent chord changes between lyric tokens.
     var wordTimes: [Double]? = nil
-    /// Calibrated song time for the words, without the chord display lead:
-    /// a word is sung when it is sung, chords may be shown a little early.
-    var wordPlayhead: Double? = nil
-    /// When each word stops sounding, where the transcript heard it.
-    var wordEnds: [Double?]? = nil
-
-    /// After a word has ended and before the next begins, the light settles:
-    /// the pulse is the word's own length, not the gap after it.
-    private var betweenWords: Bool {
-        guard let currentWord, let wordEnds, currentWord < wordEnds.count, let end = wordEnds[currentWord],
-              let wordPlayhead else { return false }
-        return wordPlayhead > end + 0.15
-    }
-
-    private var currentWord: Int? {
-        guard let wordTimes, let wordPlayhead, wordPlayhead >= rowStart, wordPlayhead < rowEnd else { return nil }
-        return LyricPlayhead.currentWord(at: wordPlayhead, wordTimes: wordTimes)
-    }
-
-    /// A soft cloud of light over the voice: the sung word full white, the
-    /// words either side partly lit, fading out two words away. Nothing is
-    /// coloured; the rest of the line sits back in grey.
-    private func glow(_ index: Int) -> Double {
-        guard let currentWord else { return 0 }
-        let rest = betweenWords ? 0.45 : 1.0
-        switch abs(index - currentWord) {
-        case 0: return rest
-        case 1: return 0.55 * rest
-        case 2: return 0.25 * rest
-        default: return 0
-        }
-    }
-
-    private func wordColor(_ index: Int) -> Color {
-        guard currentWord != nil else { return style.wordColor(active: active) }
-        return Color.white.opacity(0.38 + 0.62 * glow(index))
-    }
 
 
     var body: some View {
@@ -78,45 +35,13 @@ struct ChordLyricLine: View {
                             .frame(minHeight: style == .sheet ? 24 : 30, alignment: .bottomLeading)
                     }
                     Text(token.word.isEmpty ? " " : token.word)
-                        .font(style.wordFont(active: active))
-                        .foregroundStyle(wordColor(token.wordIndex ?? -100))
+                        .font(style.wordFont)
+                        .foregroundStyle(style == .live ? Color.white.opacity(0.86) : Palette.nearWhite)
                         .opacity(token.word.isEmpty ? 0 : 1)
                         .accessibilityHidden(token.word.isEmpty)
-                        .shadow(color: .white.opacity((token.wordIndex.map(glow) ?? 0) * 0.45), radius: 10)
-                        .animation(.easeOut(duration: 0.14), value: currentWord)
-                        .animation(.easeInOut(duration: 0.35), value: betweenWords)
-                        .animation(.easeInOut(duration: 0.45), value: active)
                         .onTapGesture { if !token.word.isEmpty { onLyricTap?() } }
                 }
             }
-        }
-        .overlayPreferenceValue(ChangeAnchors.self) { anchors in
-            // Mixed rows previously had a timed cursor in their detached band.
-            // Keep that cursor, now following the actual in-line chord bounds.
-            if style == .live, chords.contains(where: { $0.wordIndex == nil }),
-               let playhead, let first = chords.first,
-               playhead >= first.event.start, playhead >= rowStart, playhead < rowEnd {
-                GeometryReader { geometry in
-                    let ordered = chords.sorted { $0.event.start < $1.event.start }
-                    let bounds = Dictionary(uniqueKeysWithValues: ordered.enumerated().compactMap { index, chord in
-                        anchors[chord.event.start].map { (index, geometry[$0]) }
-                    })
-                    let points = LyricPlayhead.waypoints(rowStart: rowStart, rowEnd: rowEnd, words: bounds,
-                        wordTimes: nil, chordStarts: ordered.enumerated().map { ($0.element.event.start, $0.offset) }, rtl: text.isRTLText)
-                    if let point = LyricPlayhead.position(at: playhead, along: points, rtl: text.isRTLText, eased: false) {
-                        RoundedRectangle(cornerRadius: 1).fill(Color.spotifyGreen.opacity(0.5))
-                            .frame(width: 2, height: point.height + 4)
-                            .position(x: point.x, y: point.y).allowsHitTesting(false)
-                    }
-                }
-            }
-        }
-    }
-
-    private struct ChangeAnchors: PreferenceKey {
-        static var defaultValue: [Double: Anchor<CGRect>] = [:]
-        static func reduce(value: inout [Double: Anchor<CGRect>], nextValue: () -> [Double: Anchor<CGRect>]) {
-            value.merge(nextValue(), uniquingKeysWith: { $1 })
         }
     }
 
@@ -130,7 +55,6 @@ struct ChordLyricLine: View {
                     ChordChip(name: chord.event.display(transposedBy: transposeBy),
                               active: playhead.map(chord.event.contains) ?? false,
                               style: style, playing: playhead != nil, onTap: onChordTap, verdict: verdict?(chord.event.start))
-                        .anchorPreference(key: ChangeAnchors.self, value: .bounds) { [chord.event.start: $0] }
                 }
             }
         }

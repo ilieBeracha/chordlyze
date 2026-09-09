@@ -45,8 +45,8 @@ struct PracticeFeedback: Equatable {
                   start: start, end: end, transpose: transpose)
     }
 
-    /// Use the same beat-aligned event boundaries as the visible sheet. Raw
-    /// segment timestamps cannot identify a chip that has snapped to a beat.
+    /// Use the same measured event boundaries as the visible sheet so feedback
+    /// and sounding highlights share one recording timeline.
     init(analysis: ChordAnalysis, start: Double, end: Double, transpose: Int = 0) {
         self.init(events: SheetModel.events(analysis), start: start, end: end, transpose: transpose)
     }

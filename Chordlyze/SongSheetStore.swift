@@ -10,6 +10,7 @@ final class SongSheetStore: ObservableObject {
     struct Service {
         var request: (SongDescriptor) async throws -> SongStatus = { try await BackendClient.requestSong($0, retry: true) }
         var status: (String) async throws -> SongStatus = { try await BackendClient.songStatus(trackID: $0) }
+        var requestLyricTiming: (String) async throws -> SongStatus = { try await BackendClient.requestLyricTiming(trackID: $0) }
         var lyrics: (SongDescriptor) async throws -> BackendClient.LyricsResult? = {
             try await BackendClient.lyrics(title: $0.title, artist: $0.artist, duration: $0.duration, album: $0.album)
         }
@@ -46,6 +47,11 @@ final class SongSheetStore: ObservableObject {
     @Published private(set) var lyricsNote: String?
     @Published private(set) var lyricsLoading = true
     @Published private(set) var lyricsFailed = false
+    @Published private(set) var lyricsJob: SongStatus.Job?
+    @Published private(set) var requestingLyricTiming = false
+    @Published private(set) var lyricTimingError: String?
+    @Published private(set) var hasTimedLyricWords = false
+    @Published private(set) var hasCompleteLyricTiming = false
     /// In the account's library. Requesting analysis saves; the sheet's
     /// bookmark toggles it. The chart itself is shared by every account.
     @Published private(set) var saved = false
@@ -90,6 +96,55 @@ final class SongSheetStore: ObservableObject {
     /// Explicit missing/unavailable responses still disable its actions.
     var canPractice: Bool { analysis?.isPreview == false && (state == "ready" || state == "connection") }
     var shift: Int { (capoMode ? -capo : 0) + manualShift }
+    var lyricTimingIsSynced: Bool { lyricsResult?.synced == true }
+    var timingLyrics: Bool { requestingLyricTiming || ["queued", "processing"].contains(lyricsJob?.state ?? "") }
+    var needsLyricTiming: Bool {
+        canPractice && !lyricsLoading && !lyricsFailed && lyricsResult?.instrumental != true && !hasCompleteLyricTiming
+    }
+    var lyricTimingMessage: String? {
+        if let lyricTimingError { return lyricTimingError }
+        if timingLyrics {
+            return lyricsJob?.workerOnline == false ? "Lyrics are waiting to be synchronized." : "Synchronizing lyrics to the recording…"
+        }
+        if hasCompleteLyricTiming { return nil }
+        if let job = lyricsJob, ["failed", "unavailable"].contains(job.state) {
+            return job.message ?? "Lyric timing could not finish. Your chords are still available."
+        }
+        guard needsLyricTiming else { return nil }
+        return hasTimedLyricWords ? "Some words still need timing." : "Lyrics aren't synchronized yet."
+    }
+    var lyricTimingActionTitle: String {
+        ["failed", "unavailable"].contains(lyricsJob?.state ?? "") || lyricTimingError != nil ? "Retry" : "Sync lyrics"
+    }
+
+    /// Auto-follow only a measured sung word or a real instrumental row.
+    /// Guessed lyric positions must not advance the page as if vocals began.
+    func followingRow(at time: Double) -> SheetModel.Row? {
+        guard let row = SheetModel.activeRow(rows, at: time) else { return nil }
+        if row.text.isEmpty { return row }
+        guard lyricTimingIsSynced, let words = row.words,
+              LyricPlayhead.currentWord(at: time, words: words, rowStart: row.start, rowEnd: row.end) != nil else { return nil }
+        return row
+    }
+
+    /// Explicit recovery uses the existing chart; it never re-analyzes chords.
+    func requestLyricTiming() async {
+        guard canPractice, !timingLyrics, !savingCorrection else { return }
+        requestingLyricTiming = true
+        lyricTimingError = nil
+        revision += 1
+        let token = revision
+        task?.cancel(); task = nil
+        defer { requestingLyricTiming = false; if observers > 0 { start() } }
+        do {
+            let result = try await service.requestLyricTiming(song.id)
+            guard !Task.isCancelled, token == revision else { return }
+            apply(result)
+        } catch {
+            guard !Task.isCancelled, token == revision else { return }
+            lyricTimingError = "Could not request lyric timing. Try again."
+        }
+    }
     /// "Capo 2", "+1", "Capo 2 +1", or nil when chords show as analyzed.
     var chordNote: String? {
         let parts = [capoMode && capo > 0 ? "Capo \(capo)" : nil,
@@ -282,7 +337,7 @@ final class SongSheetStore: ObservableObject {
                     state = "connection"
                     message = canPractice ? "Reconnecting… Your loaded chart is still available." : "Reconnecting…"
                 }
-                do { try await service.sleep(failures > 0 ? min(30, Double(failures * 3)) : (state == "ready" || state == "missing" ? 15 : 3)) }
+                do { try await service.sleep(failures > 0 ? min(30, Double(failures * 3)) : (timingLyrics ? 3 : (state == "ready" || state == "missing" ? 15 : 3))) }
                 catch { return }
             }
         }
@@ -329,6 +384,10 @@ final class SongSheetStore: ObservableObject {
                 aligned.matched == "transcribed" ? "Transcribed from the recording" : "Lyrics timed from the recording")
         }
         state = status.job.state
+        lyricsJob = status.lyricsJob
+        if ["queued", "processing", "ready"].contains(status.lyricsJob?.state ?? "") {
+            lyricTimingError = nil
+        }
         if let flag = status.saved { saved = flag }
         if status.saved != nil {
             let candidate = status.timing ?? .identity
@@ -397,6 +456,19 @@ final class SongSheetStore: ObservableObject {
         beatGrid = BeatGrid(tempo: analysis?.tempo, chords: analysis?.chords ?? [])
         rows = SheetModel.build(analysis: analysis, lines: lines,
                                 duration: song.duration ?? analysis?.songDuration)
+        let lyricRows = rows.filter { !$0.text.isEmpty }
+        hasTimedLyricWords = lyricTimingIsSynced && lyricRows.contains { row in
+            row.words?.contains { word in
+                LyricPlayhead.currentWord(at: word.time, words: row.words ?? [], rowStart: row.start, rowEnd: row.end) != nil
+            } == true
+        }
+        hasCompleteLyricTiming = lyricTimingIsSynced && !lyricRows.isEmpty && lyricRows.allSatisfy { row in
+            guard let words = row.words, !words.isEmpty else { return false }
+            return words.indices.allSatisfy { index in
+                LyricPlayhead.currentWord(at: words[index].time, words: words, rowStart: row.start, rowEnd: row.end) == index
+            }
+        }
+        if hasCompleteLyricTiming { lyricTimingError = nil }
         capo = ChordMath.autoCapo(names: analysis?.chords.filter { $0.label != "N" }
             .map { ($0.displayName, $0.duration) } ?? [])
     }

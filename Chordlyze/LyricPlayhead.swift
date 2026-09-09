@@ -94,8 +94,27 @@ enum LyricPlayhead {
         return Point(x: x, y: to.line.midY, height: to.line.height)
     }
 
-    /// The word being sung at `time`: the last onset at or before it, or nil
-    /// before the first word.
+    /// A measured word sounds only during its own interval. Estimated words
+    /// and missing ends cannot establish that the voice is still sounding.
+    /// Keep the original token index so inserted chord cells never move it.
+    static func currentWord(at time: Double, words: [WordStamp], rowStart: Double, rowEnd: Double) -> Int? {
+        guard time.isFinite, rowStart.isFinite, rowEnd.isFinite,
+              rowStart >= 0, rowEnd > rowStart, time >= rowStart, time < rowEnd,
+              let index = words.lastIndex(where: { $0.time.isFinite && $0.time <= time }) else { return nil }
+        let word = words[index]
+        guard word.hasMeasuredOnset, word.estimated != true,
+              word.time >= rowStart, word.time < rowEnd,
+              let end = word.measuredEnd, end.isFinite, end > word.time,
+              end - word.time <= 8, time < end else { return nil }
+        // A backwards sequence cannot tell us which of the conflicting
+        // tokens is sung. Healthy anchors outside that conflict still work.
+        guard !words[..<index].contains(where: { $0.time.isFinite && $0.time > word.time }),
+              !words[(index + 1)...].contains(where: { $0.time.isFinite && $0.time < word.time }) else { return nil }
+        return index
+    }
+
+    /// Onset-only lookup retained for approximate positioning. This cannot
+    /// determine a sung word because it has no vocal ends or provenance.
     static func currentWord(at time: Double, wordTimes: [Double]) -> Int? {
         var current: Int?
         for (index, onset) in wordTimes.enumerated() where onset <= time { current = index }

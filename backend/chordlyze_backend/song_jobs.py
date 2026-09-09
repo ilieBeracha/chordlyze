@@ -58,6 +58,12 @@ def generation(directory: Path) -> str:
         return path.read_text().strip()
 
 
+def lyrics_fingerprint(lyrics: dict | None) -> str:
+    """Compare saved lyric evidence without involving personal chord edits."""
+    return hashlib.sha256(json.dumps(lyrics, sort_keys=True, separators=(',', ':'),
+                                     allow_nan=False).encode()).hexdigest()
+
+
 def reset_library(directory: Path, *, apply: bool = False) -> dict:
     """Explicit administrative reset; does not touch credentials or model assets."""
     with library_lock(directory):
@@ -84,7 +90,9 @@ class SongJobs:
             path = self.path(track_id)
             return json.loads(path.read_text()) if path.exists() else None
 
-    def request(self, song: dict, *, retry: bool = False, kind: str = 'analysis') -> dict:
+    def request(self, song: dict, *, retry: bool = False, kind: str = 'analysis',
+                audio_sha256: str | None = None, lyrics_sha256: str | None = None,
+                download_checkpoint: dict | None = None) -> dict:
         """kind 'analysis' makes a chart; 'lyrics' re-fetches the recording of
         an existing chart only to time its lyrics. A lyrics job replaces a
         finished record for the track, never one still queued or running."""
@@ -97,7 +105,29 @@ class SongJobs:
             job = {'id': uuid.uuid4().hex, 'generation': generation(self.directory), 'kind': kind,
                    'song': song, 'state': 'queued', 'created_at': time.time(), 'attempts': 0,
                    'message': 'Waiting to analyze the full song.' if kind == 'analysis' else 'Waiting to time the lyrics.'}
+            if kind == 'lyrics':
+                job.update(expected_audio_sha256=audio_sha256, expected_lyrics_sha256=lyrics_sha256)
+                if download_checkpoint:
+                    job['download_checkpoint'] = download_checkpoint
             write_json(self.path(song['track_id']), job)
+            return job
+
+    def begin_lyrics(self, track_id: str, job_id: str, lease: str, epoch: str,
+                     audio_sha256: str, lyrics_sha256: str) -> dict | None:
+        """Keep the live lease when a published chart moves to lyric alignment.
+
+        A crashed worker is reclaimed as a lyrics job, never chord inference.
+        The caller holds the same library lock while publishing the chart.
+        """
+        with library_lock(self.directory):
+            if not self.valid_lease(track_id, job_id, lease, epoch):
+                return None
+            job = self.get(track_id)
+            if job['kind'] != 'lyrics':
+                job['attempts'] = 1
+            job.update(kind='lyrics', stage='aligning', expected_audio_sha256=audio_sha256,
+                       expected_lyrics_sha256=lyrics_sha256, message='Timing the lyrics from the recording.')
+            write_json(self.path(track_id), job)
             return job
 
     def worker_online(self) -> bool:
@@ -117,7 +147,7 @@ class SongJobs:
                         and job.get('lease_until', 0) >= time.time()
                         and job['generation'] == generation(self.directory)):
                     job['lease_until'] = time.time() + LEASE_SECONDS
-                    if stage in ('downloading', 'analyzing'):
+                    if stage in ('downloading', 'analyzing', 'aligning'):
                         job['stage'] = stage
                     if download_checkpoint is not None:
                         job['download_checkpoint'] = download_checkpoint
@@ -135,7 +165,8 @@ class SongJobs:
                 if job['state'] != 'queued' and not expired:
                     continue
                 if job['attempts'] >= 3:
-                    job.update(state='failed', message='Analysis was interrupted. Retry this song.')
+                    job.update(state='failed', message=('Lyric timing was interrupted. Retry lyric timing.'
+                        if job.get('kind') == 'lyrics' else 'Analysis was interrupted. Retry this song.'))
                     write_json(self.path(job['song']['track_id']), job)
                     continue
                 job.update(state='processing', stage='downloading', lease=uuid.uuid4().hex,

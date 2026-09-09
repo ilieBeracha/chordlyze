@@ -97,7 +97,7 @@ pace and the original key; the metronome path is the only way to slow down.
 
 Spotify's reported clock is an estimate of playback position, not a measurement of when sound reaches the player's ears. Matching the desktop clock does not establish headphone timing. **Key & capo → Calibrate by ear** fits the chart to the audible Spotify recording. Practice captures that map's starting chart position and scale for the whole take, including saved retries and backend scoring; changing calibration later does not reinterpret an old take.
 
-**Show chords ahead** moves only the visual cue, never the scoring clock. Its default and Reset value are both zero. Calibration and this display lead are separate controls.
+The sounding chord and scoring target use the same measured event boundaries and song calibration. The former global **Show chords ahead** preference is no longer used, so a saved display offset cannot make green activation early. Lyrics remain steadily readable; they do not pulse or highlight word by word.
 
 Playing along with Spotify is the one primary action. **Practice slower,
 without the song** reveals the pace picker (50% or 75%) and the metronome
@@ -139,7 +139,7 @@ position in the file: feedback and the backend score the same timeline.
 
 `PracticeFeedback` judges each chart chord from the first accepted chord timestamp in captured audio. The detector retains this timestamp across coalesced UI updates, so a busy main thread cannot move the reported strum later. Each snapshot carries an estimated delay from the sample rate, analysis window and confirmation duration (about 0.53 seconds at 44.1 kHz). This is not a measured device calibration. It is applied in real seconds before chart-rate conversion. Live timing labels therefore say "estimated ... vs chart" or "near chart change" rather than asserting that the player was late. A chord already sounding when the take begins is held, not a missed earlier transition.
 
-Live targets use `SheetModel.events`, so beat-snapped chips and verdicts share the same boundaries. A sustained chord is credited only after it is heard inside the next target, never in advance. The live panel shows the target, confirmed heard chord, microphone level, provisional/quiet status, and the last check. With a capo, the target is labeled Sounding. Detection failures are reported while the recording continues.
+Live targets use `SheetModel.events`, so chips and verdicts share the same measured boundaries without beat snapping. A sustained chord is credited only after it is heard inside the next target, never in advance. The live panel shows the target, confirmed heard chord, microphone level, provisional/quiet status, and the last check. With a capo, the target is labeled Sounding. Detection failures are reported while the recording continues.
 
 Matching uses pitch-class sets after transposition. Silence and uncertain detections remain unjudged in live feedback; confirmed wrong chords name what was heard. Matching chords can upgrade an earlier wrong verdict. Actual detector latency still depends on evidence quality and device input; no software constant establishes the player's acoustic timing.
 

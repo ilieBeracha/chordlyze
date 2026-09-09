@@ -23,7 +23,6 @@ struct AnalysisTabsView: View {
     @State private var requestedPlaybackPosition = 0.0
     @State private var playbackTask: Task<Void, Never>?
     @Environment(\.openURL) private var openURL
-    @AppStorage("chordLead") private var lead = 0.0
     @AppStorage("chordRail") private var showRail = false
 
     /// The Spotify poller behind seeks and calibration; the offline fixture passes its own.
@@ -58,8 +57,8 @@ struct AnalysisTabsView: View {
             // Keep the page's identity when Spotify starts during an app switch.
             // Replacing the idle subtree would dismiss its pending recovery.
             TimelineView(.animation(minimumInterval: 0.1, paused: !songIsUp)) { _ in
-                let wordPosition = clamp(nowPlaying.livePosition().map(store.timing.chartTime) ?? lastPosition)
-                let position = clamp(wordPosition + lead)
+                let wordPosition = nowPlaying.livePosition().map(store.timing.chartTime) ?? lastPosition
+                let position = wordPosition
                 page(playhead: songIsUp ? position : nil, wordPlayhead: songIsUp ? wordPosition : nil)
                     .onChange(of: wordPosition) { _, value in
                         if songIsUp { lastPosition = value }
@@ -104,15 +103,15 @@ struct AnalysisTabsView: View {
     }
 
     /// Optional diagrams, status, the chart, and while playing the time line.
-    /// `playhead` is the chart second Spotify is at plus the display lead;
-    /// `wordPlayhead` the same without the lead.
+    /// Words and chords use the same calibrated recording clock, with their
+    /// own measured intervals determining which element is sounding.
     private func page(playhead: Double?, wordPlayhead: Double?) -> some View {
-        let activeID = wordPlayhead.flatMap { SheetModel.activeRow(store.rows, at: $0)?.id }
+        let activeID = wordPlayhead.flatMap { store.followingRow(at: $0)?.id }
         return VStack(spacing: 0) {
             // The optional progression belongs to the viewport, not lyric scroll
             // content: it remains available while auto-follow advances the page.
-            if showRail, store.canPractice {
-                ChordRailView(events: SheetModel.events(store.analysis), position: playhead ?? 0, transposeBy: store.shift,
+            if showRail || (!store.hasCompleteLyricTiming && playhead != nil), store.canPractice {
+                ChordRailView(events: SheetModel.events(store.analysis), position: playhead ?? -1, transposeBy: store.shift,
                               onTap: { selectedChord = SelectedChord(name: $0) })
             }
             ScrollViewReader { proxy in
@@ -121,7 +120,7 @@ struct AnalysisTabsView: View {
                         if nowPlaying.isControlling || playbackError != nil || store.saveError != nil || nowPlaying.controlMessage != nil || needsPlaybackDevice {
                             playbackStatus
                         }
-                        if store.actionTitle != nil || !store.message.isEmpty || store.lyricsLoading || (store.lyricsFailed && store.lyricsNote != nil) {
+                        if store.actionTitle != nil || !store.message.isEmpty || store.lyricsLoading || store.lyricTimingMessage != nil || (store.lyricsFailed && store.lyricsNote != nil) {
                             SongSheetStatus(store: store)
                         }
                         ChordSheetView(store: store, playhead: playhead, style: .live,
@@ -131,8 +130,7 @@ struct AnalysisTabsView: View {
                                        } : nil,
                                        onPracticeRow: store.canPractice ? { row in
                                            practiceRange = row.start...min(row.end, store.analysis?.coverageEnd ?? row.end)
-                                       } : nil,
-                                       wordPlayhead: wordPlayhead)
+                                       } : nil)
                     }
                     .padding(.horizontal, 24).padding(.top, 16)
                     .padding(.bottom, playhead == nil ? 40 : 320)  // the last lines can roll up to the reading height too
@@ -154,9 +152,9 @@ struct AnalysisTabsView: View {
                     Button { openSpotify() } label: {
                         Image(systemName: "music.note").frame(width: 44, height: 44)
                     }.tint(.spotifyGreen).accessibilityLabel("Open playback controls in Spotify")
-                    Text(mmss(playhead)).font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    Text(mmss(clamp(playhead))).font(.system(size: 13, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white).accessibilityIdentifier("live-position")
-                    ProgressView(value: playhead, total: max(1, duration)).tint(.spotifyGreen)
+                    ProgressView(value: clamp(playhead), total: max(1, duration)).tint(.spotifyGreen)
                 }
                 .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 24)
             }
@@ -340,6 +338,15 @@ struct SongSheetStatus: View {
                 note("Loading lyrics…", icon: nil, spinning: true) { EmptyView() }
             } else if store.lyricsFailed, let text = store.lyricsNote {
                 note(text, icon: "clock") { Button("Retry") { store.refresh() } }
+            } else if let text = store.lyricTimingMessage {
+                note(text, icon: "waveform", spinning: store.timingLyrics) {
+                    if store.canPractice && !store.timingLyrics {
+                        Button(store.lyricTimingActionTitle) {
+                            Task { await store.requestLyricTiming() }
+                        }
+                        .accessibilityIdentifier("sync-lyrics")
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -372,8 +379,6 @@ struct ChordSheetView: View {
     var onRowTap: ((SheetModel.Row) -> Void)? = nil
     var onPracticeRow: ((SheetModel.Row) -> Void)? = nil
     var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
-    /// Song time for the words, without the chord display lead.
-    var wordPlayhead: Double? = nil
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: style == .live ? 22 : 20) {
@@ -381,8 +386,7 @@ struct ChordSheetView: View {
             // still sounding: nothing to draw, so it takes no space.
             ForEach(store.rows.filter(\.hasVisibleContent)) { row in
                 ChordRowView(row: row, transposeBy: store.shift, playhead: playhead,
-                             style: style, onChordTap: onChordTap, onLyricTap: { onRowTap?(row) }, verdict: verdict,
-                             wordPlayhead: wordPlayhead)
+                             style: style, onChordTap: onChordTap, onLyricTap: { onRowTap?(row) }, verdict: verdict)
                     .padding(.vertical, 8)
                     .id(row.id)
                     .accessibilityIdentifier("song-row-\(row.start)")
@@ -413,7 +417,6 @@ struct SongPlayingSettings: View {
     @ObservedObject var store: SongSheetStore
     var nowPlaying: SpotifyNowPlaying = .shared
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("chordLead") private var lead = 0.0
     private var soundingKey: String {
         guard let key = store.analysis?.key else { return "Not available" }
         let parts = key.split(separator: " ", maxSplits: 1)
@@ -449,10 +452,6 @@ struct SongPlayingSettings: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("Timing against Spotify") {
-                    Stepper(String(format: "Show chords ahead by %.1f s", lead), value: $lead, in: -1...2, step: 0.1)
-                        .accessibilityIdentifier("chord-lead")
-                    Text("Every song, Live and Practice. Off by default; raise it only if chords light after you hear them change.")
-                        .font(.footnote).foregroundStyle(.secondary)
                     NavigationLink {
                         AutomaticSyncView(store: store, nowPlaying: nowPlaying)
                     } label: {
@@ -479,7 +478,7 @@ struct SongPlayingSettings: View {
                         .font(.footnote).foregroundStyle(store.timingError == nil ? .secondary : Color(Palette.warning))
                 }
                 Button("Reset to original") {
-                    store.manualShift = 0; store.capoMode = false; lead = 0
+                    store.manualShift = 0; store.capoMode = false
                     Task { await store.setTiming(nil) }
                 }
             }

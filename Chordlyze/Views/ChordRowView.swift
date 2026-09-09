@@ -40,12 +40,8 @@ struct ChordRowView: View {
     var onLyricTap: (() -> Void)? = nil
     /// Practice: live verdict for the chord starting at this chart second.
     var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
-    /// Song time for the words, without the chord display lead.
-    var wordPlayhead: Double? = nil
 
     private var rtl: Bool { row.text.isRTLText }
-    /// With no playhead nothing is being sung, and no line sits back.
-    private var active: Bool { playhead.map(row.contains) ?? true }
     // A line-only timestamp cannot locate changes among words. A word-timed
     // row, however, keeps its individual anchors even when other changes fall
     // in a gap: ChordLyricLine inserts those changes between the word tokens.
@@ -56,57 +52,29 @@ struct ChordRowView: View {
             if !row.text.isEmpty {
                 if independentChanges { timedRow }
                 ChordLyricLine(text: row.text, chords: independentChanges ? [] : row.chords, words: row.words?.map(\.text), transposeBy: transposeBy,
-                               playhead: playhead, style: style, active: active,
+                               playhead: playhead, style: style,
                                onChordTap: onChordTap, onLyricTap: onLyricTap, verdict: verdict,
-                               rowStart: row.start, rowEnd: row.end, wordTimes: row.words?.map(\.time),
-                               wordPlayhead: wordPlayhead, wordEnds: row.words?.map(\.end))
+                               wordTimes: row.words?.map(\.time))
                     .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
             } else {
-                // A wordless stretch is its chords on a line, nothing more; the
-                // cursor follows chord time without attaching changes to words.
+                // Instrumental changes use the same sounding-chord highlight.
                 timedRow
             }
         }
         .frame(maxWidth: .infinity, alignment: rtl ? .trailing : .leading)
     }
 
-    /// Keep the existing compact chord flow. Its cursor follows only chord
-    /// onsets, linearly between changes; lyric geometry never retimes it.
+    /// A compact flow with only the sounding chord highlighted.
     private var timedRow: some View {
         ChordLyricFlow(spacing: style == .sheet ? 14 : 22) {
-            ForEach(Array(row.chords.enumerated()), id: \.element.id) { index, placed in
+            ForEach(row.chords) { placed in
                 ChordChip(name: placed.event.display(transposedBy: transposeBy),
                           active: playhead.map(placed.event.contains) ?? false,
                           style: style, playing: playhead != nil, onTap: onChordTap, verdict: verdict?(placed.event.start))
-                    .anchorPreference(key: ChordAnchors.self, value: .bounds) { [index: $0] }
             }
         }
         .frame(maxWidth: .infinity, minHeight: style == .sheet ? 22 : 30, alignment: rtl ? .trailing : .leading)
-        .overlayPreferenceValue(ChordAnchors.self) { anchors in
-            if style == .live, let playhead, row.contains(playhead),
-               let first = row.chords.first, playhead >= first.event.start {
-                GeometryReader { geo in
-                    let points = LyricPlayhead.waypoints(rowStart: row.start, rowEnd: row.end,
-                        words: anchors.mapValues { geo[$0] }, wordTimes: nil,
-                        chordStarts: row.chords.enumerated().map { ($0.element.event.start, $0.offset) }, rtl: rtl)
-                    if let point = LyricPlayhead.position(at: playhead, along: points, rtl: rtl, eased: false) {
-                        RoundedRectangle(cornerRadius: 1)
-                            .fill(Color.spotifyGreen.opacity(0.5))
-                            .frame(width: 2, height: point.height + 4)
-                            .position(x: point.x, y: point.y)
-                            .allowsHitTesting(false)
-                    }
-                }
-            }
-        }
         .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
-    }
-
-    private struct ChordAnchors: PreferenceKey {
-        static var defaultValue: [Int: Anchor<CGRect>] = [:]
-        static func reduce(value: inout [Int: Anchor<CGRect>], nextValue: () -> [Int: Anchor<CGRect>]) {
-            value.merge(nextValue(), uniquingKeysWith: { $1 })
-        }
     }
 
     static func span(_ row: SheetModel.Row) -> String {
@@ -143,7 +111,6 @@ struct ChordChip: View {
             Text(name)
                 .font(style.chordFont)
                 .foregroundStyle(active || !(playing || style == .live) ? Color.spotifyGreen : Color.spotifyGreen.opacity(0.55))
-                .animation(.easeInOut(duration: 0.2), value: active)
                 .padding(.vertical, style.chipPadding.vertical)
                 .padding(.horizontal, style.chipPadding.horizontal)
                 .overlay(alignment: .topTrailing) {
@@ -157,7 +124,6 @@ struct ChordChip: View {
         }
         .buttonStyle(.plain)
         .disabled(onTap == nil)
-        .animation(.easeOut(duration: 0.08), value: active)
     }
 }
 
