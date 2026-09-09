@@ -1,5 +1,30 @@
 # Spotify playback reliability
 
+## Device-handoff status (2026-09-09)
+
+When Spotify started the selected song during the app switch, the sheet could repeat the earlier phone-discovery error beside advancing chords. The recovery UI deliberately suppressed that error, but its fallback playback note included the same error again as soon as live playback appeared.
+
+The fallback excludes only the original command error, identified by its revision, while device recovery owns that presentation. A later failed seek remains visible even if it produces the same error text. Connection interruptions, authentication failures and pauses still appear; recovery continues to display its own authorization and connection failures. Successful polling does not erase or confirm a failed command.
+
+The supplied screenshot also showed the recovery card waiting for native authorization while the intended song was already advancing at eight seconds. Casual play-along now checks fresh playback after an actual app-switch return. It can adopt the playing song without another play or seek when track, progress and requested resume position match. A known non-phone device, paused or restricted player, missing progress, stale response, newer command or authentication failure cannot finish that handoff. An unidentified Connect device may support read-only following; this does not certify native authorization or claim that device is the phone. Practice and synchronization retain their explicit device verification and start steps.
+
+Successful adoption clears only the unchanged initial device-discovery error and finishes the recovery card. It detaches the old UI callback without resetting a native connection already in progress; a late authorization URL for that attempt remains acceptable for 30 seconds without restoring the card. Genuine failed controls and authorization errors remain intact. Fresh-read retries respect Spotify's rate-limit cooldown and stop retrying refused access. Opaque device identifiers are replaced by readable descriptions in device messages.
+
+Model regressions cover the reported failed-discovery/external-playback sequence, preserved resume points, device classifications, stale and canceled reads, newer failed seeks, authorization denial during verification, bounded retry, late callbacks and unchanged practice-ready behavior. These tests do not reproduce physical Spotify audio or establish an on-phone fix before installation and testing.
+
+The actual SwiftUI song page also has an offline UI reproduction. Run it with
+`--song-sheet-preview --spotify-handoff-preview`, or run its automated checks:
+
+```bash
+CHORDLYZE_ONLY_TESTING='NavigationGestureUITests/SpotifyRecoveryUITests' \
+  bash scripts/test_navigation_gestures.sh /tmp/chordlyze-handoff-results
+```
+
+The UI checks verify that the requested song removes the old card without
+another play or seek, and that a different song retains recovery and shows a
+timeout. Verification restarts after a foreground interruption; the canceled
+read cannot finish a newer attempt.
+
 ## Return-from-Spotify regression (2026-09-09)
 
 Build 94 included two defects in the initial native launch integration. It received the SDK authorization token but discarded it, without setting App Remote's connection parameters or connecting. The song page then always sent a Web API play request after returning, even when `authorizeAndPlayURI` had already started the selected song. A regression fixture with an empty app cache and Spotify playing at 23 seconds reproduced that second defect: the old controller issued another play and reset the queue to zero.

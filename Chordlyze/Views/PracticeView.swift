@@ -135,6 +135,7 @@ struct PracticeView: View {
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
+        .environment(\.nativeBackSwipeEnabled, !isCounting && phase != .recording)
         .observes(songStore)
         .onAppear {
             guard !initialized else { return }

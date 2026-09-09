@@ -19,6 +19,7 @@ struct AnalysisTabsView: View {
     @State private var startingPlayback = false
     @State private var playbackError: String?
     @State private var needsPlaybackDevice = false
+    @State private var recoveryControlRevision: Int?
     @State private var automaticallyOpenSpotify = false
     @State private var requestedPlaybackPosition = 0.0
     @State private var playbackTask: Task<Void, Never>?
@@ -29,12 +30,15 @@ struct AnalysisTabsView: View {
 
     /// The Spotify poller behind seeks and calibration; the offline fixture passes its own.
     @ObservedObject var nowPlaying: SpotifyNowPlaying
+    /// Offline UI checks can drive the same recovery state as a real app return.
+    private let deviceRecovery: SpotifyDeviceRecovery?
 
     @MainActor init(song: SongDescriptor, store: SongSheetStore? = nil, nowPlaying: SpotifyNowPlaying? = nil,
-                    takes: PracticeTakeStore? = nil) {
+                    takes: PracticeTakeStore? = nil, deviceRecovery: SpotifyDeviceRecovery? = nil) {
         _store = StateObject(wrappedValue: store ?? SongSheetStore.shared(for: song))
         _nowPlaying = ObservedObject(wrappedValue: nowPlaying ?? .shared)
         self.takes = takes ?? .shared
+        self.deviceRecovery = deviceRecovery
     }
 
     /// Spotify has this song up, playing or paused, whoever started it.
@@ -203,20 +207,29 @@ struct AnalysisTabsView: View {
     }
 
     private var playbackStatus: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let suppressControlError = needsPlaybackDevice && recoveryControlRevision == nowPlaying.controlMessageRevision
+        return VStack(alignment: .leading, spacing: 8) {
             if nowPlaying.isControlling {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Waiting for Spotify…").font(.footnote).foregroundStyle(Palette.secondary)
                 }.accessibilityIdentifier("spotify-control-pending")
             }
-            if let note = playbackError ?? store.saveError ?? (needsPlaybackDevice ? nil : nowPlaying.controlMessage)
-                ?? (songIsUp && !nowPlaying.isControlling ? nowPlaying.playbackNote : nil) {
+            if let note = playbackError ?? store.saveError ?? (suppressControlError ? nil : nowPlaying.controlMessage)
+                ?? (songIsUp && !nowPlaying.isControlling ? nowPlaying.playbackNote(includingControlError: !suppressControlError) : nil) {
                 Text(note).font(.footnote).foregroundStyle(Palette.warning)
             }
             if needsPlaybackDevice {
                 SpotifyDeviceRecoveryView(nowPlaying: nowPlaying, trackID: store.song.id, retryTitle: "Retry play along",
                                           automaticallyOpen: automaticallyOpenSpotify, continueWhenReady: true,
+                                          requestedPosition: requestedPlaybackPosition, recovery: deviceRecovery,
+                                          controlRevision: recoveryControlRevision,
+                                          onFollowingPlayback: {
+                                              needsPlaybackDevice = false
+                                              recoveryControlRevision = nil
+                                              playbackError = nil
+                                              automaticallyOpenSpotify = false
+                                          },
                                           onRetry: { startPlayingAlong(retrying: true) })
             } else if playbackError != nil {
                 Button("Open song in Spotify", action: openSpotify).frame(minHeight: 44).tint(.spotifyGreen)
@@ -229,6 +242,7 @@ struct AnalysisTabsView: View {
         startingPlayback = true
         playbackError = nil
         needsPlaybackDevice = false
+        recoveryControlRevision = nil
         if !retrying {
             requestedPlaybackPosition = nowPlaying.playing?.track.id == store.song.id ? (nowPlaying.livePosition() ?? 0) : 0
         }
@@ -239,6 +253,7 @@ struct AnalysisTabsView: View {
             catch {
                 guard !Task.isCancelled else { return }
                 needsPlaybackDevice = (error as? SpotifyNowPlaying.PlayError)?.needsDeviceRecovery == true
+                recoveryControlRevision = needsPlaybackDevice ? nowPlaying.controlMessageRevision : nil
                 automaticallyOpenSpotify = !retrying && (error as? SpotifyNowPlaying.PlayError)?.canWakeApp == true
                 playbackError = automaticallyOpenSpotify ? nil : error.localizedDescription
             }
@@ -573,6 +588,7 @@ struct SongPlayingSettings: View {
             .navigationTitle("Song settings").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
+        .presentationDragIndicator(.visible)
     }
 }
 
@@ -764,6 +780,7 @@ struct SongMapSheet: View {
                 last = min(grid.bars.count, first+3)
             }
         }.tint(.spotifyGreen).preferredColorScheme(.dark)
+            .presentationDragIndicator(.visible)
     }
 
     private func preciseTime(_ value: Double) -> String {

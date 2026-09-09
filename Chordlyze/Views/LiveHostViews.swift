@@ -131,6 +131,10 @@ struct SpotifyDeviceRecoveryView: View {
     let trackID: String
     var retryTitle = "Retry playback"
     var onRetry: () -> Void
+    var onFollowingPlayback: (() -> Void)?
+    private let nowPlaying: SpotifyNowPlaying
+    private let requestedPosition: Double
+    private let controlRevision: Int?
     var automaticallyOpen = false
     var continueWhenReady = false
     @StateObject private var recovery: SpotifyDeviceRecovery
@@ -140,13 +144,20 @@ struct SpotifyDeviceRecoveryView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @MainActor init(nowPlaying: SpotifyNowPlaying, trackID: String, retryTitle: String,
-                    automaticallyOpen: Bool = false, continueWhenReady: Bool = false, onRetry: @escaping () -> Void) {
+                    automaticallyOpen: Bool = false, continueWhenReady: Bool = false,
+                    requestedPosition: Double = 0, recovery: SpotifyDeviceRecovery? = nil,
+                    controlRevision: Int? = nil,
+                    onFollowingPlayback: (() -> Void)? = nil, onRetry: @escaping () -> Void) {
         self.trackID = trackID
         self.retryTitle = retryTitle
         self.onRetry = onRetry
+        self.onFollowingPlayback = onFollowingPlayback
+        self.nowPlaying = nowPlaying
+        self.requestedPosition = requestedPosition
+        self.controlRevision = controlRevision
         self.automaticallyOpen = automaticallyOpen
         self.continueWhenReady = continueWhenReady
-        _recovery = StateObject(wrappedValue: SpotifyDeviceRecovery(checkDevice: {
+        _recovery = StateObject(wrappedValue: recovery ?? SpotifyDeviceRecovery(checkDevice: {
             try await nowPlaying.checkPracticeDevice(afterAppSwitch: true)
         }))
     }
@@ -184,7 +195,8 @@ struct SpotifyDeviceRecoveryView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             case .awaitingAuthorization:
                 ProgressView("Finishing Spotify connection…")
-            case .idle: EmptyView()
+                    .accessibilityIdentifier("spotify-recovery-waiting")
+            case .idle, .followingPlayback: EmptyView()
             }
             if case .ready = recovery.state { } else {
                 #if !targetEnvironment(simulator)
@@ -204,6 +216,8 @@ struct SpotifyDeviceRecoveryView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
         .background(RoundedRectangle(cornerRadius: 18).fill(Color.white.opacity(0.06)))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("spotify-device-recovery")
         .task(id: recovery.state == .checking) {
             if recovery.state == .checking { await recovery.check() }
         }
@@ -214,14 +228,29 @@ struct SpotifyDeviceRecoveryView: View {
             openSpotify()
             #endif
         }
-        .task(id: recovery.authorizationWaitID) {
-            guard let attempt = recovery.authorizationWaitID else { return }
+        .task(id: scenePhase == .active ? recovery.authorizationWaitID : nil) {
+            guard scenePhase == .active, let attempt = recovery.authorizationWaitID else { return }
             do { try await Task.sleep(for: .seconds(12)) } catch { return }
+            guard recovery.authorizationWaitID == attempt else { return }
             recovery.authorizationTimedOut(attempt: attempt)
             cancelLaunch()
         }
+        .task(id: scenePhase == .active ? recovery.authorizationWaitID : nil) {
+            guard scenePhase == .active, continueWhenReady, onFollowingPlayback != nil,
+                  let controlRevision, recovery.authorizationWaitID != nil else { return }
+            await recovery.followPlayingTrack {
+                await nowPlaying.followPlayingTrackAfterHandoff(trackID: trackID, resumingAt: requestedPosition,
+                                                                expectedControlRevision: controlRevision)
+            }
+        }
         .onChange(of: recovery.state) { _, state in
-            if continueWhenReady, case .ready = state { onRetry() }
+            if continueWhenReady, case .followingPlayback = state {
+                // Following the verified song does not require another play or
+                // seek, and does not claim native control was authorized.
+                if let launchID { SpotifyAppLauncher.shared.finishHandoff(launchID) }
+                launchID = nil
+                onFollowingPlayback?()
+            } else if continueWhenReady, case .ready = state { onRetry() }
         }
         .onChange(of: scenePhase) { _, phase in recovery.sceneChanged(active: phase == .active) }
         .onDisappear { recovery.cancel(); cancelLaunch() }

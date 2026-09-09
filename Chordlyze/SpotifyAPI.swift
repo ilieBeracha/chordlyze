@@ -210,6 +210,21 @@ final class SpotifyAPI: ObservableObject {
         enum CodingKeys: String, CodingKey {
             case id, name, type, isActive = "is_active", isRestricted = "is_restricted"
         }
+
+        /// Some Spotify clients advertise their opaque identifier as a name.
+        /// Keep that transport identity out of user-facing device messages.
+        var displayName: String {
+            let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let opaque = value == id || UUID(uuidString: value) != nil ||
+                (value.count >= 20 && value.allSatisfy { $0.isHexDigit })
+            guard value.isEmpty || opaque else { return value }
+            switch type.lowercased() {
+            case "smartphone": return "another phone"
+            case "computer": return "another computer"
+            case "speaker": return "another speaker"
+            default: return "another device"
+            }
+        }
     }
 
     /// Devices Spotify can start playback on, including an idle phone app.

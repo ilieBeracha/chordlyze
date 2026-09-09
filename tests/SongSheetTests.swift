@@ -120,6 +120,8 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         try await cancellationTests()
         try await playbackTests()
         try await playbackReliabilityTests()
+        try await spotifyHandoffNoteTests()
+        try await spotifyHandoffFollowTests()
         try await spotifyDeviceRecoveryTests()
         try await spotifyStartupTests()
         try await spotifyNativeSessionTests()
@@ -1935,6 +1937,288 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         try await waitFor { timedOut }
         check(!slow.isConnected && !slowDriver.isConnected, "An SDK connection with no delegate result has a finite failure path")
         slow.reset()
+    }
+
+    @MainActor static func spotifyHandoffNoteTests() async throws {
+        let provider: (Track) -> SongSheetStore = { track in
+            SongSheetStore(song: SongDescriptor(track: track), service: .init(
+                request: { _ in status("ready", ready: true) }, status: { _ in status("ready", ready: true) },
+                lyrics: { _ in lyrics() }, sleep: { _ in try await Task.sleep(for: .seconds(60)) }))
+        }
+        var startedExternally = false, paused = false
+        var readFailure: Int?
+        var reads = 0
+        var instant = ContinuousClock.now
+        let player = SpotifyNowPlaying(service: .init(current: {
+            reads += 1
+            if let readFailure { throw NSError(domain: "SpotifyAPI", code: readFailure) }
+            return startedExternally ? playback(playing: !paused) : nil
+        }, seek: { _ in throw NSError(domain: "SpotifyAPI", code: 403) },
+            play: { _, _, _ in fatalError("Device discovery failure must not send playback") }, devices: { [] },
+            sleep: { _ in try await Task.sleep(for: .milliseconds(5)) }), now: { instant }, sheetProvider: provider)
+        player.resume()
+        do { try await player.playAlong(trackID: "one"); fatalError("The initial phone discovery must fail") }
+        catch let error as SpotifyNowPlaying.PlayError {
+            check(error == .noDevice, "The handoff begins with the actual failed phone discovery")
+        }
+        let initialError = player.controlMessage
+        startedExternally = true
+        try await waitFor { player.playing?.track.id == "one" && player.playing?.isPlaying == true }
+        let position = player.livePosition()!
+        instant = instant.advanced(by: .seconds(2))
+        check(player.livePosition() == position + 2 && player.controlMessage == initialError,
+              "The intended song can progress after external startup without treating a successful poll as command confirmation")
+        check(player.playbackNote(includingControlError: false) == nil,
+              "The device-handoff fallback does not reintroduce its suppressed initial error while the same song plays")
+        check(player.playbackNote == initialError && initialError == SpotifyNowPlaying.PlayError.noDevice.localizedDescription,
+              "Ordinary playback status retains the unresolved command error outside device recovery")
+
+        paused = true
+        try await waitFor { player.playing?.isPlaying == false }
+        check(player.playbackNote(includingControlError: false) == "Playback paused",
+              "Device recovery still reports a real pause independently of the initial command failure")
+        readFailure = URLError.networkConnectionLost.rawValue
+        try await waitFor { player.connectionMessage != nil }
+        check(player.playbackNote(includingControlError: false) == "Playback connection interrupted. Reconnecting…",
+              "Suppressing the handoff's previous command error never hides a new connection interruption")
+        readFailure = nil; paused = false
+        try await waitFor { player.connectionMessage == nil && player.playing?.isPlaying == true }
+
+        let sought = await player.seek(to: 90)
+        let beforePoll = reads
+        try await waitFor { reads > beforePoll }
+        check(!sought && player.playbackNote == SpotifyNowPlaying.PlayError.forbidden.localizedDescription,
+              "A genuinely refused seek remains visible outside recovery even after successful playback polling")
+        readFailure = 401
+        try await waitFor { player.needsReauth }
+        check(player.playbackNote(includingControlError: false) == "Reconnect Spotify in Profile to resume live follow." &&
+              player.playbackNote == player.playbackNote(includingControlError: false),
+              "Authentication failures remain visible both during device recovery and in ordinary playback status")
+        player.reset()
+    }
+
+    @MainActor static func spotifyHandoffFollowTests() async throws {
+        let opaque = String(repeating: "a", count: 40)
+        func sample(type: String = "Unknown", name: String? = nil, playing: Bool = true,
+                    progress: Int? = 8000, active: Bool = true, restricted: Bool = false,
+                    track: String = "one") -> SpotifyAPI.CurrentlyPlaying {
+            .init(progressMs: progress, isPlaying: playing, item: playback(id: track).item,
+                  device: .init(id: opaque, name: name ?? opaque, type: type, isActive: active, isRestricted: restricted))
+        }
+        let unknown = sample()
+        check(unknown.device?.displayName == "another device", "An opaque Connect identifier is never shown as a device name")
+        check(sample(type: "Computer", name: "Studio Mac").device?.displayName == "Studio Mac",
+              "Real device names remain recognizable")
+        check(sample(type: "Computer").device?.displayName == "another computer" &&
+              sample(type: "Smartphone", name: " ").device?.displayName == "another phone",
+              "Unnamed and opaque devices use readable device classes")
+        for type in ["Unknown", "Smartphone", "Other", ""] {
+            check(SpotifyNowPlaying.canFollowAfterHandoff(sample(type: type), trackID: "one", resumingAt: 0),
+                  "Fresh intended-track playback can be followed without claiming authorization for device type \(type)")
+        }
+        for type in ["Computer", "Speaker", "Tablet", "TV", "CastAudio", "Automobile"] {
+            check(!SpotifyNowPlaying.canFollowAfterHandoff(sample(type: type), trackID: "one", resumingAt: 0),
+                  "A known \(type) cannot fulfill a phone handoff")
+        }
+        for invalid in [sample(playing: false), sample(progress: nil), sample(progress: -1),
+                        sample(active: false), sample(restricted: true), sample(track: "another")] {
+            check(!SpotifyNowPlaying.canFollowAfterHandoff(invalid, trackID: "one", resumingAt: 0),
+                  "Wrong, paused, missing-progress, inactive or restricted playback cannot finish recovery")
+        }
+        check(!SpotifyNowPlaying.canFollowAfterHandoff(unknown, trackID: "one", resumingAt: 30) &&
+              SpotifyNowPlaying.canFollowAfterHandoff(unknown, trackID: "one", resumingAt: 8),
+              "Read-only following cannot silently abandon a requested resume point ahead of playback")
+        check(!SpotifyNowPlaying.canFollowAfterHandoff(unknown, trackID: "one", resumingAt: .nan),
+              "An invalid requested resume point cannot be adopted")
+
+        let provider: (Track) -> SongSheetStore = { track in
+            SongSheetStore(song: SongDescriptor(track: track), service: .init(
+                request: { _ in status("ready", ready: true) }, status: { _ in status("ready", ready: true) },
+                lyrics: { _ in lyrics() }, sleep: { _ in try await Task.sleep(for: .seconds(60)) }))
+        }
+        var reads = 0, writes = 0
+        var seekFailure = 404
+        var holdNextRead = false
+        var pending: CheckedContinuation<SpotifyAPI.CurrentlyPlaying?, Never>?
+        let player = SpotifyNowPlaying(service: .init(current: {
+            reads += 1
+            if holdNextRead {
+                holdNextRead = false
+                return await withCheckedContinuation { pending = $0 }
+            }
+            return unknown
+        }, seek: { _ in writes += 1; throw NSError(domain: "SpotifyAPI", code: seekFailure) },
+            play: { _, _, _ in writes += 1 }, devices: { [unknown.device!] },
+            sleep: { seconds in
+                if seconds >= 2 { try await Task.sleep(for: .seconds(60)) }
+                else { await Task.yield() }
+            }), sheetProvider: provider)
+        do { try await player.playAlong(trackID: "one"); fatalError("Unknown device must not receive a play command") }
+        catch let error as SpotifyNowPlaying.PlayError {
+            check(error == .onlyElsewhere("another device") && !error.localizedDescription.contains(opaque),
+                  "Initial phone discovery preserves safe targeting and omits the opaque identifier from its error")
+        }
+        let firstFailureRevision = player.controlMessageRevision
+        let firstFailureMessage = player.controlMessage
+        do { try await player.playAlong(trackID: "one"); fatalError("An unknown device must still reject a newer play command") }
+        catch { }
+        check(player.controlMessageRevision > firstFailureRevision && player.controlMessage == firstFailureMessage,
+              "A newer command has a new error revision even when its displayed message is identical")
+        let originalHandoffRevision = player.controlMessageRevision
+        player.resume()
+        try await waitFor { player.playing?.track.id == "one" }
+        player.stop()
+        let unavailableSeek = await player.seek(to: 90)
+        let readsBeforeAdoption = reads
+        let afterUnavailableSeek = await player.followPlayingTrackAfterHandoff(trackID: "one", resumingAt: 0,
+                                                                               expectedControlRevision: originalHandoffRevision)
+        check(!unavailableSeek && !afterUnavailableSeek && reads == readsBeforeAdoption &&
+              player.controlMessage == SpotifyNowPlaying.PlayError.noDevice.localizedDescription,
+              "A newer 404 seek cannot be mistaken for the original startup error before a handoff read")
+        do { try await player.playAlong(trackID: "one"); fatalError("A fresh play attempt still requires phone discovery") }
+        catch { }
+        let handoffRevision = player.controlMessageRevision
+        let writesBeforeAdoption = writes
+        let followed = await player.followPlayingTrackAfterHandoff(trackID: "one", resumingAt: 0,
+                                                                  expectedControlRevision: handoffRevision)
+        check(followed && player.playing?.track.id == "one" && player.playing?.isPlaying == true &&
+              player.controlMessage == nil && writes == writesBeforeAdoption,
+              "A fresh intended song at eight seconds completes read-only following and clears only the original device error")
+        player.stop()
+        seekFailure = 403
+        holdNextRead = true
+        let verificationRevision = player.controlMessageRevision
+        let oldRead = Task { await player.followPlayingTrackAfterHandoff(trackID: "one", resumingAt: 0,
+                                                                        expectedControlRevision: verificationRevision) }
+        try await waitFor { pending != nil }
+        let sought = await player.seek(to: 90)
+        pending?.resume(returning: unknown); pending = nil
+        let oldResult = await oldRead.value
+        check(!oldResult && !sought && player.controlMessage == SpotifyNowPlaying.PlayError.forbidden.localizedDescription,
+              "A newer failed seek cannot be erased by an older handoff playback read")
+        let beforeReads = reads
+        let followAfterFailure = await player.followPlayingTrackAfterHandoff(trackID: "one", resumingAt: 0,
+                                                                            expectedControlRevision: verificationRevision)
+        check(!followAfterFailure && reads == beforeReads && player.controlMessage != nil,
+              "Read-only handoff recovery cannot suppress a genuine control restriction")
+        player.reset()
+
+        var instant = ContinuousClock.now
+        let stale = SpotifyNowPlaying(service: .init(current: {
+            instant = instant.advanced(by: .seconds(6))
+            return unknown
+        }, seek: { _ in }), now: { instant }, sheetProvider: provider)
+        let staleResult = await stale.followPlayingTrackAfterHandoff(trackID: "one", resumingAt: 0,
+                                                                    expectedControlRevision: stale.controlMessageRevision)
+        check(!staleResult && stale.playing == nil, "A slow stale response cannot be offered as fresh handoff evidence")
+        stale.reset()
+        let unauthorized = SpotifyNowPlaying(service: .init(current: {
+            throw NSError(domain: "SpotifyAPI", code: 401)
+        }, seek: { _ in }), sheetProvider: provider)
+        let unauthorizedResult = await unauthorized.followPlayingTrackAfterHandoff(trackID: "one", resumingAt: 0,
+                                                                                  expectedControlRevision: unauthorized.controlMessageRevision)
+        check(!unauthorizedResult && unauthorized.needsReauth, "A fresh-read authentication rejection stays actionable")
+        unauthorized.reset()
+
+        for code in [403, 429] {
+            var rejectedReads = 0
+            let rejected = SpotifyNowPlaying(service: .init(current: {
+                rejectedReads += 1
+                throw NSError(domain: "SpotifyAPI", code: code, userInfo: ["retryAfter": 31.0])
+            }, seek: { _ in }), sheetProvider: provider)
+            let expected = rejected.controlMessageRevision
+            let first = await rejected.followPlayingTrackAfterHandoff(trackID: "one", resumingAt: 0, expectedControlRevision: expected)
+            let second = await rejected.followPlayingTrackAfterHandoff(trackID: "one", resumingAt: 0, expectedControlRevision: expected)
+            check(!first && !second && rejectedReads == 1 && rejected.connectionMessage != nil,
+                  "Handoff checks respect existing \(code) backoff and retain its connection warning")
+            rejected.reset()
+        }
+
+        let canceledPlayer = SpotifyNowPlaying(service: .init(current: {
+            await withCheckedContinuation { pending = $0 }
+        }, seek: { _ in }), sheetProvider: provider)
+        let canceledRevision = canceledPlayer.controlMessageRevision
+        let canceledRead = Task { await canceledPlayer.followPlayingTrackAfterHandoff(trackID: "one", resumingAt: 0,
+                                                                                     expectedControlRevision: canceledRevision) }
+        try await waitFor { pending != nil }
+        canceledPlayer.reset()
+        pending?.resume(returning: unknown); pending = nil
+        let canceledResult = await canceledRead.value
+        check(!canceledResult && canceledPlayer.playing == nil, "Signing out invalidates an in-flight handoff read")
+
+        var deviceChecks = 0, playbackChecks = 0
+        let recovery = SpotifyDeviceRecovery(checkDevice: {
+            deviceChecks += 1
+            return unknown.device!
+        }, sleep: { _ in await Task.yield() })
+        let opened = recovery.openRequested(expectsAuthorization: true)
+        await recovery.followPlayingTrack { playbackChecks += 1; return true }
+        check(playbackChecks == 0 && recovery.state == .waitingForSpotify,
+              "A song already playing before the app switch cannot skip handoff")
+        recovery.sceneChanged(active: false)
+        recovery.sceneChanged(active: true)
+        await recovery.followPlayingTrack { playbackChecks += 1; return playbackChecks == 3 }
+        check(recovery.state == .followingPlayback && playbackChecks == 3 && deviceChecks == 0,
+              "Fresh playback after actual return finishes in read-only following without device control or retry")
+        recovery.authorizationCompleted(error: "late connection error", attempt: opened)
+        recovery.authorizationTimedOut(attempt: opened)
+        check(recovery.state == .followingPlayback, "Late authorization callbacks cannot restore a finished recovery card")
+
+        let denied = recovery.openRequested(expectsAuthorization: true)
+        recovery.sceneChanged(active: false); recovery.sceneChanged(active: true)
+        recovery.authorizationCompleted(error: "Permission denied", attempt: denied)
+        await recovery.followPlayingTrack { playbackChecks += 1; return true }
+        check(recovery.state == .failed("Permission denied") && playbackChecks == 3,
+              "Explicit authorization denial is not erased by playback elsewhere")
+
+        let absent = recovery.openRequested(expectsAuthorization: true)
+        recovery.sceneChanged(active: false); recovery.sceneChanged(active: true)
+        playbackChecks = 0
+        await recovery.followPlayingTrack { playbackChecks += 1; return false }
+        check(playbackChecks == 24 && recovery.state == .awaitingAuthorization,
+              "A missing playback match has bounded read-only retries and retains pending authorization")
+        recovery.authorizationTimedOut(attempt: absent)
+        if case .failed = recovery.state { check(true, "Missing playback still gets the original connection timeout") }
+        else { fatalError("An unmatched handoff must preserve its deadline failure") }
+
+        let interrupted = recovery.openRequested(expectsAuthorization: true)
+        recovery.sceneChanged(active: false); recovery.sceneChanged(active: true)
+        var pendingMatch: CheckedContinuation<Bool, Never>?
+        let matching = Task {
+            await recovery.followPlayingTrack { await withCheckedContinuation { pendingMatch = $0 } }
+        }
+        try await waitFor { pendingMatch != nil }
+        recovery.authorizationCompleted(error: "Permission denied", attempt: interrupted)
+        pendingMatch?.resume(returning: true)
+        await matching.value
+        check(recovery.state == .failed("Permission denied"),
+              "Authorization denial arriving during verification wins over an otherwise matching playback read")
+        recovery.cancel()
+
+        _ = recovery.openRequested(expectsAuthorization: true)
+        recovery.sceneChanged(active: false); recovery.sceneChanged(active: true)
+        var oldMatch: CheckedContinuation<Bool, Never>?
+        let interruptedMatch = Task {
+            await recovery.followPlayingTrack { await withCheckedContinuation { oldMatch = $0 } }
+        }
+        try await waitFor { oldMatch != nil }
+        recovery.sceneChanged(active: false); recovery.sceneChanged(active: true)
+        var resumedMatch: CheckedContinuation<Bool, Never>?
+        let resumed = Task {
+            await recovery.followPlayingTrack { await withCheckedContinuation { resumedMatch = $0 } }
+        }
+        try await waitFor { resumedMatch != nil }
+        oldMatch?.resume(returning: true)
+        await interruptedMatch.value
+        var duplicateChecks = 0
+        await recovery.followPlayingTrack { duplicateChecks += 1; return true }
+        check(recovery.state == .awaitingAuthorization && duplicateChecks == 0,
+              "An interrupted old read cannot finish recovery or clear the newer foreground verification")
+        resumedMatch?.resume(returning: true)
+        await resumed.value
+        check(recovery.state == .followingPlayback,
+              "A second foreground return can finish from its own fresh playback verification")
+        recovery.cancel()
     }
 
     @MainActor static func playbackReliabilityTests() async throws {

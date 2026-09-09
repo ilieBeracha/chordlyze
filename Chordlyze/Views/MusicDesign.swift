@@ -59,6 +59,7 @@ struct MusicHeader: View {
     let subtitle: String
     var isRoot = true
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.nativeBackSwipeEnabled) private var backSwipeEnabled
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !isRoot {
@@ -66,6 +67,7 @@ struct MusicHeader: View {
                     Label("Back", systemImage: "chevron.left").font(MusicStyle.font(15, bold: true))
                         .frame(minHeight: 44)
                 }.buttonStyle(MusicPressStyle())
+                    .nativeBackSwipe(isEnabled: backSwipeEnabled)
             }
             Text(title).font(MusicStyle.font(38, bold: true, relativeTo: .largeTitle)).tracking(-1.3)
                 .accessibilityAddTraits(.isHeader)

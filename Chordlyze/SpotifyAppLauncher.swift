@@ -11,6 +11,7 @@ final class SpotifyAppLauncher {
         clientID: Config.spotifyClientID, redirectURL: URL(string: Config.redirectURI)!), logLevel: .none)
     private let session = SpotifyNativeSession(transport: SpotifySDKTransport())
     private var pending: (id: UUID, connected: (String?) -> Void)?
+    private var detachedTimeout: Task<Void, Never>?
 
     func playbackService(fallback: SpotifyNowPlaying.Service) -> SpotifyNowPlaying.Service {
         session.service(fallback: fallback)
@@ -21,6 +22,8 @@ final class SpotifyAppLauncher {
     func open(trackID: String, opened: @escaping (Bool) -> Void,
               authorized: @escaping (String?) -> Void) -> UUID {
         let id = UUID()
+        detachedTimeout?.cancel(); detachedTimeout = nil
+        pending = nil
         if session.isConnected {
             opened(true)
             authorized(nil)
@@ -46,12 +49,14 @@ final class SpotifyAppLauncher {
         case .success:
             guard let token = parameters[SPTAppRemoteAccessTokenKey] else { return }
             session.authorize(token: token) { [weak self] error in
-                guard let self, self.pending?.id == pending.id else { return }
+                guard let self, let current = self.pending, current.id == pending.id else { return }
                 self.pending = nil
-                pending.connected(error)
+                self.detachedTimeout?.cancel(); self.detachedTimeout = nil
+                current.connected(error)
             }
         case .failure(let message):
             self.pending = nil
+            detachedTimeout?.cancel(); detachedTimeout = nil
             session.reset()
             pending.connected(message)
         }
@@ -59,10 +64,27 @@ final class SpotifyAppLauncher {
     func cancel(_ id: UUID) {
         guard pending?.id == id else { return }
         pending = nil
+        detachedTimeout?.cancel(); detachedTimeout = nil
         session.reset()
+    }
+    /// Playback is already being followed from fresh player state. Detach
+    /// this UI handoff while preserving any native connection in progress.
+    func finishHandoff(_ id: UUID) {
+        guard pending?.id == id else { return }
+        pending = (id, { _ in })
+        detachedTimeout?.cancel()
+        // Accept a late authorization URL for this same attempt so a useful
+        // native connection can still establish. It cannot restore old UI.
+        detachedTimeout = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            guard let self, self.pending?.id == id else { return }
+            self.pending = nil
+            self.detachedTimeout = nil
+        }
     }
     func reset() {
         pending = nil
+        detachedTimeout?.cancel(); detachedTimeout = nil
         session.reset()
     }
 }

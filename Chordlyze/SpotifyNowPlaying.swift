@@ -70,8 +70,12 @@ final class SpotifyNowPlaying: ObservableObject {
     private var running = false
     private var commandEpoch = 0
     private var activeCommand: UUID?
+    private var controlError: PlayError?
+    private var controlRevision = 0
+    private var followingHandoff = false
     private var seekIntent = 0
     private var retryUntil: ContinuousClock.Instant?
+    private var handoffReadBlockedUntil: ContinuousClock.Instant?
     private var anchor: (offset: Double, at: ContinuousClock.Instant)?
     private var lastSuccess: ContinuousClock.Instant?
     private var pollTask: Task<Void, Never>?
@@ -89,9 +93,15 @@ final class SpotifyNowPlaying: ObservableObject {
         self.now = now
         self.sheetProvider = sheetProvider
     }
-    var playbackNote: String? {
+    var playbackNote: String? { playbackNote(includingControlError: true) }
+    var controlMessageRevision: Int { controlRevision }
+
+    /// Device recovery already presents the failed command and its next step.
+    /// Its live-status fallback must not repeat that command's earlier error.
+    /// Polling success still cannot establish that a failed play or seek worked.
+    func playbackNote(includingControlError: Bool) -> String? {
         if needsReauth { return "Reconnect Spotify in Profile to resume live follow." }
-        if let controlMessage { return controlMessage }
+        if includingControlError, let controlMessage { return controlMessage }
         if isControlling { return "Waiting for Spotify…" }
         if let connectionMessage { return connectionMessage }
         if playing?.isPlaying == false { return "Playback paused" }
@@ -141,10 +151,11 @@ final class SpotifyNowPlaying: ObservableObject {
         analysisFailed = false
         needsReauth = false
         connectionMessage = nil
-        controlMessage = nil
+        setControlError(nil)
         playbackDevice = nil
         deviceID = nil
         retryUntil = nil
+        handoffReadBlockedUntil = nil
     }
     private func startPolling() {
         guard running, !needsReauth, pollTask == nil, activeCommand == nil, let service else { return }
@@ -194,6 +205,7 @@ final class SpotifyNowPlaying: ObservableObject {
             }
             if error.code == 403 {
                 connectionMessage = "Spotify refused playback access. Reconnect Spotify in Profile if this continues."
+                handoffReadBlockedUntil = now().advanced(by: .seconds(30))
                 return 30
             }
             if error.code == 429 {
@@ -210,6 +222,7 @@ final class SpotifyNowPlaying: ObservableObject {
                        received: ContinuousClock.Instant) {
         lastSuccess = received
         connectionMessage = nil
+        handoffReadBlockedUntil = nil
         guard let current, var track = current.item else {
             playing = nil
             deviceID = nil
@@ -245,7 +258,7 @@ final class SpotifyNowPlaying: ObservableObject {
         }
         deviceID = current.device?.id
         deviceRestricted = current.device?.isRestricted == true
-        if let name = current.device?.name { playbackDevice = name }
+        if let device = current.device { playbackDevice = device.displayName }
         playing = next
         observeSheet(track)
     }
@@ -280,7 +293,7 @@ final class SpotifyNowPlaying: ObservableObject {
         if controllable.count == 1 { return controllable[0] }
         if controllable.count > 1 { throw PlayError.ambiguousDevice }
         if !phones.isEmpty { throw PlayError.restrictedDevice }
-        if let other = devices.first(where: \.isActive) ?? devices.first { throw PlayError.onlyElsewhere(other.name) }
+        if let other = devices.first(where: \.isActive) ?? devices.first { throw PlayError.onlyElsewhere(other.displayName) }
         throw PlayError.noDevice
     }
 
@@ -319,7 +332,7 @@ final class SpotifyNowPlaying: ObservableObject {
         } catch {
             try checkCommand(epoch)
             let error = playbackError(error)
-            controlMessage = error.localizedDescription
+            setControlError(error)
             throw error
         }
     }
@@ -343,7 +356,7 @@ final class SpotifyNowPlaying: ObservableObject {
         let id = UUID()
         activeCommand = id
         isControlling = true
-        controlMessage = nil
+        setControlError(nil)
         pausePolling()
         return id
     }
@@ -353,6 +366,80 @@ final class SpotifyNowPlaying: ObservableObject {
         activeCommand = nil
         isControlling = false
         startPolling()
+    }
+
+    private func setControlError(_ error: PlayError?) {
+        controlRevision += 1
+        controlError = error
+        controlMessage = error?.localizedDescription
+    }
+
+    /// Follow the song already started by an app switch without issuing a
+    /// second play/seek or claiming that native authorization has completed.
+    /// Recovery owns the app-switch and authorization-state checks.
+    func followPlayingTrackAfterHandoff(trackID: String, resumingAt seconds: Double,
+                                       expectedControlRevision: Int) async -> Bool {
+        guard let service, !needsReauth, activeCommand == nil, !followingHandoff,
+              controlRevision == expectedControlRevision,
+              controlError == nil || controlError?.canWakeApp == true else { return false }
+        if let retryUntil, retryUntil > now() { return false }
+        if let handoffReadBlockedUntil, handoffReadBlockedUntil > now() { return false }
+        followingHandoff = true
+        pausePolling()
+        let epoch = commandEpoch
+        let revision = expectedControlRevision
+        let pollingGeneration = generation
+        defer { followingHandoff = false; startPolling() }
+        do {
+            let sent = now()
+            let current = try await service.current()
+            let received = now()
+            try checkCommand(epoch)
+            guard !needsReauth, activeCommand == nil, controlRevision == revision,
+                  generation == pollingGeneration, sent.duration(to: received).seconds <= 5,
+                  Self.canFollowAfterHandoff(current, trackID: trackID, resumingAt: seconds) else { return false }
+            apply(current, sent: sent, received: received)
+            if controlError?.canWakeApp == true { setControlError(nil) }
+            running = true
+            return true
+        } catch {
+            // A read cannot repair authorization. Keep the ordinary reauth
+            // indication; transient read failures leave recovery in charge.
+            if !Task.isCancelled, epoch == commandEpoch, controlRevision == revision,
+               generation == pollingGeneration {
+                let failure = error as NSError
+                switch failure.code {
+                case 401:
+                    needsReauth = true
+                    pausePolling()
+                case 403:
+                    connectionMessage = "Spotify refused playback access. Reconnect Spotify in Profile if this continues."
+                    handoffReadBlockedUntil = now().advanced(by: .seconds(30))
+                case 429:
+                    let delay = max(1, failure.userInfo["retryAfter"] as? Double ?? 5)
+                    retryUntil = now().advanced(by: .seconds(delay))
+                    connectionMessage = "Spotify is limiting requests. Live follow will reconnect automatically."
+                default: break
+                }
+            }
+            return false
+        }
+    }
+
+    static func canFollowAfterHandoff(_ current: SpotifyAPI.CurrentlyPlaying?, trackID: String,
+                                     resumingAt seconds: Double) -> Bool {
+        guard seconds.isFinite, seconds >= 0, !trackID.isEmpty,
+              let current, current.item?.id == trackID, current.isPlaying,
+              let progress = current.progressMs, progress >= 0,
+              seconds <= Double(progress) / 1000 + 1,
+              current.device?.isActive != false, current.device?.isRestricted != true else { return false }
+        // Unknown Connect clients may still supply valid read-only playback.
+        // Explicitly identified other devices cannot finish a phone handoff.
+        let otherDevices: Set<String> = ["computer", "tablet", "tv", "stb", "avr", "speaker",
+            "audio_dongle", "audiodongle", "game_console", "gameconsole", "cast_video", "castvideo",
+            "cast_audio", "castaudio", "automobile", "car"]
+        let type = current.device?.type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        return !otherDevices.contains(type)
     }
 
     private func playbackError(_ error: Error) -> PlayError {
@@ -449,7 +536,7 @@ final class SpotifyNowPlaying: ObservableObject {
             playbackDevice = nil
             let device = try await discoverPhone(service: service, epoch: epoch)
             try checkCommand(epoch)
-            playbackDevice = device.name
+            playbackDevice = device.displayName
             if preservePlaying {
                 // The SDK can start audio while this app is backgrounded.
                 // Cached state cannot decide whether to restart its queue.
@@ -491,7 +578,7 @@ final class SpotifyNowPlaying: ObservableObject {
         } catch {
             try checkCommand(epoch)
             let error = playbackError(error)
-            controlMessage = error.localizedDescription
+            setControlError(error)
             throw error
         }
     }
@@ -528,7 +615,7 @@ final class SpotifyNowPlaying: ObservableObject {
             return true
         } catch {
             if Task.isCancelled || epoch != commandEpoch || intent != seekIntent { return false }
-            controlMessage = playbackError(error).localizedDescription
+            setControlError(playbackError(error))
             return false
         }
     }
@@ -546,23 +633,58 @@ extension Duration {
 @MainActor
 final class SpotifyDeviceRecovery: ObservableObject {
     enum State: Equatable {
-        case idle, waitingForSpotify, awaitingAuthorization, checking, ready(String), failed(String)
+        case idle, waitingForSpotify, awaitingAuthorization, checking, ready(String), followingPlayback, failed(String)
     }
     @Published private(set) var state: State = .idle
     private let checkDevice: () async throws -> SpotifyAPI.Device
+    private let sleep: (Double) async throws -> Void
     private var generation = 0
     private var leftApp = false
     private var appActive = true
     private var expectsAuthorization = false
     private var authorized = false
     private var checkingGeneration: Int?
+    private var followingRun: UUID?
 
     var authorizationWaitID: Int? { state == .awaitingAuthorization ? generation : nil }
 
-    init(checkDevice: @escaping () async throws -> SpotifyAPI.Device) { self.checkDevice = checkDevice }
+    init(checkDevice: @escaping () async throws -> SpotifyAPI.Device,
+         sleep: @escaping (Double) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
+        self.checkDevice = checkDevice
+        self.sleep = sleep
+    }
+
+    /// A casual play-along may already be working through read-only Spotify
+    /// state before native authorization returns. It never retries playback
+    /// or enters the practice/sync ready state on that evidence alone.
+    func followPlayingTrack(check: @escaping () async -> Bool) async {
+        guard state == .awaitingAuthorization, appActive, leftApp else { return }
+        let token = generation
+        guard followingRun == nil else { return }
+        let run = UUID()
+        followingRun = run
+        defer { if followingRun == run { followingRun = nil } }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(12))
+        for attempt in 0..<24 {
+            guard !Task.isCancelled, generation == token, followingRun == run, state == .awaitingAuthorization,
+                  appActive, ContinuousClock.now < deadline else { return }
+            let playing = await check()
+            guard !Task.isCancelled, generation == token, followingRun == run, state == .awaitingAuthorization,
+                  appActive, ContinuousClock.now < deadline else { return }
+            if playing {
+                generation += 1
+                state = .followingPlayback
+                return
+            }
+            if attempt < 23 {
+                do { try await sleep(0.5) } catch { return }
+            }
+        }
+    }
 
     @discardableResult func openRequested(expectsAuthorization: Bool = false) -> Int {
         generation += 1
+        followingRun = nil
         leftApp = false
         self.expectsAuthorization = expectsAuthorization
         authorized = false
@@ -588,6 +710,7 @@ final class SpotifyDeviceRecovery: ObservableObject {
     func sceneChanged(active: Bool) {
         appActive = active
         if !active {
+            followingRun = nil
             if state == .waitingForSpotify { leftApp = true }
             if state == .checking { cancel() }
         } else if state == .waitingForSpotify, leftApp {
@@ -609,7 +732,7 @@ final class SpotifyDeviceRecovery: ObservableObject {
         do {
             let device = try await checkDevice()
             guard !Task.isCancelled, generation == token else { return }
-            state = .ready(device.name)
+            state = .ready(device.displayName)
         } catch {
             guard !Task.isCancelled, generation == token else { return }
             state = .failed(error.localizedDescription)
@@ -617,6 +740,7 @@ final class SpotifyDeviceRecovery: ObservableObject {
     }
     func cancel() {
         generation += 1
+        followingRun = nil
         leftApp = false
         state = .idle
     }

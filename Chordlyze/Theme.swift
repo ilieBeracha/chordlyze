@@ -79,6 +79,7 @@ struct SectionLabel: View {
 struct BackCircle: View {
     var size: CGFloat = 44
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.nativeBackSwipeEnabled) private var backSwipeEnabled
     var body: some View {
         Button {
             dismiss()
@@ -93,6 +94,7 @@ struct BackCircle: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Back")
+        .nativeBackSwipe(isEnabled: backSwipeEnabled)
     }
 }
 

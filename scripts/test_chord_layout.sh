@@ -11,7 +11,7 @@ extra_layout_source=${CHORD_EXTRA_LAYOUT_SOURCE:-}
 swiftc -O -module-cache-path "$render_test_dir/module-cache" \
   Chordlyze/Chord.swift Chordlyze/ChordShapes.swift Chordlyze/ChordMath.swift \
   Chordlyze/BackendClient.swift Chordlyze/SheetModel.swift Chordlyze/PassageAnalysisModel.swift \
-  Chordlyze/LyricPlayhead.swift Chordlyze/PracticeFeedback.swift Chordlyze/Theme.swift \
+  Chordlyze/LyricPlayhead.swift Chordlyze/PracticeFeedback.swift Chordlyze/Theme.swift Chordlyze/NativeBackSwipe.swift \
   "$row_view_source" "$lyric_view_source" ${extra_layout_source:+"$extra_layout_source"} \
   tests/ChordRowRenderTests.swift -o "$render_test_dir/render-tests"
 "$render_test_dir/render-tests" "${1:-/tmp/chordlyze-alignment-renders}"

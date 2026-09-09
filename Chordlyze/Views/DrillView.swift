@@ -50,6 +50,7 @@ struct DrillView: View {
         .padding(.bottom, 34)
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .environment(\.nativeBackSwipeEnabled, !starting && !running)
         .onDisappear { cancel() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
