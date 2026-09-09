@@ -22,6 +22,7 @@ lyrics5-<digest>.json and leased job records.
 from __future__ import annotations
 
 import hashlib
+import copy
 import json
 import math
 import logging
@@ -29,6 +30,7 @@ import hmac
 import os
 import re
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -50,14 +52,16 @@ from .synchronization import Sample as SyncSample, UncertainSync, align as align
 from .analysis.engine import AudioDecodeError, ChordSegment, merge_adjacent, recognize_audio
 from .analysis.ismir import RecognitionUnavailable, close as close_recognizer
 from .analysis.provenance import (ANALYSIS_VERSION, MODEL_QUALITIES, MODEL_RANK,
-                                  MODEL_REVISIONS, is_current, quality)
+                                  MODEL_REVISIONS, is_current, is_playable, quality)
 from .analysis.keyfinder import analyze
 from .auth import current_user
 from .song_jobs import SongJobs, generation, library_lock
 from .users import UserLibrary
 from .lyrics_repair import repaired_entry
 from .song_jobs import lyrics_fingerprint
-from .lyrics_validation import has_measured_words, preserves_lyric_text
+from .lyrics_validation import has_measured_words, preserves_lyric_text, lyric_text_sha256, reviewed_lyric_catalog
+from .reanalysis import (analysis_info, matches_original as reanalysis_matches, publish as publish_reanalysis,
+                         recover_publication)
 
 CACHE_DIR = Path(os.environ.get("CHORDLYZE_CACHE",
                                 str(Path(__file__).resolve().parent.parent / "analysis_cache")))
@@ -264,6 +268,43 @@ def _submit_analysis(body: SubmittedAnalysis, require_lease: bool = False) -> di
                   audio_sha256=body.audio_sha256, audio_duration=body.audio_duration)
     result.update(album=body.album, song_duration=body.song_duration or body.audio_duration,
                   audio_source=body.audio_source, library_generation=generation(CACHE_DIR))
+    job = jobs.get(body.track_id) if require_lease else None
+    if job and job.get('reanalysis'):
+        if not body.prepare_lyrics or body.source == 'itunes_preview' or not is_current(result, 'ismir2019'):
+            raise HTTPException(422, 'Reanalysis requires current full-song recognition and lyric completion.')
+        path = _track_cache_path(body.track_id)
+        before = json.loads(path.read_bytes()) if path.exists() else None
+        if before is None or not reanalysis_matches(job, before):
+            raise HTTPException(409, 'The chart or lyrics changed during reanalysis.')
+        if type(before.get('analysis_version')) is int and before['analysis_version'] > ANALYSIS_VERSION:
+            raise HTTPException(409, 'This chart was analyzed by a newer service version and cannot be downgraded.')
+        if (segments[0].start > .1 or body.audio_duration - segments[-1].end > .1
+                or any(abs(a.end - b.start) > 1e-5 for a, b in zip(segments, segments[1:]))):
+            raise HTTPException(422, 'Reanalysis requires continuous coverage of the complete recording.')
+        candidate = {**copy.deepcopy(before), **result}
+        for name in ('track_id', 'title', 'artist', 'album', 'isrc', 'artwork', 'song_duration'):
+            if name in before:
+                candidate[name] = before[name]
+        candidate.pop('analyzed_at', None)
+        candidate.pop('analysis_stale', None)
+        if reviewed_lyric_catalog(before):
+            if (candidate.get('source') != 'bandcamp' or not body.audio_source
+                    or body.audio_source.get('provider') != 'bandcamp'
+                    or body.audio_source.get('url') != before['audio_source']['url']):
+                raise HTTPException(409, 'Could not retain the reviewed artist recording and lyric source.')
+            candidate['lyrics']['audio_sha256'] = candidate['audio_sha256']
+            candidate['lyrics']['audio_duration'] = candidate['audio_duration']
+            candidate['lyrics']['text_source']['audio_sha256'] = candidate['audio_sha256']
+            if reviewed_lyric_catalog(candidate) is None:
+                raise HTTPException(422, 'The reviewed artist source could not be verified for this recording.')
+        staged = jobs.stage_reanalysis(body.track_id, body.job_id, body.lease, body.library_generation, candidate)
+        if staged is None:
+            raise HTTPException(409, 'The reanalysis lease expired before lyric alignment.')
+        catalog = reviewed_lyric_catalog(candidate)
+        if catalog:
+            staged = {**staged, 'lyric_catalog': catalog}
+        return {**candidate, 'lyrics_job': staged}
+    result['analyzed_at'] = time.time()
     if not _save_track(body.track_id, result, body.title, body.artist, body.isrc,
                        artwork=body.artwork):
         raise HTTPException(409, "a better analysis is already stored for this track")
@@ -296,13 +337,9 @@ def _song_status(track_id: str, isrc: str | None = None, user: str | None = None
     jobs = SongJobs(CACHE_DIR)
     path = _track_cache_path(track_id)
     chart = _read_analysis(path) if path.exists() else _cached_by_isrc(track_id, isrc, None, None)
-    # Version 3 adds optional rhythm metadata; version 2's identical chord
-    # recognizer remains usable. Freshness must not erase a playable chart.
-    ready = chart and chart.get("source") != "itunes_preview" and (
-        is_current(chart, model="ismir2019") or (
-            chart.get("analysis_version") == 2
-            and chart.get("model") == "ismir2019"
-            and chart.get("model_revision") == MODEL_REVISIONS["ismir2019"]))
+    # Older full-song chart shapes remain playable while fresh analysis runs.
+    info = analysis_info(chart)
+    ready = is_playable(chart)
     if ready:
         # Repair old malformed transcript spans on read as well as publication.
         # This leaves persisted charts, revisions and personal edits untouched.
@@ -318,6 +355,8 @@ def _song_status(track_id: str, isrc: str | None = None, user: str | None = None
     if ready:
         chart = corrections.apply(chart, mine.corrections(track_id) if mine else None)
     return {"song": song, "analysis": chart if ready else None,
+            'analysis_info': info,
+            'analysis_job': jobs.public(job) if job and (job.get('kind', 'analysis') == 'analysis' or job.get('reanalysis')) else None,
             "lyrics": chart.get("lyrics") if ready else None,
             "job": {"state": "ready", "worker_online": jobs.worker_online()} if ready else jobs.public(job),
             "lyrics_job": (jobs.public(job) if job and job.get('kind') == 'lyrics' else
@@ -349,6 +388,39 @@ def song_status(track_id: str, user: str = Depends(current_user)) -> dict:
         return _song_status(track_id, user=user)
 
 
+class ReanalyzeRequest(BaseModel):
+    expected_chart_revision: str = Field(pattern=r'^[0-9a-f]{64}$')
+
+
+@app.post('/song/{track_id}/reanalyze')
+def reanalyze_song(track_id: str, body: ReanalyzeRequest, user: str = Depends(current_user)) -> dict:
+    """An explicit developer action: fresh whole-song work, retaining the old chart."""
+    with library_lock(CACHE_DIR):
+        path = _track_cache_path(track_id)
+        if not path.exists():
+            raise HTTPException(404, 'No saved chart for this song.')
+        entry = json.loads(path.read_bytes())
+        base = corrections.revision(entry)
+        presented = corrections.apply(entry, UserLibrary(CACHE_DIR, user).corrections(track_id))['chart_revision']
+        if body.expected_chart_revision not in (base, presented):
+            raise HTTPException(409, 'The chart changed. Refresh the song before reanalyzing.')
+        if type(entry.get('analysis_version')) is int and entry['analysis_version'] > ANALYSIS_VERSION:
+            raise HTTPException(409, 'This chart was analyzed by a newer service version and cannot be downgraded.')
+        jobs = SongJobs(CACHE_DIR)
+        previous = jobs.get(track_id)
+        if previous and previous['state'] in ('queued', 'processing'):
+            return _song_status(track_id, user=user)
+        song = {'track_id': track_id, 'title': entry.get('title'), 'artist': entry.get('artist') or '',
+                'album': entry.get('album'), 'duration': entry.get('song_duration') or entry.get('audio_duration'),
+                'isrc': entry.get('isrc'), 'artwork': entry.get('artwork')}
+        if (not song['title'] or not song['artist'] or type(song['duration']) not in (float, int)
+                or not math.isfinite(song['duration']) or not 0 < song['duration'] <= 1200):
+            raise HTTPException(409, 'Complete song metadata is required before reanalysis.')
+        jobs.request(song, retry=True, reanalysis={'chart_revision': base,
+                     'lyrics_sha256': lyrics_fingerprint(entry.get('lyrics'))})
+        return _song_status(track_id, user=user)
+
+
 class LyricsRequest(BaseModel):
     retry: bool = False
 
@@ -361,8 +433,8 @@ def request_lyrics(track_id: str, body: LyricsRequest, user: str = Depends(curre
         if not path.exists():
             raise HTTPException(404, 'No chart for this song.')
         entry = _read_analysis(path)
-        if entry.get('source') == 'itunes_preview' or not is_current(entry, model='ismir2019'):
-            raise HTTPException(409, 'Update this song chart before timing its lyrics.')
+        if not is_playable(entry):
+            raise HTTPException(409, 'Reanalyze this song to create a compatible full chart before timing its lyrics.')
         if not entry.get('audio_sha256'):
             raise HTTPException(409, 'The original recording identity is unavailable.')
         jobs = SongJobs(CACHE_DIR)
@@ -397,15 +469,44 @@ def claim_song(authorization: str | None = Header(default=None)) -> dict:
     with library_lock(CACHE_DIR):
         jobs = SongJobs(CACHE_DIR)
         job = jobs.claim()
+        if job and job.get('reanalysis'):
+            path = _track_cache_path(job['song']['track_id'])
+            original = json.loads(path.read_bytes()) if path.exists() else None
+            if job.get('publication'):
+                if original is not None and recover_publication(CACHE_DIR, job, original):
+                    return {'job': None}
+                jobs.finish(job['song']['track_id'], job['id'], job['lease'], job['generation'],
+                            'failed', 'An interrupted publication could not safely resume. Newer saved data was kept.')
+                return {'job': None}
+            if original is None or not reanalysis_matches(job, original):
+                jobs.finish(job['song']['track_id'], job['id'], job['lease'], job['generation'],
+                            'failed', 'The chart changed during reanalysis. Request a fresh analysis.')
+                return {'job': None}
+            if job.get('kind') == 'analysis' and reviewed_lyric_catalog(original):
+                # Re-extract this verified artist page; no old hash/checkpoint is pinned.
+                job = {**job, 'preferred_recording_source': original['audio_source']}
         # Administrative jobs queued by older tools gain recording guards when
         # first claimed. Reclaimed jobs retain their original expectations.
-        if job and job.get('kind') == 'lyrics' and not job.get('expected_audio_sha256'):
+        if job and job.get('kind') == 'lyrics':
             path = _track_cache_path(job['song']['track_id'])
             if path.exists():
-                entry = _read_analysis(path)
-                if entry.get('audio_sha256'):
+                entry = job.get('pending_chart') if job.get('reanalysis') else _read_analysis(path)
+                if not isinstance(entry, dict):
+                    jobs.finish(job['song']['track_id'], job['id'], job['lease'], job['generation'],
+                                'failed', 'The staged reanalysis is unavailable. Request a fresh analysis.')
+                    return {'job': None}
+                if not job.get('expected_audio_sha256') and entry.get('audio_sha256'):
                     job = jobs.begin_lyrics(job['song']['track_id'], job['id'], job['lease'], job['generation'],
                                             entry['audio_sha256'], lyrics_fingerprint(entry.get('lyrics')))
+                # Source provenance belongs to this chart, not durable job state.
+                # A chart replaced after queuing must not redirect the old job.
+                if (job and entry.get('audio_sha256')
+                        and entry['audio_sha256'] == job.get('expected_audio_sha256')
+                        and isinstance(entry.get('audio_source'), dict)):
+                    job = {**job, 'recording_source': entry['audio_source']}
+                    catalog = reviewed_lyric_catalog(entry)
+                    if catalog and lyrics_fingerprint(entry.get('lyrics')) == job.get('expected_lyrics_sha256'):
+                        job['lyric_catalog'] = catalog
         return {"job": job}
 
 
@@ -433,6 +534,7 @@ class WorkerUpdate(BaseModel):
     download_checkpoint: DownloadCheckpoint | None = None
     error_code: str | None = None
     message: str | None = Field(default=None, max_length=300)
+    instrumental: bool = False
 
 
 @app.post("/internal/jobs/heartbeat")
@@ -449,6 +551,25 @@ def finish_song(body: WorkerUpdate, authorization: str | None = Header(default=N
     _worker_authorized(authorization)
     jobs = SongJobs(CACHE_DIR)
     current = jobs.get(body.track_id or "")
+    if current and current.get('reanalysis') and body.state == 'ready':
+        with library_lock(CACHE_DIR):
+            current = jobs.get(body.track_id or '')
+            if not jobs.valid_lease(body.track_id or '', body.job_id or '', body.lease or '', body.library_generation or ''):
+                raise HTTPException(409, 'The reanalysis lease expired.')
+            candidate = current.get('pending_chart')
+            path = _track_cache_path(body.track_id)
+            before = json.loads(path.read_bytes()) if path.exists() else None
+            if not body.instrumental or not isinstance(candidate, dict):
+                raise HTTPException(422, 'Reanalysis must publish measured lyrics or a verified instrumental result.')
+            if before is None or not reanalysis_matches(current, before):
+                raise HTTPException(409, 'The chart changed during reanalysis.')
+            if any(line.get('text', '').strip() for line in (before.get('lyrics') or {}).get('lines', [])):
+                raise HTTPException(422, 'An instrumental result cannot remove existing lyric text.')
+            candidate = copy.deepcopy(candidate)
+            candidate.update(analyzed_at=time.time(), lyrics={'lines': [], 'synced': True, 'instrumental': True,
+                                                            'matched': 'instrumental'})
+            publish_reanalysis(CACHE_DIR, current, before, candidate)
+            return {'ok': True}
     # "queued" only hands a provider-limited job back to the queue; "ready" only
     # completes a lyrics job, since an analysis becomes ready by being published.
     allowed = {"failed", "unavailable"}
@@ -529,11 +650,18 @@ def attach_lyrics(body: AlignedLyrics, authorization: str | None = Header(defaul
         path = _track_cache_path(body.track_id)
         if not path.exists():
             raise HTTPException(404, "no chart for this track")
-        entry = json.loads(path.read_text())
-        if entry.get("source") == "itunes_preview" or not is_current(entry, model="ismir2019"):
-            raise HTTPException(409, "lyrics can only be attached to a complete current chart")
+        original_entry = json.loads(path.read_text())
         jobs = SongJobs(CACHE_DIR)
         job = jobs.get(body.track_id)
+        staged = bool(job and job.get('reanalysis'))
+        if staged:
+            if not reanalysis_matches(job, original_entry) or not isinstance(job.get('pending_chart'), dict):
+                raise HTTPException(409, 'The chart changed or its staged reanalysis is unavailable.')
+            entry = copy.deepcopy(job['pending_chart'])
+        else:
+            entry = original_entry
+        if not is_playable(entry):
+            raise HTTPException(409, "lyrics can only be attached to a compatible complete chart")
         guarded = any((body.job_id, body.lease, body.expected_audio_sha256, body.expected_lyrics_sha256))
         if guarded:
             if not jobs.valid_lease(body.track_id, body.job_id or '', body.lease or '', body.library_generation):
@@ -549,9 +677,16 @@ def attach_lyrics(body: AlignedLyrics, authorization: str | None = Header(defaul
             raise HTTPException(409, 'This lyric timing job requires its recording identity and lease.')
         original_lyrics = lyrics_fingerprint(entry.get('lyrics'))
         previous_lines = (entry.get('lyrics') or {}).get('lines') or []
+        reviewed_catalog = reviewed_lyric_catalog(entry)
+        text_source = (entry.get('lyrics') or {}).get('text_source') if reviewed_catalog else None
+        if text_source and (body.source != 'catalog_aligned' or lyric_text_sha256(lines) != text_source['text_sha256']):
+            raise HTTPException(422, 'Timing retries must preserve the reviewed artist lyric text.')
         entry["lyrics"] = {"lines": lines, "synced": True,
                            "matched": "transcribed" if body.source == "transcribed" else "aligned",
                            "instrumental": False, "aligner": body.aligner}
+        if text_source:
+            entry['lyrics'].update(text_source=text_source, audio_sha256=entry['audio_sha256'],
+                                   audio_duration=entry['audio_duration'])
         if body.timing_note:
             entry["lyrics"]["timing_note"] = body.timing_note
         entry = repaired_entry(entry, CACHE_DIR) or entry
@@ -561,6 +696,10 @@ def attach_lyrics(body: AlignedLyrics, authorization: str | None = Header(defaul
                 raise HTTPException(422, 'Final lyric reconciliation has no measured sung-word intervals.')
             if not preserves_lyric_text(previous_lines, final_lines):
                 raise HTTPException(422, 'Lyric timing could not preserve all existing lyric text.')
+        if staged:
+            entry['analyzed_at'] = time.time()
+            publish_reanalysis(CACHE_DIR, job, original_entry, entry)
+            return {'ok': True, 'lines': len(entry['lyrics']['lines'])}
         _write_analysis(path, entry)
         isrc = entry.get("isrc")
         if isrc:

@@ -6,9 +6,58 @@ as uncertain; it must not invalidate usable anchors elsewhere in the phrase.
 from __future__ import annotations
 
 import math
+import hashlib
+import json
+import re
 import unicodedata
 
 MAX_WORD_DURATION = 8.0
+
+
+def lyric_text_sha256(lines: list[dict]) -> str:
+    """Fingerprint complete ordered lines, ignoring only Unicode/whitespace form."""
+    text = [' '.join(unicodedata.normalize('NFKC', line['text']).split()) for line in lines]
+    return hashlib.sha256(json.dumps(text, ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest()
+
+
+def reviewed_lyric_catalog(entry: dict) -> dict | None:
+    """Use verified artist text only for its original reviewed recording.
+
+    This marker is installed by the administrative replacement helper, never a
+    client-writable API field. Old catalog caches cannot supersede its text.
+    Timing is deliberately omitted so retries measure the current recording.
+    """
+    from .artist_recordings import valid_source_url
+    from .fulltrack import _recording_candidate
+
+    lyrics = entry.get('lyrics')
+    if not isinstance(lyrics, dict):
+        return None
+    source = lyrics.get('text_source')
+    recording = entry.get('audio_source')
+    audio_hash = entry.get('audio_sha256')
+    duration = entry.get('audio_duration')
+    lines = lyrics.get('lines')
+    if (not isinstance(source, dict) or not isinstance(recording, dict)
+            or lyrics.get('matched') != 'aligned' or entry.get('source') != 'bandcamp'
+            or source.get('provider') != 'bandcamp' or recording.get('provider') != 'bandcamp'
+            or not str(recording.get('matching') or '').startswith('reviewed_')
+            or not valid_source_url(source.get('url')) or source.get('url') != recording.get('url')
+            or not isinstance(audio_hash, str) or re.fullmatch(r'[0-9a-f]{64}', audio_hash) is None
+            or source.get('audio_sha256') != audio_hash or lyrics.get('audio_sha256') != audio_hash
+            or not finite(duration) or duration <= 0 or lyrics.get('audio_duration') != duration
+            or not isinstance(lines, list) or not lines
+            or any(not isinstance(line, dict) or not isinstance(line.get('text'), str)
+                   or not finite(line.get('time')) for line in lines)):
+        return None
+    expected_duration = entry.get('song_duration') or duration
+    if (not finite(expected_duration) or expected_duration <= 0
+            or not isinstance(entry.get('title'), str) or not isinstance(entry.get('artist'), str)
+            or not _recording_candidate(recording, entry['title'], entry['artist'], expected_duration)
+            or source.get('text_sha256') != lyric_text_sha256(lines)):
+        return None
+    return {'synced': False, 'matched': 'reviewed_artist', 'instrumental': False,
+            'duration': duration, 'lines': [{'time': line['time'], 'text': line['text']} for line in lines]}
 
 
 def finite(value) -> bool:

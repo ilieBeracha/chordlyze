@@ -1,6 +1,6 @@
 # Unified song sheets and live follow
 
-Search, saved songs, the home song sheet, Live and recorded Practice use one `SongSheetStore` and one `ChordSheetView`. Chords appear above lyric tokens, once, where they start. A chord that continues into the next row is not repeated there. Timestamped blank lines retain instrumental chord rows. A long lyric line remains intact instead of turning into empty eight-second continuation rows. Hebrew and Arabic use the same token layout in right-to-left order.
+Search, saved songs, the home song sheet, Live and recorded Practice use one `SongSheetStore` and one `ChordSheetView`. Chords with supported word anchors appear above those words; uncertain associations use chronological, timestamped sequences. A measured vocal entrance also identifies an already sounding chord without creating a duplicate musical event. Timestamped blank lines retain instrumental chord rows. A long lyric line remains intact instead of turning into empty eight-second continuation rows. Hebrew and Arabic use the same token layout in right-to-left order.
 
 When analysis is unavailable, lyric-only rows do not reserve an empty chord slot or repeat dash placeholders. Rows with neither lyrics nor chords remain in the timing model for playback, but take no space in the sheet. The status panel explains the missing analysis once; instrumental rows with actual chords stay visible.
 
@@ -10,7 +10,7 @@ Song and Live pages expose **Diagrams** and **Simple version** immediately below
 the header. Diagrams are closed on a fresh page and open only by choice, including
 when lyric timing is incomplete. The same button closes them during playback.
 Simple version uses the existing suggested capo shapes, displays the required
-fret, and is the first toggle in Key & capo. Turning it off restores the displayed
+fret, and is the first toggle in Song settings. Turning it off restores the displayed
 chords without changing manual transposition, timing calibration or scoring key.
 
 ## Accounts and libraries
@@ -54,7 +54,7 @@ Both display and scoring use the calibrated recording clock without a global
 "show chords ahead" offset. Negative chart time remains before the first chord.
 Automatic lyric scrolling requires measured vocal intervals; untimed lyrics
 remain readable without claiming that their guessed position is being sung.
-When word timing is incomplete, the current-chord strip stays visible during
+When word timing is incomplete, current and next chord guidance stays visible during
 playback and **Sync lyrics** requests a recoverable recording alignment.
 Opening or refreshing a saved song does not automatically request new analysis.
 Launch with `--open-live` in Debug to open Live follow for checking a real song. Chart
@@ -62,7 +62,7 @@ time comes from Spotify's position through the song's timing calibration
 (`TimingMap`, spotify = scale × chart + offset). The chart was measured on a
 different recording, so the two can start at different moments or run at
 slightly different speeds; no playback engine can know by how much. **Calibrate
-by ear** in Key & capo replays two chord changes far apart, the listener taps
+by ear** in Song settings replays two chord changes far apart, the listener taps
 Now and nudges until the highlight and the sound coincide, the map is fitted
 (offset only when the anchors are under twenty seconds apart), then a third
 change not used for the fit is replayed as a check and its remaining nudge is
@@ -70,9 +70,7 @@ saved as the verified error. The calibration is saved per account with the
 chart's audio hash and the Spotify track that played, since it absorbs the
 listener's own output delay; the sheet marks it stale when the chart changes.
 Spotify's audio-analysis endpoint, which would have given beat times on its
-master, returns 403 for this app. When the
-lyrics are word-timed, every word onset is a waypoint too, so the line follows
-the voice; with line times only it moves steadily between chords.
+master, returns 403 for this app. Measured sung-word intervals can guide following. Guessed or line-only word positions cannot move the lyric playhead.
 
 Charts analyzed before the worker transcribed recordings have no word timing.
 `python scripts/refresh_lyrics.py` on the server queues a `lyrics` job for each
@@ -90,11 +88,11 @@ seeks apply the saved timing calibration. Only complete detected bars are
 selectable. Install `scripts/setup_rhythm.sh` alongside the chord recognizer;
 export `CHORDLYZE_RHYTHM_DIR` when using a custom local path. Docker installs it.
 
-Opening a song posts its recording metadata to `/song/request`, then follows `/song/{track_id}`. Lyrics load independently while a complete chart is prepared. Reopening a ready song reuses the chart. Concurrent views share a document and subscriber count; the last departure cancels work. Reentry starts fresh requests. Old, canceled responses cannot replace the current song.
+Opening a song reads `/song/{track_id}`. Only an explicit Analyze action posts recording metadata to `/song/request`. Lyrics load independently while a complete chart is prepared. Reopening a ready song reuses the chart. Developer tools provide a separate guarded full-song reanalysis action; see [Song developer tools](developer-reanalysis.md). Concurrent views share a document and subscriber count; the last departure cancels work. Reentry starts fresh requests. Old, canceled responses cannot replace the current song.
 
 Full song duration and album information travel from Spotify/iTunes through Search, Library and lyrics lookup. Both exact and search lyric matches are checked against title, artist and duration. A 30-second iTunes preview starts at an unknown offset and is never positioned against the whole song.
 
-Known lyrics and known chords can load at different times. Missing data is shown explicitly. Instrumentals keep their chords. Unavailable lyrics are not invented. Enhanced LRC supplies word timestamps; ordinary synchronized LRC supplies line timestamps, so placement within a line is approximate and labeled: the words are assumed to take about half a second each, and at least 60% of the gap to the next line, so the breath before the next line does not drag chords left. Capo mode and manual transpose live on the song document, so the sheet, Live and Practice name the same chords and show the same "Capo N / +N" note in the header. Lyrics without timestamps retain approximate layout positions from the backend, but those positions never drive vocal auto-follow or change text brightness. The page shows that the lyrics need synchronization. After a chart is published, the worker transcribes the recording with word timestamps (`CHORDLYZE_TRANSCRIBER`: `groq` sends a 16 kHz mono copy to Groq's hosted whisper-large-v3-turbo, seconds per song, needing the `GROQ_API_KEY` secret; `local` runs faster-whisper, `CHORDLYZE_WHISPER_MODEL`, minutes per song on shared CPUs), matches the catalog text to the transcript, and attaches the timed lines to the chart through `/internal/jobs/lyrics`; `/song/{track_id}` then returns them as `lyrics` and the app prefers them over the catalog lookup. Too few matched words leaves the source text intact and exposes an unavailable lyric job with an explicit retry. New analyses retain their durable job lease while timing lyrics, reusing the same recording; after a restart the worker retries only the lyric stage and verifies the recording hash before attachment. See [lyric alignment recovery](lyric-alignment-recovery.md). Matching source title, artist and duration reduces edition errors but does not prove sample-accurate alignment between services.
+Known lyrics and known chords can load at different times. Missing data is shown explicitly. Instrumentals keep their chords. Unavailable lyrics are not invented. Enhanced LRC supplies word timestamps; ordinary synchronized LRC supplies line timestamps, so placement within a line is approximate and labeled: the words are assumed to take about half a second each, and at least 60% of the gap to the next line, so the breath before the next line does not drag chords left. Capo mode and manual transpose live on the song document, so the sheet, Live and Practice name the same chords and show the same "Capo N / +N" note in the header. Lyrics without synchronized timing are presented independently from the chord timeline. Their estimated backend positions never place chords against words, drive vocal auto-follow, or change text brightness. The page shows that the lyrics need synchronization. After a chart is published, the worker transcribes the recording with word timestamps (`CHORDLYZE_TRANSCRIBER`: `groq` sends a 16 kHz mono copy to Groq's hosted whisper-large-v3-turbo, seconds per song, needing the `GROQ_API_KEY` secret; `local` runs faster-whisper, `CHORDLYZE_WHISPER_MODEL`, minutes per song on shared CPUs), matches the catalog text to the transcript, and attaches the timed lines to the chart through `/internal/jobs/lyrics`; `/song/{track_id}` then returns them as `lyrics` and the app prefers them over the catalog lookup. Too few matched words leaves the source text intact and exposes an unavailable lyric job with an explicit retry. New analyses retain their durable job lease while timing lyrics, reusing the same recording; after a restart the worker retries only the lyric stage and verifies the recording hash before attachment. See [lyric alignment recovery](lyric-alignment-recovery.md). Matching source title, artist and duration reduces edition errors but does not prove sample-accurate alignment between services.
 
 Spotify polling starts immediately, runs separately from analysis, and honors rate-limit delays. A monotonic clock advances between polls, freezes on pause and resynchronizes on seeks or song changes. Connection failures retry automatically, and background/foreground transitions restart polling. Extrapolation stops after 15 seconds without a successful playback sample. A view-owned `TimelineView` redraws and scrolls Live; screens do not share a disconnectable timer.
 
@@ -130,7 +128,7 @@ PYTHONPATH=. .venv/bin/python scripts/reset_song_library.py --apply # explicit l
 # and CHORDLYZE_CACHE=/data/analysis_cache using the installed container Python.
 ```
 
-Verify `/library` is empty after reset. A currently visible sheet notices the changed generation and drops its old analysis; Retry or opening a song starts a new analysis. The managed worker does not enqueue anything itself. Historical Fly snapshots follow their existing retention policy and are not used to repopulate the active library.
+Verify `/library` is empty after reset. A currently visible sheet notices the changed generation and drops its old analysis; The explicit Analyze action starts a new analysis. The managed worker does not enqueue anything itself. Historical Fly snapshots follow their existing retention policy and are not used to repopulate the active library.
 
 ## Validation and release
 
@@ -141,7 +139,7 @@ cd backend
 CHORDLYZE_REQUIRE_MODELS=1 PYTHONPATH=. .venv/bin/python -m pytest tests/ -q
 ```
 
-Song-sheet tests cover unrepeated held chords, lyric preservation, instrumental markers, word groups, unknown-offset preview rejection, interval boundaries, cancellation, shared subscriptions, generation reset, automatic chart arrival, playback progression/pause/track change and rate-limit recovery. Backend tests include real HTTP request → claim → heartbeat → publish → ready → reset, stale publication rejection, and installed-model inference.
+Song-sheet tests cover continuing-chord cues without duplicate events, lyric preservation, instrumental markers, word groups, unknown-offset preview rejection, interval boundaries, cancellation, shared subscriptions, generation reset, automatic chart arrival, playback progression/pause/track change and rate-limit recovery. Backend tests include real HTTP request → claim → heartbeat → publish → ready → reset, stale publication rejection, and installed-model inference.
 
 Build Debug for Simulator and launch with `--song-sheet-preview` for an offline visual fixture. It uses authored sample text and real production views. Check English and Hebrew ordering, chord diagrams, transposition, Live progression/pause/reentry and the Practice entry. The fixture is compiled out of Release builds and never requests a production song.
 

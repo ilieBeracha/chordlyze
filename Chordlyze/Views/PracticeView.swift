@@ -282,7 +282,7 @@ struct PracticeView: View {
                     Label(note, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(Palette.warning)
                 }
                 if !slower && !canSync {
-                    Text("Spotify needs the original key. Reset transpose in Key & capo, or choose Metronome.")
+                    Text("Spotify needs the original key. Reset transpose in Song settings, or choose Metronome.")
                         .font(.footnote).foregroundStyle(Palette.warning)
                 }
                 DisclosureGroup("Recording details", isExpanded: $showDetails) {

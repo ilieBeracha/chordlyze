@@ -53,7 +53,8 @@ def test_bad_phrase_recovers_only_with_matching_words_and_surrounding_times(crop
 
 
 @pytest.mark.parametrize('kind', ['missing', 'different', 'duplicate', 'drift', 'confidence',
-                                  'boundary', 'reversed', 'long', 'nan', 'outside'])
+                                  'boundary', 'reversed', 'long', 'nan', 'outside',
+                                  'estimated_evidence', 'uncertain_prefix', 'missing_prefix_confidence'])
 def test_conflicting_or_unreliable_retranscriptions_cannot_change_timestamps(crop_calls, kind):
     candidate = recovered_words()
     if kind == 'missing': candidate.pop(0)
@@ -63,6 +64,9 @@ def test_conflicting_or_unreliable_retranscriptions_cannot_change_timestamps(cro
         for w in candidate: w.update(start=w['start'] + 1.5, end=w['end'] + 1.5)
     if kind == 'confidence':
         for w in candidate: w['p'] = .2
+    if kind == 'estimated_evidence': candidate[0]['estimated'] = True
+    if kind == 'uncertain_prefix': candidate[0]['p'] = .16
+    if kind == 'missing_prefix_confidence': candidate[0].pop('p')
     if kind == 'boundary': candidate[0]['start'] = 0
     if kind == 'reversed': candidate[2]['start'] = candidate[1]['start']
     if kind == 'long': candidate[0].update(start=0, end=9)

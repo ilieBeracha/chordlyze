@@ -6,7 +6,9 @@ Legacy results remain readable but are queued for reanalysis by the worker.
 """
 from __future__ import annotations
 
-ANALYSIS_VERSION = 3
+ANALYSIS_VERSION = 4
+# No inferred date from deploy/file timestamps: populate only from a verified release.
+ANALYSIS_VERSION_RELEASED_AT: float | None = None
 ISMIR_COMMIT = "481f4ce703f8822b99f4037e9104ba1760e21ea3"
 MODEL_REVISIONS = {
     "madmom": "27f032e-cnn-crf-10fps-v1",
@@ -38,6 +40,14 @@ def is_current(entry: dict, model: str | None = None) -> bool:
     return (actual in MODEL_REVISIONS and (model is None or actual == model)
             and entry.get("analysis_version") == ANALYSIS_VERSION
             and entry.get("model_revision") == MODEL_REVISIONS[actual])
+
+
+def is_playable(entry: dict | None) -> bool:
+    """Full charts from compatible generations stay usable and can retime lyrics."""
+    return bool(entry and entry.get('source') != 'itunes_preview' and entry.get('model') == 'ismir2019'
+                and type(entry.get('analysis_version')) is int
+                and 2 <= entry['analysis_version'] <= ANALYSIS_VERSION
+                and entry.get('model_revision') == MODEL_REVISIONS['ismir2019'] and entry.get('chords'))
 
 
 def quality(entry: dict) -> tuple[int, int, int]:

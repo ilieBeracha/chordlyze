@@ -31,6 +31,34 @@ private func status(_ state: String, epoch: String = "fresh", ready: Bool = fals
 private func lyrics(_ text: String = "First words") -> BackendClient.LyricsResult {
     decode(["lines": [["time": 2, "text": text], ["time": 8, "text": "Second line"]], "synced": true])
 }
+private func developerStatus(job: String? = "ready", stage: String? = nil, updated: Bool = false,
+                             includeInfo: Bool = true, lyricJob: String? = nil,
+                             workerOnline: Bool = true, ahead: Int? = nil) -> SongStatus {
+    let chartRevision = String(repeating: updated ? "d" : "c", count: 64)
+    var payload: [String: Any] = [
+        "job": ["state": "ready", "worker_online": true], "library_generation": "developer-fixture",
+        "analysis": ["source": "youtube", "audio_duration": 20, "chart_revision": chartRevision,
+                     "audio_sha256": String(repeating: updated ? "b" : "a", count: 64),
+                     "chords": [["start": 0, "end": 20, "label": updated ? "G:maj" : "C:maj"]]],
+        "lyrics": ["synced": true, "matched": "aligned", "lines": [["time": 2, "text": "Authored line",
+            "words": [["time": 2, "end": 2.5, "text": "Authored"], ["time": 3, "end": 3.5, "text": "line"]]]]]]
+    if includeInfo {
+        payload["analysis_info"] = ["analyzed_at": updated ? 1788912000.0 : 1700000000.0,
+            "analysis_version": updated ? 4 : 2, "current_analysis_version": 4,
+            "versions_behind": updated ? 0 : 2, "is_current": updated,
+            "model": "ismir2019", "model_revision": updated ? "new-model" : "old-model",
+            "current_model_revision": "new-model", "source_title": "Authored recording", "source_provider": "youtube",
+            "current_version_released_at": 1788860000.0, "chart_revision": chartRevision]
+    }
+    if let job {
+        var value: [String: Any] = ["state": job, "worker_online": workerOnline, "message": "Authored reanalysis \(job)"]
+        if let stage { value["stage"] = stage }
+        if let ahead { value["ahead"] = ahead }
+        payload["analysis_job"] = value
+    }
+    if let lyricJob { payload["lyrics_job"] = ["state": lyricJob, "worker_online": true] }
+    return decode(payload)
+}
 private func playback(id: String = "one", milliseconds: Int? = 12000, playing: Bool = true, deviceID: String = "phone") -> SpotifyAPI.CurrentlyPlaying {
     decode(["progress_ms": milliseconds.map { $0 as Any } ?? NSNull(), "is_playing": playing,
         "device": ["id": deviceID, "name": deviceID == "phone" ? "iPhone" : deviceID, "type": "Smartphone", "is_active": true], "item": [
@@ -72,8 +100,13 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         partialWordTimingTests()
         try sharedWordTimingContractTests()
         estimatedWordTimingTests()
+        lyricEntrancePresentationTests()
         try await savedAlignmentRefreshTests()
         try await lyricTimingRecoveryTests()
+        developerMetadataTests()
+        try await developerReanalysisTests()
+        try await developerReanalysisRaceTests()
+        try await developerReanalysisRecoveryTests()
         modelTests()
         barMapTests()
         runnerTests()
@@ -92,6 +125,253 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         try await spotifyNativeSessionTests()
         recentPlaysTests()
         print("Song sheet and playback: \(checks)/\(checks) checks passed")
+    }
+
+    @MainActor static func developerMetadataTests() {
+        let legacy = status("ready", ready: true)
+        check(legacy.analysisInfo == nil && legacy.analysisJob == nil && legacy.analysis != nil,
+              "Legacy song responses remain playable without invented developer metadata")
+        let old = developerStatus().analysisInfo!
+        check(old.analysisVersion == 2 && old.currentAnalysisVersion == 4 && old.versionsBehind == 2,
+              "Developer metadata preserves stored and current analysis versions")
+        check(old.statusLabel == "2 versions behind" && old.versionLabel == "v2 · latest v4",
+              "An older analysis clearly reports its version distance")
+        check(old.analyzedDate == Date(timeIntervalSince1970: 1700000000)
+              && old.latestVersionDate == Date(timeIntervalSince1970: 1788860000),
+              "Last analysis and new version dates use their own server timestamps")
+        check(old.sourceTitle == "Authored recording" && old.sourceProvider == "youtube"
+              && old.modelRevision == "old-model" && old.currentModelRevision == "new-model",
+              "Source and model metadata survive decoding")
+        let current = developerStatus(updated: true).analysisInfo!
+        check(current.isCurrent && current.statusLabel == "Up to date" && current.versionsBehind == 0,
+              "A fully current analysis is distinguished from an older model at the same version")
+        var raw: [String: Any] = ["analysis_version": 4, "current_analysis_version": 4,
+            "versions_behind": 0, "is_current": false, "model_revision": "older-model",
+            "current_model_revision": "newer-model", "future_metadata": ["enabled": true]]
+        let modelOnly: SongAnalysisInfo = decode(raw)
+        check(modelOnly.statusLabel == "Update available" && !modelOnly.isCurrent,
+              "Equal numbered versions cannot hide a changed recognition model")
+        check(modelOnly.analyzedDate == nil && modelOnly.latestVersionDate == nil,
+              "Missing analysis or release timestamps stay unknown")
+        raw["analysis_version"] = 3; raw["versions_behind"] = 1
+        check(decode(raw, as: SongAnalysisInfo.self).statusLabel == "1 version behind", "A single outdated version uses singular wording")
+        raw["analysis_version"] = 5; raw["versions_behind"] = 0
+        check(decode(raw, as: SongAnalysisInfo.self).statusLabel == "Newer than this service",
+              "A newer saved analysis is not misreported as an update requirement")
+        raw["analysis_version"] = NSNull(); raw["versions_behind"] = NSNull()
+        let unknown: SongAnalysisInfo = decode(raw)
+        check(unknown.statusLabel == "Version unknown" && unknown.versionLabel == "Unknown · latest v4",
+              "Unversioned legacy analysis never receives a made-up version")
+        for seconds in [0.0, -1] {
+            raw["analyzed_at"] = seconds; raw["current_version_released_at"] = seconds
+            let invalid: SongAnalysisInfo = decode(raw)
+            check(invalid.analyzedDate == nil && invalid.latestVersionDate == nil,
+                  "Nonpositive metadata dates cannot display an invented historical date")
+        }
+        let extra: SongStatus = decode(["job": ["state": "ready", "worker_online": true],
+            "library_generation": "legacy", "analysis_info": NSNull(), "analysis_job": NSNull(),
+            "unknown_future_status": ["field": 1]])
+        check(extra.analysisInfo == nil && extra.analysisJob == nil, "Additive metadata and unknown server fields keep legacy decoding compatible")
+    }
+
+    @MainActor static func developerReanalysisTests() async throws {
+        var current = developerStatus()
+        var requests = 0, implicitRequests = 0, requestMode = 0
+        var pending: CheckedContinuation<SongStatus, Never>?
+        let sheet = SongSheetStore(song: SongDescriptor(trackID: "developer", title: "Authored", artist: "Fixture"), service: .init(
+            request: { _ in implicitRequests += 1; return current }, status: { _ in current }, lyrics: { _ in nil },
+            sleep: { _ in try await Task.sleep(for: .milliseconds(10)) }, reanalyze: { track, revision in
+                requests += 1
+                check(track == "developer" && revision == String(repeating: "c", count: 64),
+                      "Reanalyze carries the selected song and exact displayed chart revision")
+                if requestMode == 0 { return await withCheckedContinuation { pending = $0 } }
+                if requestMode == 1 { throw URLError(.timedOut) }
+                return current
+            }))
+        let observation = Task { await sheet.observe() }
+        try await waitFor { sheet.canReanalyze && sheet.canPractice }
+        let oldChart = sheet.analysis, oldDate = sheet.analysisInfo?.analyzedAt
+        sheet.refresh()
+        try await Task.sleep(for: .milliseconds(30))
+        check(requests == 0 && implicitRequests == 0, "Opening settings and refreshing metadata never enqueue reanalysis")
+        let requesting = Task { await sheet.reanalyze() }
+        try await waitFor { pending != nil }
+        check(sheet.requestingReanalysis && sheet.reanalysisPending && !sheet.canReanalyze
+              && sheet.canPractice && sheet.analysis == oldChart,
+              "A pending reanalysis request leaves the existing chart playable and prevents duplicate taps")
+        check(sheet.analysisProgressLabel == "Requesting reanalysis…", "The explicit enqueue request has visible progress")
+        await sheet.reanalyze()
+        check(requests == 1, "Repeated Reanalyze taps share the pending request")
+        current = developerStatus(job: "queued")
+        pending?.resume(returning: current); pending = nil
+        await requesting.value
+        try await waitFor { sheet.analysisJob?.state == "queued" }
+        check(sheet.reanalysisPending && sheet.analysisProgressLabel == "Queued" && sheet.canPractice
+              && sheet.analysis == oldChart && sheet.analysisInfo?.analyzedAt == oldDate,
+              "Queued work keeps the last successful chart and date visible")
+        await sheet.reanalyze()
+        check(requests == 1, "A server-queued job also prevents another enqueue")
+        for ahead in [1, 3] {
+            current = developerStatus(job: "queued", workerOnline: false, ahead: ahead)
+            sheet.refresh()
+            try await waitFor { sheet.analysisJob?.ahead == ahead }
+            check(sheet.analysisProgressLabel == "Waiting for service" && sheet.reanalysisPending && sheet.canPractice,
+                  "A disconnected worker keeps queued work pending and the existing chart playable")
+            check(sheet.analysisProgressMessage == "\(ahead) \(ahead == 1 ? "song" : "songs") ahead in the queue.",
+                  "Queue progress reports the server's position with readable pluralization")
+        }
+        for (stage, label) in [("downloading", "Finding and downloading recording"),
+                               ("analyzing", "Analyzing chords and rhythm"), ("aligning", "Timing lyrics")] {
+            current = developerStatus(job: "processing", stage: stage)
+            sheet.refresh()
+            try await waitFor { sheet.analysisJob?.stage == stage }
+            check(sheet.analysisProgressLabel == label && sheet.analysisProgressMessage != nil,
+                  "The \(stage) stage has readable live progress")
+            check(sheet.reanalysisPending && !sheet.canReanalyze && sheet.canPractice
+                  && sheet.analysis == oldChart && sheet.analysisInfo?.analyzedAt == oldDate,
+                  "The \(stage) stage cannot replace the chart or successful analysis date early")
+        }
+        current = developerStatus(job: "failed")
+        sheet.refresh()
+        try await waitFor { sheet.analysisJob?.state == "failed" }
+        check(!sheet.reanalysisPending && sheet.canReanalyze && sheet.canPractice && sheet.analysis == oldChart,
+              "A failed rerun enables retry without losing the old chart")
+        check(sheet.analysisProgressLabel == "Reanalysis failed" && sheet.analysisProgressMessage == "Authored reanalysis failed",
+              "The service failure is surfaced without claiming success")
+        current = developerStatus(job: "unavailable")
+        sheet.refresh()
+        try await waitFor { sheet.analysisJob?.state == "unavailable" }
+        check(sheet.analysisProgressLabel == "Reanalysis failed" && sheet.canReanalyze && sheet.canPractice,
+              "An unavailable recording permits retry and preserves the last successful chart")
+        requestMode = 1
+        await sheet.reanalyze()
+        check(requests == 2 && sheet.reanalysisError != nil && sheet.canPractice && sheet.analysis == oldChart,
+              "An unconfirmed network request reports its error and preserves the loaded chart")
+        current = developerStatus(job: "queued"); requestMode = 2
+        await sheet.reanalyze()
+        try await waitFor { sheet.analysisJob?.state == "queued" }
+        check(requests == 3 && sheet.reanalysisError == nil, "A confirmed retry clears the previous request error")
+        current = developerStatus(updated: true)
+        sheet.refresh()
+        try await waitFor { sheet.analysisInfo?.isCurrent == true }
+        check(sheet.analysis == current.analysis && sheet.analysisInfo?.analyzedAt == 1788912000
+              && !sheet.reanalysisPending && sheet.canPractice && sheet.canReanalyze,
+              "Successful completion publishes the new chart and date together and permits a later explicit rerun")
+        current = developerStatus(updated: true, lyricJob: "processing")
+        sheet.refresh()
+        try await waitFor { sheet.timingLyrics }
+        check(sheet.reanalysisPending && !sheet.canReanalyze && sheet.canPractice,
+              "Active lyric alignment prevents competing reanalysis while leaving the chart available")
+        current = developerStatus(job: nil, includeInfo: false)
+        sheet.refresh()
+        try await waitFor { sheet.analysisInfo == nil }
+        check(!sheet.canReanalyze && sheet.canPractice, "An older server remains playable without offering an unsupported developer action")
+        observation.cancel(); await observation.value
+    }
+
+    @MainActor static func developerReanalysisRaceTests() async throws {
+        let original = developerStatus(), replacement = developerStatus(updated: true)
+        var current = original, calls = 0
+        var staleRead: CheckedContinuation<SongStatus, Never>?
+        let store = SongSheetStore(song: SongDescriptor(trackID: "race", title: "Authored", artist: "Fixture"), service: .init(
+            status: { _ in
+                calls += 1
+                if calls == 2 { return await withCheckedContinuation { staleRead = $0 } }
+                return current
+            }, lyrics: { _ in nil }, sleep: { _ in try await Task.sleep(for: .milliseconds(10)) },
+            reanalyze: { _, _ in current = replacement; return replacement }))
+        let observation = Task { await store.observe() }
+        try await waitFor { store.canReanalyze && staleRead != nil }
+        await store.reanalyze()
+        check(store.analysis == replacement.analysis && store.analysisInfo == replacement.analysisInfo,
+              "A completed rerun updates the chart and developer metadata atomically")
+        staleRead?.resume(returning: original); staleRead = nil
+        try await Task.sleep(for: .milliseconds(40))
+        check(store.analysis == replacement.analysis && store.analysisInfo == replacement.analysisInfo,
+              "An in-flight pre-rerun status response cannot undo newer chart metadata")
+        observation.cancel(); await observation.value
+
+        for failure in [false, true] {
+            var fresh = original
+            var pending: CheckedContinuation<SongStatus, Error>?
+            let guarded = SongSheetStore(song: SongDescriptor(trackID: "late", title: "Authored", artist: "Fixture"), service: .init(
+                status: { _ in fresh }, lyrics: { _ in nil }, sleep: { _ in try await Task.sleep(for: .milliseconds(10)) },
+                reanalyze: { _, _ in try await withCheckedThrowingContinuation { pending = $0 } }))
+            let watching = Task { await guarded.observe() }
+            try await waitFor { guarded.canReanalyze }
+            let request = Task { await guarded.reanalyze() }
+            try await waitFor { pending != nil }
+            fresh = replacement
+            guarded.refresh()
+            try await waitFor { guarded.analysisInfo?.isCurrent == true }
+            check(guarded.requestingReanalysis && !guarded.canReanalyze && guarded.canPractice,
+                  "Refreshing during an in-flight enqueue reads new data without permitting a duplicate request")
+            if failure { pending?.resume(throwing: URLError(.timedOut)) }
+            else { pending?.resume(returning: developerStatus(job: "queued")) }
+            pending = nil
+            await request.value
+            check(guarded.analysis == replacement.analysis && guarded.analysisInfo == replacement.analysisInfo
+                  && !guarded.reanalysisPending && guarded.reanalysisError == nil,
+                  "A superseded reanalysis \(failure ? "failure" : "response") cannot overwrite fresh data or reintroduce a pending state")
+            watching.cancel(); await watching.value
+        }
+    }
+
+    @MainActor static func developerReanalysisRecoveryTests() async throws {
+        for canonical in [String(repeating: "e", count: 64), ""] {
+            var loaded = developerStatus()
+            var info: [String: Any] = ["current_analysis_version": 4, "is_current": false]
+            if !canonical.isEmpty { info["chart_revision"] = canonical }
+            loaded.analysisInfo = decode(info)
+            var received: String?
+            let store = SongSheetStore(song: SongDescriptor(trackID: "personal", title: "Authored", artist: "Fixture"), service: .init(
+                status: { _ in loaded }, lyrics: { _ in nil },
+                sleep: { _ in try await Task.sleep(for: .milliseconds(10)) },
+                reanalyze: { _, revision in received = revision; return loaded }))
+            let observation = Task { await store.observe() }
+            try await waitFor { store.canReanalyze }
+            await store.reanalyze()
+            check(received == (canonical.isEmpty ? loaded.analysis?.chartRevision : canonical),
+                  "Reanalysis uses the canonical server revision before a personal chart revision, with a compatible fallback")
+            observation.cancel(); await observation.value
+        }
+        for code in [404, 409] {
+            let loaded = developerStatus()
+            let store = SongSheetStore(song: SongDescriptor(trackID: "failure", title: "Authored", artist: "Fixture"), service: .init(
+                status: { _ in loaded }, lyrics: { _ in nil },
+                sleep: { _ in try await Task.sleep(for: .milliseconds(10)) },
+                reanalyze: { _, _ in throw BackendError(status: code, detail: "Authored service error") }))
+            let observation = Task { await store.observe() }
+            try await waitFor { store.canReanalyze }
+            await store.reanalyze()
+            let expected = code == 404 ? "Reanalysis is not available on this service yet."
+                : "The chart changed. Refresh its status before trying again."
+            check(store.reanalysisError == expected && !store.reanalysisPending
+                  && store.canPractice && store.analysis == loaded.analysis,
+                  "HTTP \(code) explains recovery without losing the last chart or inventing progress")
+            observation.cancel(); await observation.value
+        }
+
+        for failure in [false, true] {
+            let original = developerStatus()
+            var pending: CheckedContinuation<SongStatus, Error>?
+            let store = SongSheetStore(song: SongDescriptor(trackID: "departing", title: "Authored", artist: "Fixture"), service: .init(
+                status: { _ in original }, lyrics: { _ in nil },
+                sleep: { _ in try await Task.sleep(for: .milliseconds(10)) },
+                reanalyze: { _, _ in try await withCheckedThrowingContinuation { pending = $0 } }))
+            let observation = Task { await store.observe() }
+            try await waitFor { store.canReanalyze }
+            let request = Task { await store.reanalyze() }
+            try await waitFor { pending != nil }
+            observation.cancel(); await observation.value
+            if failure { pending?.resume(throwing: URLError(.timedOut)) }
+            else { pending?.resume(returning: developerStatus(updated: true)) }
+            pending = nil
+            await request.value
+            check(store.analysis == original.analysis && store.analysisInfo == original.analysisInfo
+                  && store.reanalysisError == nil && !store.requestingReanalysis,
+                  "Leaving the last observing screen invalidates a delayed reanalysis \(failure ? "error" : "response")")
+        }
     }
 
     @MainActor static func sharedWordTimingContractTests() throws {
@@ -642,6 +922,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
               "Estimated early lines never auto-follow the fourth phrase when vocals have not begun")
         check(!sheet.lyricTimingIsSynced && !sheet.hasTimedLyricWords && !sheet.hasCompleteLyricTiming && sheet.needsLyricTiming,
               "Unsynchronized catalog timing offers explicit recovery without claiming measured words")
+        check(sheet.needsChordPlaybackSummary, "Untimed lyrics keep independent current and next chord guidance available")
         check(sheet.lyricTimingActionTitle == "Sync lyrics", "A never-started lyric job offers Sync lyrics, not Retry")
         let original = sheet.analysis
         let originalEvents = SheetModel.events(sheet.analysis)
@@ -701,6 +982,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(sheet.lyricTimingIsSynced && sheet.hasTimedLyricWords && sheet.analysis == original
               && SheetModel.events(sheet.analysis) == originalEvents,
               "Measured lyric replacement preserves the recording, chart revision, and every chord event")
+        check(!sheet.needsChordPlaybackSummary, "Complete word timing does not need redundant chord guidance")
         check(sheet.followingRow(at: 19)?.text.isEmpty != false
               && sheet.followingRow(at: 19.2)?.text == "Opening words"
               && sheet.followingRow(at: 19.8) == nil,
@@ -717,6 +999,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(sheet.hasTimedLyricWords && !sheet.hasCompleteLyricTiming && sheet.needsLyricTiming
               && sheet.followingRow(at: 18.2) == nil && sheet.followingRow(at: 20.1)?.text == "Estimated measured",
               "Partial timing follows measured words while estimated prefixes remain inactive and recoverable")
+        check(sheet.needsChordPlaybackSummary, "A partial estimated entrance still exposes the sounding and next chords")
         requestMode = 1
         await sheet.requestLyricTiming()
         check(sheet.lyricTimingError != nil, "A new uncertain request reports its own failure")
@@ -807,6 +1090,42 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(shortIntro.flatMap(\.chords).map(\.event) == SheetModel.events(chart()), "A sub-second wordless gap cannot swallow its chord change")
         let shared = SheetModel.build(analysis: chart(), lines: [LyricLine(time: 2, text: "first line", words: nil), LyricLine(time: 2, text: "second line", words: nil)], duration: 20)
         check(shared.first { !$0.text.isEmpty }?.text == "first line second line", "Distinct lyrics sharing a timestamp both survive")
+    }
+
+    @MainActor static func lyricEntrancePresentationTests() {
+        let analysis = chart([["start": 0, "end": 5, "label": "B:min"],
+                              ["start": 5, "end": 7, "label": "E:maj"],
+                              ["start": 7, "end": 12, "label": "F#:min"]])
+        let line = LyricLine(time: 3, text: "Alpha bravo charlie", words: [
+            WordStamp(time: 3, text: "Alpha", end: 3.5),
+            WordStamp(time: 5, text: "bravo", end: 5.5),
+            WordStamp(time: 7, text: "charlie", end: 8)])
+        let rows = SheetModel.build(analysis: analysis, lines: [line], duration: 12)
+        let vocal = rows.first { !$0.text.isEmpty }!
+        check(vocal.vocalEntranceChord == SheetModel.events(analysis).first,
+              "A reliable vocal entrance identifies the exact chord already ringing")
+        check(vocal.vocalEntranceChord?.start == 0 && vocal.chords.map(\.event.start) == [5, 7],
+              "The entrance cue cannot create an attack at the lyric onset")
+        check(rows.flatMap(\.chords).map(\.event) == SheetModel.events(analysis),
+              "An entrance cue keeps the complete scoring and playback sequence unchanged")
+        check(!vocal.needsChordSequence && vocal.chords.map(\.wordIndex) == [1, 2],
+              "Fully supported changes retain their word anchors")
+        var uncertain = line.words!
+        uncertain[0].estimated = true
+        let estimated = SheetModel.build(analysis: analysis,
+            lines: [LyricLine(time: 3, text: line.text, words: uncertain)], duration: 12).first { !$0.text.isEmpty }!
+        check(estimated.vocalEntranceChord == nil, "An estimated first word cannot claim the first vocal chord")
+        let lineOnly = SheetModel.build(analysis: analysis,
+            lines: [LyricLine(time: 3, text: line.text, words: nil)], duration: 12).first { !$0.text.isEmpty }!
+        check(lineOnly.vocalEntranceChord == nil && lineOnly.needsChordSequence,
+              "Line-only timing uses a chord sequence without claiming a measured vocal entrance")
+        uncertain[1].estimated = true
+        let partial = SheetModel.build(analysis: analysis,
+            lines: [LyricLine(time: 3, text: line.text, words: uncertain)], duration: 12).first { !$0.text.isEmpty }!
+        check(partial.needsChordSequence && partial.chords.map(\.wordIndex) == [nil, 2],
+              "Mixed timing presents one sequence while retaining reliable anchors in the model")
+        check(rows.filter { $0.text.isEmpty }.allSatisfy { $0.vocalEntranceChord == nil },
+              "Wordless rows cannot invent vocal entrances")
     }
 
     @MainActor static func modelTests() {
@@ -1019,6 +1338,14 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(plain.rows.first { $0.text == "Guessed one" }?.held?.chord?.display == "C", "Estimated lines sit on the chord timeline")
         check(plain.lyricsNote == "Estimated lyric timing", "Estimated timing is labeled")
         check(SheetModel.activeRow(plain.rows, at: 5)?.held?.chord?.display == "C", "Chords still follow the recording")
+        check(plain.usesIndependentLyrics && plain.untimedLyricRows.map(\.text) == ["Guessed one", "Guessed two"],
+              "Unsynchronized lyrics remain intact in an independent presentation")
+        check(plain.untimedLyricRows.allSatisfy { $0.chords.isEmpty && $0.held == nil && $0.words == nil },
+              "Unsynchronized lyric rows cannot visually inherit timed chords or vocal-entrance cues")
+        check(plain.independentChordTimeline.chords.map(\.event) == SheetModel.events(plain.analysis),
+              "The separate chord timeline retains every original measured event")
+        check([0.0, 1, 5, 18.6].allSatisfy { plain.followingRow(at: $0) == nil },
+              "Estimated lyric positions and generated wordless spans cannot trigger auto-follow")
         plainTask.cancel(); await plainTask.value
 
         var lookups = 0

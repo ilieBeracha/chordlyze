@@ -138,8 +138,10 @@ def attach_lyrics(client: WorkerClient, song: dict, audio: Path, generation: str
                    'expected_lyrics_sha256': job['expected_lyrics_sha256']} if job else {})
     params = {'title': song['title'], 'artist': song.get('artist') or '',
               'duration': song.get('duration'), 'album': song.get('album')}
-    found = None
+    found = job.get('lyric_catalog') if job else None
     for attempt in range(LYRICS_LOOKUP_RETRIES):
+        if found is not None:
+            break
         try:
             found = client.get('/lyrics', params)
             break
@@ -174,7 +176,7 @@ def attach_lyrics(client: WorkerClient, song: dict, audio: Path, generation: str
         return ('synced unaligned ' if found.get('synced') else 'unaligned ') + \
             ' '.join(f'{key}={value}' for key, value in stats.items())
     timed, timing_note = complete_lyrics(found, publishable_lines(timed))
-    timed, review = finalize_line_timings(audio, timed, song.get('duration'))
+    timed, review = finalize_line_timings(audio, timed, song.get('duration'), catalog=found)
     if job and not has_measured_words(timed, song.get('duration')):
         return 'unaligned no_measured_words'
     if review:
@@ -275,7 +277,8 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
             result = 'ready'
             message = ('The catalog provides word timing.' if outcome == 'synced'
                        else 'The catalog lists this recording as instrumental.')
-            client.post('/internal/jobs/finish', {**identity, 'state': result, 'message': message})
+            client.post('/internal/jobs/finish', {**identity, 'state': result, 'message': message,
+                                                'instrumental': outcome == 'instrumental'})
         else:
             result = 'unavailable'
             client.post('/internal/jobs/finish', {**identity, 'state': result,
@@ -294,7 +297,11 @@ def process_job(client: WorkerClient, job: dict, stopping: threading.Event | Non
         source_info = {}
         audio = fetch_full_track(song['title'], song.get('artist') or '', song['duration'],
                                  source_info=source_info, checkpoint=checkpoint,
-                                 save_checkpoint=save_checkpoint, cancelled=cancelled, isrc=song.get('isrc'))
+                                 save_checkpoint=save_checkpoint, cancelled=cancelled, isrc=song.get('isrc'),
+                                 recording_source=(job.get('recording_source') or {})
+                                     if job.get('kind') == 'lyrics' else None,
+                                 **({'preferred_source': job['preferred_recording_source']}
+                                    if job.get('preferred_recording_source') else {}))
         phase('download')
         if cancelled():
             return 'abandoned'

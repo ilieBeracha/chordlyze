@@ -85,6 +85,16 @@ def _norm(word: str) -> str:
     return re.sub(r"[^\w']+", '', word).replace("'", '')
 
 
+def _uncertain_word(word: dict) -> bool:
+    confidence = word.get('p')
+    start, end = word.get('start'), word.get('end')
+    if end is not None and (not isinstance(end, (int, float)) or not math.isfinite(end)
+            or not isinstance(start, (int, float)) or not math.isfinite(start) or end <= start):
+        return True
+    return word.get('estimated') is True or (confidence is not None and
+        (not isinstance(confidence, (int, float)) or not math.isfinite(confidence) or confidence < .5))
+
+
 MATCH = 2.0        # identical normalized words
 NEAR_MATCH = 1.2   # close spelling (transcript slips like "meat" for "meet")
 GAP = -0.5         # a lyric word not heard, or a transcript word not in the lyrics
@@ -185,6 +195,8 @@ def time_lines(lines: list[str], transcript: list[dict]) -> tuple[list[dict], in
                 word['end'] = round(ends[k], 2)
             else:
                 word['estimated'] = pairing[k] is None
+            if pairing[k] is not None and _uncertain_word(spoken[pairing[k]]):
+                word['estimated'] = True
             words.append(word)
         result.append({'time': round(times[positions[0]], 2), 'text': line, 'words': words})
         last = times[positions[0]]
@@ -436,6 +448,8 @@ def transcribed_lines(words: list[dict]) -> list[dict] | None:
         entry = {'time': round(float(word['start']), 2), 'text': word['text']}
         if word.get('end') is not None and float(word['end']) > float(word['start']):
             entry['end'] = round(float(word['end']), 2)
+        if _uncertain_word(word):
+            entry['estimated'] = True
         group.append(entry)
     flush()
     return lines

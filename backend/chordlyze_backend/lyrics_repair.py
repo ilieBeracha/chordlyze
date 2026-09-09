@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 from .lyrics_align import complete_lyrics, mark_estimated_words
-from .lyrics_validation import mark_unreliable_words
+from .lyrics_validation import mark_unreliable_words, reviewed_lyric_catalog
 
 
 def repaired_entry(entry: dict, cache: Path) -> dict | None:
@@ -27,7 +27,7 @@ def repaired_entry(entry: dict, cache: Path) -> dict | None:
         catalog = json.loads(path.read_text())
     except (OSError, ValueError):
         catalog = None
-    if (lyrics.get('matched') == 'aligned' and isinstance(catalog, dict)
+    if (lyrics.get('matched') == 'aligned' and reviewed_lyric_catalog(entry) is None and isinstance(catalog, dict)
             and catalog.get('lines') and not catalog.get('instrumental')):
         lines, note = complete_lyrics(catalog, lines)
     review = mark_unreliable_words(lines, entry.get('audio_duration') or duration)
