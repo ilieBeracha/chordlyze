@@ -45,7 +45,7 @@ final class SongSheetStore: ObservableObject {
     }
 
     @Published private(set) var song: SongDescriptor
-    @Published private(set) var analysis: ChordAnalysis?
+    @Published private(set) var analysis: ChordAnalysis? { didSet { refreshHowToPlay() } }
     /// Validate timing once per document update, not on every playback frame.
     private(set) var beatGrid: BeatGrid?
     @Published private(set) var rows: [SheetModel.Row] = []
@@ -66,7 +66,9 @@ final class SongSheetStore: ObservableObject {
     /// In the account's library. Requesting analysis saves; the sheet's
     /// bookmark toggles it. The chart itself is shared by every account.
     /// The Songsterr guitar tab lined up with this recording.
-    @Published private(set) var tab: SongTab?
+    @Published private(set) var tab: SongTab? { didSet { refreshHowToPlay() } }
+    /// The page's "How to play this" lines, rebuilt when the chart, tab or chord display changes.
+    @Published private(set) var howToPlay: HowToPlay?
     /// Why the Songsterr lookup or its tab could not load; the page shows it.
     @Published private(set) var songsterrError: String?
     @Published private(set) var saved = false
@@ -74,8 +76,8 @@ final class SongSheetStore: ObservableObject {
     @Published private(set) var savingCorrection = false
     /// Chord display shared by every surface, so the sheet, Live and Practice
     /// name the same chords: capo mode favors open shapes, manual shift transposes.
-    @Published var capoMode = false
-    @Published var manualShift = 0
+    @Published var capoMode = false { didSet { refreshHowToPlay() } }
+    @Published var manualShift = 0 { didSet { refreshHowToPlay() } }
     /// How this account's chart timeline maps onto the Spotify recording it
     /// hears. Identity until calibrated by ear; saved per account on the
     /// server, since it absorbs the listener's own output delay.
@@ -83,7 +85,7 @@ final class SongSheetStore: ObservableObject {
     @Published private(set) var timingError: String?
     @Published private(set) var timingIsStale = false
     private(set) var timingRevision: String?
-    @Published private(set) var capo = 0
+    @Published private(set) var capo = 0 { didSet { refreshHowToPlay() } }
     private(set) var lyricsResult: BackendClient.LyricsResult?
     private var service: Service
     private var observers = 0
@@ -107,6 +109,8 @@ final class SongSheetStore: ObservableObject {
         self.analysis = analysis
         self.service = service
         rebuild()
+        // Property observers do not run for assignments in init.
+        refreshHowToPlay()
     }
 
     var busy: Bool { ["loading", "queued", "processing"].contains(state) }
@@ -152,6 +156,11 @@ final class SongSheetStore: ObservableObject {
         return nil
     }
     var shift: Int { (capoMode ? -capo : 0) + manualShift }
+
+    private func refreshHowToPlay() {
+        let next = analysis.flatMap { HowToPlay.make(analysis: $0, tab: tab, transpose: shift) }
+        if next != howToPlay { howToPlay = next }
+    }
     var lyricTimingIsSynced: Bool { lyricsResult?.synced == true }
     var needsChordPlaybackSummary: Bool { canPractice && usesIndependentLyrics }
     /// Plain catalog lyrics have no relationship to the chart clock. Keep

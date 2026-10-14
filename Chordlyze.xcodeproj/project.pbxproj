@@ -18,6 +18,7 @@
 		2B0B316D24CDEEE7AD0A48C8 /* Metronome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1649CD4213D38B91DD970BB /* Metronome.swift */; };
 		2BA907A328198DD7AD731B7C /* BackendClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1243AB5316165B94E89C1FE /* BackendClient.swift */; };
 		2CAC7D7941C113983073C2A7 /* SongTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 736A66CF812CED97111D3CEB /* SongTab.swift */; };
+		2D72ABE997AE5B48A4D00493 /* HowToPlayCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFF5EE19D59B51E9182A43F7 /* HowToPlayCard.swift */; };
 		335DE6B244A15F9E1B74E91F /* ChordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1876BBFA097772E3C9CF64D3 /* ChordView.swift */; };
 		37720A470B486894BC3D06C9 /* SpotifyNativeSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35E43C5BB78AC697291A34C0 /* SpotifyNativeSession.swift */; };
 		3817F5E6B10603979A96BA3F /* ChordMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D18A5847FAF187D94D2E7ED /* ChordMath.swift */; };
@@ -63,6 +64,7 @@
 		F4D6A14494B7A9BE7FB7459C /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F5B942830EA8AE8A9C87C42 /* ProfileView.swift */; };
 		F8331C5353E1F4D39947EFB5 /* SpotifyLaunchCallback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 769A57C51F6F592BF9C0BB12 /* SpotifyLaunchCallback.swift */; };
 		FC2C4ED8A10607CECE68E602 /* NavigationGesturePreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC65B7C5EC466CEF9CE2F31 /* NavigationGesturePreview.swift */; };
+		FC5DC0F1300E5280DA34706C /* HowToPlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 985BDB0C77164BCA417AEDCE /* HowToPlay.swift */; };
 		FCE9FFCC91DAC9897442F6F8 /* TabRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D56118F207B9FAD1813338 /* TabRowView.swift */; };
 /* End PBXBuildFile section */
 
@@ -100,6 +102,7 @@
 		7EC65B7C5EC466CEF9CE2F31 /* NavigationGesturePreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationGesturePreview.swift; sourceTree = "<group>"; };
 		92161FF0D46239A2721AFDD7 /* Chordlyze.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Chordlyze.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		97301991890B494924679808 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
+		985BDB0C77164BCA417AEDCE /* HowToPlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HowToPlay.swift; sourceTree = "<group>"; };
 		998255D3BA4D7D11E3723460 /* NativeBackSwipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBackSwipe.swift; sourceTree = "<group>"; };
 		9D18A5847FAF187D94D2E7ED /* ChordMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChordMath.swift; sourceTree = "<group>"; };
 		A1649CD4213D38B91DD970BB /* Metronome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Metronome.swift; sourceTree = "<group>"; };
@@ -125,6 +128,7 @@
 		F55B762EFBB35519E23900A3 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		F8F0EDF9900CB420690140C3 /* TimingCalibrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimingCalibrationView.swift; sourceTree = "<group>"; };
 		FC9839963ADF8918052143AE /* PracticeFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeFeedback.swift; sourceTree = "<group>"; };
+		FFF5EE19D59B51E9182A43F7 /* HowToPlayCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HowToPlayCard.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -159,6 +163,7 @@
 				F25A477EBBECFCAB181FC4B9 /* ChordSheetView.swift */,
 				1876BBFA097772E3C9CF64D3 /* ChordView.swift */,
 				BED8DDCFB35F1A4DB0694CB1 /* DrillView.swift */,
+				FFF5EE19D59B51E9182A43F7 /* HowToPlayCard.swift */,
 				F55B762EFBB35519E23900A3 /* LibraryView.swift */,
 				3D7263FB6145FFC9D718A485 /* LiveChordRecognitionView.swift */,
 				B720782996747E23D75C8D13 /* LiveHostViews.swift */,
@@ -199,6 +204,7 @@
 				9D18A5847FAF187D94D2E7ED /* ChordMath.swift */,
 				30ACA8DA715E5954990AADD9 /* ChordShapes.swift */,
 				E1614B50A45FA29707012533 /* DrillAudioWorker.swift */,
+				985BDB0C77164BCA417AEDCE /* HowToPlay.swift */,
 				5EAB26A01240370A7EAF0A82 /* Info.plist */,
 				4808D969DCC674CF4F8881C7 /* Keychain.swift */,
 				3312C302F9B53B1895F12621 /* LyricPlayhead.swift */,
@@ -321,6 +327,8 @@
 				79274A76D689856807A47A46 /* ChordlyzeApp.swift in Sources */,
 				91650A2B258E73E2DD2C1CAE /* DrillAudioWorker.swift in Sources */,
 				D647C63988F12719D2495568 /* DrillView.swift in Sources */,
+				FC5DC0F1300E5280DA34706C /* HowToPlay.swift in Sources */,
+				2D72ABE997AE5B48A4D00493 /* HowToPlayCard.swift in Sources */,
 				E7D8FF3747FE41AF1E3F5CB9 /* Keychain.swift in Sources */,
 				387811BFFCDDEE897C63ADCB /* LibraryView.swift in Sources */,
 				AC817A3D26540BF855A2B4D4 /* LiveChordRecognitionView.swift in Sources */,

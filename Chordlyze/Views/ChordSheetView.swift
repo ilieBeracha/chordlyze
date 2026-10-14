@@ -139,6 +139,9 @@ struct AnalysisTabsView: View {
                         if store.actionTitle != nil || !store.message.isEmpty || store.lyricsLoading || store.lyricTimingMessage != nil || (store.lyricsFailed && store.lyricsNote != nil) || store.songsterrError != nil {
                             SongSheetStatus(store: store)
                         }
+                        if store.canPractice, let guide = store.howToPlay {
+                            HowToPlayCard(guide: guide)
+                        }
                         ChordSheetView(store: store, playhead: playhead, style: .live,
                                        onChordTap: { selectedChord = SelectedChord(name: $0) },
                                        onRowTap: songIsUp ? { row in

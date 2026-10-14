@@ -108,6 +108,10 @@ Without an analyzed chart, a tab lined up by lyrics becomes the song's chart: `/
 
 Outcomes are cached as `songsterr1-<track_id>.json`; a Songsterr outage is not cached and is shown on the page.
 
+## How to play this
+
+Above the sheet, a song that can be practiced shows a **How to play this** card worked out on the device from the chart and, when there is one, the tab (no request is made for it). It names the chords to learn first and the share of the song they cover (passing chords under 3% of the chord time are left out), the capo and any strings every chord frets the same, the hardest change (most fingers to move, least time, most often) with a **Drill** button into the one-minute-changes drill, and the tab's most common strummed bar with its tempo. With a tab, chord names and shapes are the tab's own, relative to its capo; without one they are the chart's, transposed as the sheet shows them. A line with no data behind it is left out.
+
 ## Full-song worker
 
 Before searching YouTube, the worker checks `backend/chordlyze_backend/recording_sources.json` for a reviewed artist-hosted public stream keyed by ISRC. Each entry requires the artist's HTTPS Bandcamp track URL, title, artist and full recording duration. Adding an entry requires checking the artist's release and matching recording metadata; this is a curated registry, not automatic Bandcamp discovery. The extractor revalidates title, artist and duration before and after downloading, and the recognizer independently validates decoded duration before publication. Missing public streams fall through to the existing YouTube search. Downloads have a 100 MiB size cap, a 120-second progress deadline, socket timeouts, cancellation and temporary-file cleanup. Provenance records `source: bandcamp` and the artist URL. The initial entry restores the 317.72-second album recording of [Shadows by Zero 7 and Lou Stone](https://zero7.bandcamp.com/track/shadows), whose shorter official video was correctly rejected by the duration gate.
