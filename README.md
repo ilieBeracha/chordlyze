@@ -65,6 +65,7 @@ swiftc Chordlyze/Chord.swift Chordlyze/BackendClient.swift Chordlyze/SongTab.swi
 bash scripts/test_drill.sh
 bash scripts/test_song_sheet.sh
 bash scripts/test_song_tab.sh
+bash scripts/test_how_to_play.sh
 bash scripts/test_spotify.sh
 bash scripts/test_music_collection.sh
 bash scripts/test_practice.sh
