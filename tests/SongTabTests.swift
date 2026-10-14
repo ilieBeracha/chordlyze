@@ -29,7 +29,7 @@ private func beat(_ n: Int, _ d: Int) -> SongTab.Beat {
         check(first.marker == "Intro" && first.beats[0].chord == "Em7" && first.beats[1].rest == true, "measure fields")
         check(first.beats[0].length == 0.5, "beat length is a fraction of a whole note")
         check(first.beats[0].notes.map(\.label) == ["3", "0"] && first.beats[0].notes[1].tie == true, "tied note keeps its fret")
-        check(tab.measures[1].beats[0].notes[0].label == "x", "muted note shows x")
+        check(tab.measures[1].beats[0].notes[0].label == "×", "muted note shows ×")
         check(tab.measures(from: 6, to: 10) == [tab.measures[1], tab.measures[0]], "bars starting in a row, in playing order")
         check(tab.measures(from: -.infinity, to: 5).isEmpty && tab.measures(from: 9, to: .infinity) == [tab.measures[0]], "row edges")
 
@@ -54,6 +54,13 @@ private func beat(_ n: Int, _ d: Int) -> SongTab.Beat {
         check(rows[0].bars == [0] && rows[1].bars.isEmpty && rows[2].bars.count == 1, "only the measure's own ends get bars")
         check(rows.flatMap(\.beats).map(\.beat) == Array(0..<32), "every beat placed once, in order")
         check(TabLayout.rows([], width: 300).isEmpty, "no measures, no rows")
+
+        // Justified lines all end at the same edge; beats keep their shares.
+        let justified = TabLayout.rows([quarters, marked, quarters], width: 300, justify: true)
+        check(justified.allSatisfy { $0.width == 300 && $0.bars.last == 300 }, "every justified line spans the width")
+        check(justified[1].bars == [0, 300] && abs(justified[1].beats[0].x - 23 * 300 / 136) < 0.001,
+              "a short line is stretched in proportion")
+        check(justified[0].markers.map(\.x) == [136 * 300 / 272], "markers move with their bars")
 
         print("Song tab tests passed (\(checks) checks)")
     }

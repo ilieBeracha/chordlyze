@@ -357,7 +357,8 @@ struct SongPlayingControls: View {
         Button(action: action) {
             Label(title, systemImage: icon)
                 .font(.subheadline.weight(.semibold))
-                .fixedSize(horizontal: false, vertical: true)
+                // Three controls share the row when a tab is offered: stay on one line.
+                .lineLimit(1).minimumScaleFactor(0.75)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .padding(.horizontal, 10)
                 .foregroundStyle(on ? Color.spotifyGreen : .white)
