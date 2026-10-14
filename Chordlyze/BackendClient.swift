@@ -48,8 +48,11 @@ struct SongStatus: Decodable {
     /// This account's calibration of the chart to the Spotify recording.
     let timing: TimingMap?
     var timingRevision: String? = nil
+    /// A Songsterr guitar tab lined up with this recording can be read.
+    var tabAvailable: Bool? = nil
     enum CodingKeys: String, CodingKey {
         case timingRevision = "timing_revision"
+        case tabAvailable = "tab_available"
         case lyricsJob = "lyrics_job"
         case analysisInfo = "analysis_info", analysisJob = "analysis_job"
         case song, analysis, lyrics, job, saved, timing, libraryGeneration = "library_generation"
@@ -389,6 +392,34 @@ enum BackendClient {
         if let album { comps.queryItems?.append(.init(name: "album", value: album)) }
         return try await fetch(URLRequest(url: comps.url!, cachePolicy: .reloadIgnoringLocalCacheData,
                                           timeoutInterval: 50))
+    }
+
+    /// Looks the song up on Songsterr. Without a chart, a tab that lines up
+    /// with this recording becomes its chart (the status says ready). With
+    /// one, the status says whether a tab lined up with it can be read.
+    static func songsterr(_ song: SongDescriptor) async throws -> SongStatus {
+        guard let duration = song.duration, duration > 0 else {
+            throw BackendError(status: 422, detail: "A Songsterr lookup needs the recording's duration.")
+        }
+        var request = URLRequest(url: Config.backendBaseURL.appendingPathComponent("song/\(song.id)/songsterr"),
+                                 cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 60)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var payload: [String: Any] = ["title": song.title, "artist": song.artist, "duration": duration]
+        if let album = song.album { payload["album"] = album }
+        if let isrc = song.isrc { payload["isrc"] = isrc }
+        if let artwork = song.artwork { payload["artwork"] = artwork }
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        guard let result: SongStatus = try await fetch(request) else {
+            throw BackendError(status: 404, detail: "Songsterr lookup unavailable")
+        }
+        return result
+    }
+
+    /// The guitar tab lined up with this recording; nil when there is none.
+    static func songTab(trackID: String) async throws -> SongTab? {
+        try await fetch(URLRequest(url: Config.backendBaseURL.appendingPathComponent("song/\(trackID)/tab"),
+                                   cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30))
     }
 
     /// nil on 404; throws BackendError on any other non-200 response.

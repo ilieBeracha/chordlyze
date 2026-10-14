@@ -27,6 +27,7 @@ struct AnalysisTabsView: View {
     // A fresh song page starts with the diagrams closed. Timing quality must
     // never override this explicit presentation choice.
     @State private var showRail = false
+    @State private var showTab = false
 
     /// The Spotify poller behind seeks and calibration; the offline fixture passes its own.
     @ObservedObject var nowPlaying: SpotifyNowPlaying
@@ -61,7 +62,7 @@ struct AnalysisTabsView: View {
                 songMenu
             }
             if store.canPractice {
-                SongPlayingControls(store: store, showRail: $showRail)
+                SongPlayingControls(store: store, showRail: $showRail, showTab: $showTab)
             }
             // Keep the page's identity when Spotify starts during an app switch.
             // Replacing the idle subtree would dismiss its pending recovery.
@@ -135,7 +136,7 @@ struct AnalysisTabsView: View {
                         if nowPlaying.isControlling || playbackError != nil || store.saveError != nil || nowPlaying.controlMessage != nil || needsPlaybackDevice {
                             playbackStatus
                         }
-                        if store.actionTitle != nil || !store.message.isEmpty || store.lyricsLoading || store.lyricTimingMessage != nil || (store.lyricsFailed && store.lyricsNote != nil) {
+                        if store.actionTitle != nil || !store.message.isEmpty || store.lyricsLoading || store.lyricTimingMessage != nil || (store.lyricsFailed && store.lyricsNote != nil) || store.songsterrError != nil {
                             SongSheetStatus(store: store)
                         }
                         ChordSheetView(store: store, playhead: playhead, style: .live,
@@ -145,7 +146,7 @@ struct AnalysisTabsView: View {
                                        } : nil,
                                        onPracticeRow: store.canPractice ? { row in
                                            practiceRange = row.start...min(row.end, store.analysis?.coverageEnd ?? row.end)
-                                       } : nil)
+                                       } : nil, showTab: showTab)
                     }
                     .padding(.horizontal, 24).padding(.top, 16)
                     .padding(.bottom, playhead == nil ? 40 : 320)  // the last lines can roll up to the reading height too
@@ -306,6 +307,8 @@ extension SongSheetHeader where Trailing == EmptyView {
 struct SongPlayingControls: View {
     @ObservedObject var store: SongSheetStore
     @Binding var showRail: Bool
+    /// Tab under each row; offered when a Songsterr tab lines up with the recording.
+    var showTab: Binding<Bool>? = nil
     var allowsSimpleVersionChanges = true
 
     private var capoInstruction: String {
@@ -320,6 +323,15 @@ struct SongPlayingControls: View {
             .accessibilityLabel(showRail ? "Hide chord diagrams" : "Show chord diagrams")
             .accessibilityValue(showRail ? "Shown" : "Hidden")
             .accessibilityIdentifier("chord-rail-toggle")
+
+            if let showTab, store.tab != nil {
+                control("Tab", icon: showTab.wrappedValue ? "xmark" : "music.quarternote.3", on: showTab.wrappedValue) {
+                    withAnimation(.easeInOut(duration: 0.25)) { showTab.wrappedValue.toggle() }
+                }
+                .accessibilityLabel(showTab.wrappedValue ? "Hide guitar tab" : "Show guitar tab")
+                .accessibilityValue(showTab.wrappedValue ? "Shown" : "Hidden")
+                .accessibilityIdentifier("tab-toggle")
+            }
 
             VStack(spacing: 5) {
                 control("Simple version", icon: store.capoMode ? "checkmark.circle.fill" : "circle", on: store.capoMode) {
@@ -411,6 +423,9 @@ struct SongSheetStatus: View {
             } else if !store.message.isEmpty {
                 note(store.message, icon: "exclamationmark.circle", spinning: store.busy) { EmptyView() }
             }
+            if let error = store.songsterrError {
+                note(error, icon: "exclamationmark.triangle") { EmptyView() }
+            }
             // Timing and edition notes live in Key & capo; the page shows only
             // what is still happening or went wrong.
             if store.lyricsLoading {
@@ -458,8 +473,13 @@ struct ChordSheetView: View {
     var onRowTap: ((SheetModel.Row) -> Void)? = nil
     var onPracticeRow: ((SheetModel.Row) -> Void)? = nil
     var verdict: ((Double) -> PracticeFeedback.Verdict?)? = nil
+    /// Draw the guitar tab's bars under the row they are played in.
+    var showTab = false
 
     var body: some View {
+        let rows = store.usesIndependentLyrics ? store.untimedLyricRows : SheetModel.readingRows(store.rows)
+        // Untimed lyric rows have no place on the recording's clock for tab bars.
+        let tab = showTab && !store.usesIndependentLyrics ? store.tab : nil
         LazyVStack(alignment: .leading, spacing: style == .live ? 16 : 14) {
             if store.usesIndependentLyrics, !store.independentChordTimeline.chords.isEmpty {
                 DisclosureGroup("Chord timeline") {
@@ -472,7 +492,7 @@ struct ChordSheetView: View {
             }
             // A wordless row with no chord change of its own is the previous chord
             // still sounding: nothing to draw, so it takes no space.
-            ForEach(store.usesIndependentLyrics ? store.untimedLyricRows : SheetModel.readingRows(store.rows)) { row in
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 ChordRowView(row: row, transposeBy: store.shift, playhead: playhead,
                              style: style, onChordTap: onChordTap,
                              onLyricTap: store.usesIndependentLyrics ? nil : { onRowTap?(row) }, verdict: verdict)
@@ -486,6 +506,12 @@ struct ChordSheetView: View {
                             Button("Practice this passage", systemImage: "mic.fill") { onPracticeRow(row) }
                         }
                     }
+                if let tab {
+                    // Bars before the first row sit under it; each bar under the row it starts in.
+                    let measures = tab.measures(from: index == 0 ? -.infinity : row.start,
+                                                to: index + 1 < rows.count ? rows[index + 1].start : .infinity)
+                    if !measures.isEmpty { TabStripView(tab: tab, measures: measures) }
+                }
             }
         }
         .sheet(item: $editingRow) { row in

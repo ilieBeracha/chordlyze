@@ -58,12 +58,13 @@ xcodebuild -project Chordlyze.xcodeproj -scheme Chordlyze \
   -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
   -derivedDataPath /tmp/chordlyze-build CODE_SIGNING_ALLOWED=NO build
 
-swiftc Chordlyze/Chord.swift Chordlyze/BackendClient.swift \
+swiftc Chordlyze/Chord.swift Chordlyze/BackendClient.swift Chordlyze/SongTab.swift \
   tests/PracticeReportContract.swift -o /tmp/chordlyze-report-test
 /tmp/chordlyze-report-test
 
 bash scripts/test_drill.sh
 bash scripts/test_song_sheet.sh
+bash scripts/test_song_tab.sh
 bash scripts/test_spotify.sh
 bash scripts/test_music_collection.sh
 bash scripts/test_practice.sh

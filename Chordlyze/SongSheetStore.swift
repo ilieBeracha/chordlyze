@@ -3,8 +3,10 @@ import Foundation
 
 /// One observable song document shared by search, library, live and practice.
 /// Lyrics load independently of analysis; complete charts replace pending rows.
-/// Opening a song only reads its status: analysis is requested by the
-/// Analyze and Reanalyze buttons alone, never by a screen appearing or a song playing.
+/// Opening a song reads its status and asks Songsterr once per chart for a
+/// tab (and, without a chart, a chart) lined up with the recording. Analysis
+/// is requested by the Analyze and Reanalyze buttons alone, never by a
+/// screen appearing or a song playing.
 @MainActor
 final class SongSheetStore: ObservableObject {
     struct Service {
@@ -28,6 +30,8 @@ final class SongSheetStore: ObservableObject {
         var reanalyze: (String, String) async throws -> SongStatus = {
             try await BackendClient.reanalyzeSong(trackID: $0, expectedRevision: $1)
         }
+        var songsterr: (SongDescriptor) async throws -> SongStatus = { try await BackendClient.songsterr($0) }
+        var tab: (String) async throws -> SongTab? = { try await BackendClient.songTab(trackID: $0) }
     }
     private static var documents: [String: SongSheetStore] = [:]
     static func shared(for song: SongDescriptor) -> SongSheetStore {
@@ -61,6 +65,10 @@ final class SongSheetStore: ObservableObject {
     @Published private(set) var hasCompleteLyricTiming = false
     /// In the account's library. Requesting analysis saves; the sheet's
     /// bookmark toggles it. The chart itself is shared by every account.
+    /// The Songsterr guitar tab lined up with this recording.
+    @Published private(set) var tab: SongTab?
+    /// Why the Songsterr lookup or its tab could not load; the page shows it.
+    @Published private(set) var songsterrError: String?
     @Published private(set) var saved = false
     @Published private(set) var saveError: String?
     @Published private(set) var savingCorrection = false
@@ -90,6 +98,9 @@ final class SongSheetStore: ObservableObject {
     /// whether the worker aligned existing words or transcribed new ones.
     private var hasRecordingLyrics = false
     private var nextLyricRetry: ContinuousClock.Instant?
+    private var tabTask: Task<Void, Never>?
+    /// The chart the Songsterr lookup last ran for this opening ("" for none).
+    private var songsterrChecked: String?
 
     init(song: SongDescriptor, analysis: ChordAnalysis? = nil, service: Service = Service()) {
         self.song = song
@@ -107,7 +118,9 @@ final class SongSheetStore: ObservableObject {
     }
     private var reanalysisRevision: String? { analysisInfo?.chartRevision ?? analysis?.chartRevision }
     var canReanalyze: Bool {
-        analysisInfo != nil && reanalysisRevision != nil && !reanalysisPending && !savingCorrection
+        // A Songsterr chart is not an analysis; there is nothing to redo.
+        analysis?.source != "songsterr"
+            && analysisInfo != nil && reanalysisRevision != nil && !reanalysisPending && !savingCorrection
             && state != "loading" && state != "connection"
     }
     var analysisProgressLabel: String {
@@ -158,7 +171,8 @@ final class SongSheetStore: ObservableObject {
     }
     var timingLyrics: Bool { requestingLyricTiming || ["queued", "processing"].contains(lyricsJob?.state ?? "") }
     var needsLyricTiming: Bool {
-        canPractice && !lyricsLoading && !lyricsFailed && lyricsResult?.instrumental != true && !hasCompleteLyricTiming
+        // A Songsterr chart brings its own lyric timing; there is no recording to sync.
+        canPractice && analysis?.source != "songsterr" && !lyricsLoading && !lyricsFailed && lyricsResult?.instrumental != true && !hasCompleteLyricTiming
     }
     var lyricTimingMessage: String? {
         if let lyricTimingError { return lyricTimingError }
@@ -400,6 +414,7 @@ final class SongSheetStore: ObservableObject {
         revision += 1
         let token = revision
         task?.cancel()
+        songsterrChecked = nil
         loadLyrics(force: lyricsLoading || lyricsFailed)
         task = Task { [weak self] in
             guard let self else { return }
@@ -413,6 +428,13 @@ final class SongSheetStore: ObservableObject {
                     first = false
                     failures = 0
                     apply(result)
+                    // Once per opening and per chart: a new analysis may line up a tab.
+                    let chart = analysisInfo?.chartRevision ?? ""
+                    if (state == "missing" || (state == "ready" && analysis?.source != "songsterr"))
+                        && songsterrChecked != chart {
+                        songsterrChecked = chart
+                        await checkSongsterr(token: token)
+                    }
                 } catch {
                     guard !Task.isCancelled, token == revision else { return }
                     if let error = error as? BackendError, (400..<500).contains(error.status), error.status != 429 {
@@ -452,6 +474,7 @@ final class SongSheetStore: ObservableObject {
         }
         let changed = analysis != status.analysis
         analysis = status.analysis
+        if status.tabAvailable == true { loadTab() } else { tabTask?.cancel(); tabTask = nil; tab = nil }
         if let aligned = status.lyrics, aligned.synced, aligned != lyricsResult || !hasRecordingLyrics {
             // Lyrics timed to the analyzed recording beat any catalog lookup.
             lyricRevision += 1
@@ -502,6 +525,38 @@ final class SongSheetStore: ObservableObject {
         }
         if changed || reset || oldSong != song || rows.isEmpty || status.lyrics != nil { rebuild() }
         loadLyrics(force: lyricsFailed && (nextLyricRetry.map { ContinuousClock.now >= $0 } ?? true))
+    }
+
+    /// A lookup failure leaves the song as it was and says why; the next
+    /// opening asks again.
+    private func checkSongsterr(token: Int) async {
+        do {
+            let result = try await service.songsterr(song)
+            guard !Task.isCancelled, token == revision else { return }
+            songsterrError = nil
+            apply(result)
+        } catch {
+            guard !Task.isCancelled, token == revision else { return }
+            songsterrError = "Couldn't check Songsterr for this song: \(error.localizedDescription)"
+        }
+    }
+
+    private func loadTab() {
+        guard tab == nil, tabTask == nil else { return }
+        let id = song.id
+        tabTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if !Task.isCancelled { tabTask = nil } }
+            do {
+                let result = try await service.tab(id)
+                guard !Task.isCancelled else { return }
+                tab = result
+                if result == nil { songsterrError = "The Songsterr tab for this song is missing." }
+            } catch {
+                guard !Task.isCancelled else { return }
+                songsterrError = "Couldn't load the Songsterr tab: \(error.localizedDescription)"
+            }
+        }
     }
 
     private var lyricLookupKey: String { "\(song.title)|\(song.artist)|\(song.album ?? "")|\(song.duration ?? 0)" }
