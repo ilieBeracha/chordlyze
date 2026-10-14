@@ -334,9 +334,12 @@ struct SongPlayingControls: View {
             }
 
             VStack(spacing: 5) {
-                control("Simple version", icon: store.capoMode ? "checkmark.circle.fill" : "circle", on: store.capoMode) {
+                // Beside Diagrams and Tab, the full name does not fit on one line.
+                control(showTab != nil && store.tab != nil ? "Simple" : "Simple version",
+                        icon: store.capoMode ? "checkmark.circle.fill" : "circle", on: store.capoMode) {
                     store.capoMode.toggle()
                 }
+                .accessibilityLabel("Simple version")
                 .accessibilityValue(store.capoMode ? "On, \(capoInstruction)" : "Off")
                 .disabled(!allowsSimpleVersionChanges)
                 .accessibilityHint(allowsSimpleVersionChanges
