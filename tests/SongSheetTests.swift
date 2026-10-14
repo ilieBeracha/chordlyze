@@ -112,6 +112,7 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         runnerTests()
         sungWordTests()
         try await documentTests()
+        try await songsterrTests()
         try await correctionTests()
         try await passageTests()
         try await synchronizationAndBoundaryTests()
@@ -1371,6 +1372,71 @@ private func playback(id: String = "one", milliseconds: Int? = 12000, playing: B
         check(!tail.contains { $0.kind == .uncovered }, "A sub-second gap after the analyzed audio is not a pending row")
         check(SheetModel.build(analysis: changed, lines: [], duration: 30).contains { $0.kind == .uncovered }, "A real unanalyzed tail still shows as pending")
         check(SheetModel.build(analysis: changed, lines: [], duration: 20).allSatisfy { $0.isInstrumental }, "Without any lyrics, blank rows stay instrumental")
+    }
+
+    @MainActor static func songsterrTests() async throws {
+        let song = SongDescriptor(trackID: "songsterr-fixture", title: "Song", artist: "Band", duration: 20)
+        let found: SongStatus = decode(["job": ["state": "ready", "worker_online": true], "library_generation": "one",
+            "lyrics_job": ["state": "ready", "worker_online": true], "tab_available": true,
+            "analysis": ["chords": [["start": 0, "end": 20, "label": "G:maj"]], "source": "songsterr", "audio_duration": 20],
+            "lyrics": ["lines": [["time": 1, "text": "Hello there", "words": [["time": 1, "end": 1.5, "text": "Hello", "estimated": false],
+                                                                            ["time": 1.5, "end": 2, "text": "there", "estimated": false]]]],
+                       "synced": true, "matched": "songsterr", "timing_note": "Chords and lyrics from Songsterr, lined up with the recording."]])
+        let tab: SongTab = decode(["name": "Rhythm", "tuning": [64, 59, 55, 50, 45, 40], "capo": 0,
+            "measures": [["beats": [["duration": [1, 1], "chord": "G", "notes": [["string": 0, "fret": 3]]]]]],
+            "bars": [["measure": 0, "start": 0, "end": 2]]])
+        var lookups = 0, polls = 0, requests = 0, tabs = 0
+        let sheet = SongSheetStore(song: song, service: .init(request: { _ in requests += 1; return status("queued") },
+            status: { _ in polls += 1; return lookups == 0 ? status("missing") : found },
+            lyrics: { _ in lyrics() }, sleep: { _ in try await Task.sleep(for: .milliseconds(10)) },
+            songsterr: { descriptor in
+                lookups += 1
+                check(descriptor.duration == 20, "The Songsterr lookup sends the recording's duration")
+                return found
+            }, tab: { id in tabs += 1; check(id == song.id, "The tab is read for this song"); return tab }))
+        let task = Task { await sheet.observe() }
+        try await waitFor { sheet.tab != nil }
+        check(sheet.canPractice && sheet.analysis?.source == "songsterr", "A Songsterr chart is ready without analysis")
+        check(sheet.actionTitle == nil && requests == 0 && !sheet.canReanalyze, "A Songsterr chart replaces Analyze; there is nothing to reanalyze")
+        check(!sheet.needsLyricTiming && sheet.lyricTimingMessage == nil, "Songsterr lyric timing needs no recording sync")
+        check(sheet.rows.contains { $0.text == "Hello there" }, "Songsterr lyrics fill the rows")
+        let settled = polls
+        try await waitFor { polls > settled + 2 }
+        check(lookups == 1 && tabs == 1, "One Songsterr lookup and one tab read per opening")
+        task.cancel(); await task.value
+
+        // An analyzed song asks once per chart; the tab comes and goes with the status.
+        func analyzed(_ revision: String, tab: Bool) -> SongStatus {
+            decode(["job": ["state": "ready", "worker_online": true], "library_generation": "one", "tab_available": tab,
+                    "analysis_info": ["chart_revision": revision, "current_analysis_version": 4, "is_current": true],
+                    "analysis": ["chords": [["start": 0, "end": 20, "label": "C:maj"]], "source": "youtube", "audio_duration": 20]])
+        }
+        var revision = "r1", served = false, chartLookups = 0
+        let charted = SongSheetStore(song: SongDescriptor(trackID: "analyzed-fixture", title: "Song", artist: "Band", duration: 20),
+            service: .init(status: { _ in analyzed(revision, tab: served) },
+                           lyrics: { _ in lyrics() }, sleep: { _ in try await Task.sleep(for: .milliseconds(10)) },
+                           songsterr: { _ in chartLookups += 1; served = true; return analyzed(revision, tab: true) },
+                           tab: { _ in tab }))
+        let chartTask = Task { await charted.observe() }
+        try await waitFor { charted.tab != nil }
+        check(charted.analysis?.source == "youtube" && chartLookups == 1, "An analyzed song keeps its chart and gains the tab")
+        revision = "r2"; served = false
+        try await waitFor { chartLookups == 2 }
+        try await waitFor { charted.tab != nil }
+        check(chartLookups == 2, "A new chart is looked up once more for a tab that fits it")
+        chartTask.cancel(); await chartTask.value
+
+        struct Outage: LocalizedError { var errorDescription: String? { "tab service unreachable" } }
+        let unmatched = SongSheetStore(song: SongDescriptor(trackID: "songsterr-down", title: "Song", artist: "Band", duration: 20),
+            service: .init(status: { _ in status("missing") },
+                           lyrics: { _ in lyrics() }, sleep: { _ in try await Task.sleep(for: .milliseconds(10)) },
+                           songsterr: { _ in throw Outage() }))
+        let down = Task { await unmatched.observe() }
+        try await waitFor { unmatched.songsterrError != nil }
+        check(unmatched.songsterrError == "Couldn't check Songsterr for this song: tab service unreachable",
+              "A failed Songsterr lookup says why")
+        check(unmatched.actionTitle == "Analyze" && unmatched.message == "Not analyzed", "A failed lookup leaves Analyze available")
+        down.cancel(); await down.value
     }
 
     @MainActor static func documentTests() async throws {

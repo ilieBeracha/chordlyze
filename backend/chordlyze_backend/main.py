@@ -5,6 +5,8 @@ GET  /song/{id}               — song metadata, chart and processing status.
 POST /analysis/submit         — authenticated, leased worker publication.
 GET  /analysis/track/{id}     — saved analysis for a track (or its ISRC twin).
 GET  /lyrics                  — time-synced lyrics from LRCLIB.
+POST /song/{id}/songsterr     — Songsterr chart or tab lined up with the recording.
+GET  /song/{id}/tab           — that guitar tab, with each bar's recording time.
 GET  /library                 — the caller's songs: requested, saved or practiced.
 POST/DELETE /library/{id}     — save or remove one song from the caller's list.
 PUT /library/{id}/chords      — correct or restore one personal chord occurrence.
@@ -17,7 +19,7 @@ caller's Spotify access token as a Bearer header; the backend verifies it
 with Spotify (see auth.py). Charts are shared; song lists are per user.
 
 Analyses are JSON files under CACHE_DIR: track-<id>.json, isrc-<ISRC>.json,
-lyrics5-<digest>.json and leased job records.
+lyrics5-<digest>.json, songsterr1-<id>.json and leased job records.
 """
 from __future__ import annotations
 
@@ -47,7 +49,7 @@ from .analysis.beats import track_beats, validate_tempo
 from .analysis.rhythm import worker as rhythm_worker
 from .analysis.difficulty import difficulty
 from .analysis.chord import parse_label, parse_display
-from . import corrections
+from . import corrections, tabs
 from .synchronization import Sample as SyncSample, UncertainSync, align as align_samples
 from .analysis.engine import AudioDecodeError, ChordSegment, merge_adjacent, recognize_audio
 from .analysis.ismir import RecognitionUnavailable, close as close_recognizer
@@ -352,15 +354,28 @@ def _song_status(track_id: str, isrc: str | None = None, user: str | None = None
                 "album": chart.get("album"), "duration": chart.get("song_duration") or chart.get("audio_duration"),
                 "isrc": chart.get("isrc"), "artwork": chart.get("artwork")}
     mine = UserLibrary(CACHE_DIR, user) if user else None
+    # Without an analyzed chart, a Songsterr chart lined up with this
+    # recording serves instead: same chart shape, with its own lyric timing.
+    entry = _songsterr_entry(track_id)
+    songsterr = entry if not ready and entry is not None and "analysis" in entry else None
+    if songsterr is not None:
+        chart, song = {**songsterr["analysis"], "analysis_stale": False}, songsterr["song"]
+        ready = True
     if ready:
         chart = corrections.apply(chart, mine.corrections(track_id) if mine else None)
+    lyrics_job = None
+    if songsterr is not None:
+        lyrics_job = {"state": "ready", "worker_online": jobs.worker_online()}
+    elif ready:
+        lyrics_job = (jobs.public(job) if job and job.get('kind') == 'lyrics' else
+            {"state": "ready" if chart.get('lyrics') else "missing", "worker_online": jobs.worker_online()})
     return {"song": song, "analysis": chart if ready else None,
             'analysis_info': info,
             'analysis_job': jobs.public(job) if job and (job.get('kind', 'analysis') == 'analysis' or job.get('reanalysis')) else None,
-            "lyrics": chart.get("lyrics") if ready else None,
+            "lyrics": (songsterr["lyrics"] if songsterr is not None else chart.get("lyrics")) if ready else None,
             "job": {"state": "ready", "worker_online": jobs.worker_online()} if ready else jobs.public(job),
-            "lyrics_job": (jobs.public(job) if job and job.get('kind') == 'lyrics' else
-                {"state": "ready" if chart.get('lyrics') else "missing", "worker_online": jobs.worker_online()}) if ready else None,
+            "lyrics_job": lyrics_job,
+            "tab_available": _tab_fits(entry, info.get("chart_revision") if songsterr is None else None),
             "library_generation": generation(CACHE_DIR),
             "saved": mine.contains(track_id) if mine else False,
             "timing": mine.timing(track_id) if mine else None,
@@ -918,6 +933,92 @@ def lyrics(title: str, artist: str = "", duration: float | None = None,
     return result
 
 
+# MARK: - Songsterr
+
+def _songsterr_path(track_id: str) -> Path:
+    safe = "".join(c for c in track_id if c.isalnum())
+    return CACHE_DIR / f"songsterr1-{safe}.json"
+
+
+def _songsterr_entry(track_id: str) -> dict | None:
+    """The cached Songsterr outcome: a chart, a tab, or why there is none."""
+    path = _songsterr_path(track_id)
+    return json.loads(path.read_text()) if path.exists() else None
+
+
+def _tab_fits(entry: dict | None, chart_revision: str | None) -> bool:
+    """A tab lined up by lyrics fits any chart of the recording; one lined
+    up by chord changes fits only the chart it was fitted to."""
+    if entry is None or "tab" not in entry:
+        return False
+    return entry["basis"] == "lyrics" or entry.get("chart_revision") == chart_revision
+
+
+class SongsterrRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=500)
+    artist: str = Field(default="", max_length=500)
+    album: str | None = Field(default=None, max_length=500)
+    duration: float = Field(gt=0, le=1200, allow_inf_nan=False)
+    isrc: str | None = None
+    artwork: str | None = None
+
+
+@app.post("/song/{track_id}/songsterr")
+def songsterr_chart(track_id: str, body: SongsterrRequest, user: str = Depends(current_user)) -> dict:
+    """Look this recording up on Songsterr. Without an analyzed chart, a tab
+    whose sung lines fit the recording's synced lyrics becomes its chart. With
+    one, only the tab is kept: lined up by those lyrics, else by the chart's
+    chord changes. Outcomes are cached until the chart they depend on
+    changes; an outage is not cached."""
+    with library_lock(CACHE_DIR):
+        status = _song_status(track_id, body.isrc, user)
+        analysis = status["analysis"]
+        analyzed = analysis if analysis is not None and analysis.get("source") != "songsterr" else None
+        revision = status["analysis_info"]["chart_revision"] if analyzed is not None else None
+        entry = _songsterr_entry(track_id)
+        if entry is not None and (analyzed is None or _tab_fits(entry, revision)
+                                  or ("tab" not in entry and entry.get("chart_revision") == revision)):
+            return status
+    epoch = generation(CACHE_DIR)
+    song = {"track_id": track_id, "title": body.title, "artist": body.artist, "album": body.album,
+            "duration": body.duration, "isrc": body.isrc, "artwork": body.artwork}
+    try:
+        synced = lyrics(body.title, body.artist, body.duration, body.album, user=user)
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+        synced = None
+    lines = synced["lines"] if synced and synced["synced"] and any(l["text"] for l in synced["lines"]) else None
+    try:
+        if analyzed is None:
+            if lines is None:
+                raise tabs.NotFound("a Songsterr chart needs this recording's time-synced lyrics")
+            entry = {"song": song, "basis": "lyrics", **tabs.build(body.title, body.artist, body.duration, lines)}
+        else:
+            found = tabs.tab_for_chart(body.title, body.artist, body.duration, lines, analyzed["chords"])
+            entry = {"song": song, "basis": found["songsterr"]["basis"], "chart_revision": revision, **found}
+    except tabs.NotFound as exc:
+        entry = {"song": song, "missing": str(exc), "chart_revision": revision}
+    except tabs.Unavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    with library_lock(CACHE_DIR):
+        if generation(CACHE_DIR) == epoch:
+            _write_analysis(_songsterr_path(track_id), entry)
+        return _song_status(track_id, body.isrc, user)
+
+
+@app.get("/song/{track_id}/tab")
+def song_tab(track_id: str, user: str = Depends(current_user)) -> dict:
+    """The guitar tab lined up with this recording, each played bar with its
+    recording time."""
+    with library_lock(CACHE_DIR):
+        status = _song_status(track_id, user=user)
+        entry = _songsterr_entry(track_id)
+    if not status["tab_available"]:
+        raise HTTPException(404, "This song has no tab.")
+    return entry["tab"]
+
+
 # MARK: - Library
 
 class ChordCorrection(BaseModel):
@@ -1024,17 +1125,31 @@ def edit_boundary(track_id: str, body: BoundaryEdit, user: str = Depends(current
 
 @app.get("/library")
 def library(user: str = Depends(current_user)) -> dict:
-    """The caller's songs that have a chart, newest addition first."""
+    """The caller's songs that have a chart, newest addition first: an
+    analyzed chart, else a Songsterr one."""
     with library_lock(CACHE_DIR):
-        paths = [_track_cache_path(track) for track in UserLibrary(CACHE_DIR, user).track_ids()]
-        return _library([path for path in paths if path.exists()], user=user)
+        entries = []
+        for track in UserLibrary(CACHE_DIR, user).track_ids():
+            path = _track_cache_path(track)
+            if path.exists():
+                entries.append(_library_entry(path))
+                continue
+            songsterr = _songsterr_entry(track)
+            if songsterr is not None and "analysis" in songsterr:
+                song = songsterr["song"]
+                entries.append({**songsterr["analysis"], "track_id": track, "title": song["title"],
+                                "artist": song["artist"], "album": song.get("album"),
+                                "artwork": song.get("artwork"), "isrc": song.get("isrc")})
+        return _library(entries, user=user)
 
 
 @app.post("/library/{track_id}")
 def save_song(track_id: str, user: str = Depends(current_user)) -> dict:
     """Keep a song whose chart already exists (analyzed by anyone)."""
     with library_lock(CACHE_DIR):
-        if not _track_cache_path(track_id).exists() and SongJobs(CACHE_DIR).get(track_id) is None:
+        songsterr = _songsterr_entry(track_id)
+        if (not _track_cache_path(track_id).exists() and SongJobs(CACHE_DIR).get(track_id) is None
+                and (songsterr is None or "analysis" not in songsterr)):
             raise HTTPException(404, "no chart or analysis request for this track")
         UserLibrary(CACHE_DIR, user).add(track_id)
         return {"track_id": track_id, "saved": True}
@@ -1166,19 +1281,22 @@ def forget_song(track_id: str, user: str = Depends(current_user)) -> dict:
 def catalog(user: str = Depends(current_user)) -> dict:
     """Every chart on the server, newest first. Charts carry no user data."""
     with library_lock(CACHE_DIR):
-        return _library(sorted(CACHE_DIR.glob("track-*.json"),
-                               key=lambda p: p.stat().st_mtime, reverse=True))
+        return _library([_library_entry(path) for path in sorted(CACHE_DIR.glob("track-*.json"),
+                               key=lambda p: p.stat().st_mtime, reverse=True)])
 
 
-def _library(paths: list[Path], user: str | None = None) -> dict:
+def _library_entry(path: Path) -> dict:
+    """A saved analysis; entries written before track_id was stored take it from the file name."""
+    return {"track_id": path.stem.removeprefix("track-"), **json.loads(path.read_text())}
+
+
+def _library(entries: list[dict], user: str | None = None) -> dict:
     items = []
-    for path in paths:
-        data = json.loads(path.read_text())
+    for data in entries:
         if user:
-            track_id = data.get("track_id", path.stem.removeprefix("track-"))
-            data = corrections.apply(data, UserLibrary(CACHE_DIR, user).corrections(track_id))
+            data = corrections.apply(data, UserLibrary(CACHE_DIR, user).corrections(data["track_id"]))
         items.append({
-            "track_id": data.get("track_id", path.stem.removeprefix("track-")),
+            "track_id": data["track_id"],
             "title": data.get("title"),
             "artist": data.get("artist"),
             "key": data.get("key"),

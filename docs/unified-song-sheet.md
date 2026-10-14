@@ -95,6 +95,19 @@ Known lyrics and known chords can load at different times. Missing data is shown
 
 Spotify polling starts immediately, runs separately from analysis, and honors rate-limit delays. A monotonic clock advances between polls, freezes on pause and resynchronizes on seeks or song changes. Connection failures retry automatically, and background/foreground transitions restart polling. Extrapolation stops after 15 seconds without a successful playback sample. A view-owned `TimelineView` redraws and scrolls Live; screens do not share a disconnectable timer.
 
+## Songsterr charts and tabs
+
+Opening a song asks Songsterr once per opening and per chart (`POST /song/{track_id}/songsterr`); it queues no analysis. The backend places the guitar part's chords, the vocal part's syllables and every bar on the tab's own clock (time signatures, tempo marks including linear ramps, repeats unrolled), then anchors that clock to the recording and warps linearly between anchors:
+
+- **By lyrics:** sung line starts matched to the recording's time-synced LRCLIB lines.
+- **By chords** (analyzed songs only, e.g. instrumentals): the tab's chord changes matched to the analyzed chart's after a coarse tempo/offset search. Tabs that do not write chord names use chords worked out from their notes (string tuning, capo and fret per note; the clearest major or minor triad per half bar).
+
+Anchors must agree with their neighbours within 1 s, cover half the song, and imply a tempo within 5% of the recording's; a chord line-up must also agree with the chart for 70% of the overlapping time. A tab that fails is rejected, never shown misplaced. Alternate endings and lyrics that differ between repeats are refused.
+
+Without an analyzed chart, a tab lined up by lyrics becomes the song's chart: `/song/{track_id}` serves it (`source: "songsterr"`) with its own word timing, so the sheet, Live, the diagrams rail, Practice, saving and the library work unchanged. Chord names outside the recognizer's vocabulary are reduced to their triad (`Cadd9` → C), as the recognizer would name them. Corrections, lyric sync and reanalysis apply to analyzed charts only; once a song is analyzed its analysis is the chart. With an analyzed chart, only the tab is kept. `tab_available` on the status says whether a tab fits the current chart (one lined up by chords fits only the chart it was fitted to), and `GET /song/{track_id}/tab` returns it with each played bar's recording time. The sheet's **Tab** control draws those bars under the row they are played in.
+
+Outcomes are cached as `songsterr1-<track_id>.json`; a Songsterr outage is not cached and is shown on the page.
+
 ## Full-song worker
 
 Before searching YouTube, the worker checks `backend/chordlyze_backend/recording_sources.json` for a reviewed artist-hosted public stream keyed by ISRC. Each entry requires the artist's HTTPS Bandcamp track URL, title, artist and full recording duration. Adding an entry requires checking the artist's release and matching recording metadata; this is a curated registry, not automatic Bandcamp discovery. The extractor revalidates title, artist and duration before and after downloading, and the recognizer independently validates decoded duration before publication. Missing public streams fall through to the existing YouTube search. Downloads have a 100 MiB size cap, a 120-second progress deadline, socket timeouts, cancellation and temporary-file cleanup. Provenance records `source: bandcamp` and the artist URL. The initial entry restores the 317.72-second album recording of [Shadows by Zero 7 and Lou Stone](https://zero7.bandcamp.com/track/shadows), whose shorter official video was correctly rejected by the duration gate.

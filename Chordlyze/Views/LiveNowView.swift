@@ -19,6 +19,7 @@ struct LiveNowView: View {
     private var beatGrid: BeatGrid? { store.beatGrid }
     /// A new song starts closed, regardless of its lyric timing or older preferences.
     @State private var showRail = false
+    @State private var showTab = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -38,7 +39,7 @@ struct LiveNowView: View {
                             }
                         }
                     }
-                    SongPlayingControls(store: store, showRail: $showRail,
+                    SongPlayingControls(store: store, showRail: $showRail, showTab: $showTab,
                                         allowsSimpleVersionChanges: allowsSimpleVersionChanges)
                     // Only what changes the moment: paused, reconnecting, a refused seek.
                     // Timing and edition notes live on the sheet page, not over the words.
@@ -69,7 +70,7 @@ struct LiveNowView: View {
                                        onRowTap: { row in
                                            guard let onSeek else { return }
                                            Task { seekDenied = !(await onSeek(store.timing.spotifyTime(row.start))) }
-                                       }, verdict: verdict)
+                                       }, verdict: verdict, showTab: showTab)
                             .padding(.horizontal, 24).padding(.top, 40)
                             .padding(.bottom, 320)  // the last lines can roll up to the reading height too
                     }
@@ -101,7 +102,7 @@ struct LiveNowView: View {
             }
         }
         .chordDiagram($selectedChord)
-        .onChange(of: store.song.id) { _, _ in showRail = false }
+        .onChange(of: store.song.id) { _, _ in showRail = false; showTab = false }
         .observes(store)
     }
 }
