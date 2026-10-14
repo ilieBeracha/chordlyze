@@ -11,8 +11,8 @@ struct SongTab: Decodable, Equatable {
         var tie: Bool? = nil
         var dead: Bool? = nil
 
-        /// A muted note shows as x; a tied note (drawn dimmed) keeps its fret.
-        var label: String { dead == true ? "x" : "\(fret)" }
+        /// A muted note shows as ×; a tied note (drawn dimmed) keeps its fret.
+        var label: String { dead == true ? "×" : "\(fret)" }
     }
 
     struct Beat: Decodable, Equatable {
@@ -89,7 +89,22 @@ enum TabLayout {
         max(minBeatWidth, wholeNoteWidth * beat.length)
     }
 
-    static func rows(_ measures: [SongTab.Measure], width: CGFloat) -> [Row] {
+    /// Lines of tab for `width` points. Justified lines are stretched to the
+    /// full width, keeping each beat's share, so every line's bars end at
+    /// the same edge.
+    static func rows(_ measures: [SongTab.Measure], width: CGFloat, justify: Bool = false) -> [Row] {
+        let natural = naturalRows(measures, width: width)
+        guard justify else { return natural }
+        return natural.map { row in
+            let k = width / row.width
+            return Row(beats: row.beats.map { Placed(measure: $0.measure, beat: $0.beat, x: $0.x * k) },
+                       bars: row.bars.map { $0 * k },
+                       markers: row.markers.map { Marker(x: $0.x * k, text: $0.text) },
+                       width: width)
+        }
+    }
+
+    private static func naturalRows(_ measures: [SongTab.Measure], width: CGFloat) -> [Row] {
         var rows: [Row] = []
         var row = Row()
         func finish() {

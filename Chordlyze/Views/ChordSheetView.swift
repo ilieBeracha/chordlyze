@@ -334,9 +334,12 @@ struct SongPlayingControls: View {
             }
 
             VStack(spacing: 5) {
-                control("Simple version", icon: store.capoMode ? "checkmark.circle.fill" : "circle", on: store.capoMode) {
+                // Beside Diagrams and Tab, the full name does not fit on one line.
+                control(showTab != nil && store.tab != nil ? "Simple" : "Simple version",
+                        icon: store.capoMode ? "checkmark.circle.fill" : "circle", on: store.capoMode) {
                     store.capoMode.toggle()
                 }
+                .accessibilityLabel("Simple version")
                 .accessibilityValue(store.capoMode ? "On, \(capoInstruction)" : "Off")
                 .disabled(!allowsSimpleVersionChanges)
                 .accessibilityHint(allowsSimpleVersionChanges
@@ -357,7 +360,8 @@ struct SongPlayingControls: View {
         Button(action: action) {
             Label(title, systemImage: icon)
                 .font(.subheadline.weight(.semibold))
-                .fixedSize(horizontal: false, vertical: true)
+                // Three controls share the row when a tab is offered: stay on one line.
+                .lineLimit(1).minimumScaleFactor(0.75)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .padding(.horizontal, 10)
                 .foregroundStyle(on ? Color.spotifyGreen : .white)
